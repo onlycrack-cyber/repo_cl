@@ -1,0 +1,1024 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: cc5f5913cc044cbfbdf10691b5662592
+      name: Templates/Storage
+  templates:
+    - uuid: bc2f1bab5df6414d82f5b4224ec40341
+      template: 'HPE SSMC StorageArray'
+      name: 'HPE SSMC StorageArray'
+      description: |
+        Monitors HPE SSMC storage arrays via SSH.
+        Uses External check (ssmc_collect.py) with paramiko.
+        All dependent items parse the returned JSON.
+        Required macros:
+          {$SSMC_HOST}         - 3PAR hostname or IP
+          {$SSMC_SSH_USER}     - 3PAR SSH username
+          {$SSMC_SSH_PASS}     - 3PAR SSH password
+      vendor:
+        name: Custom
+        version: '1.0'
+      groups:
+        - name: Templates/Storage
+      items:
+        - uuid: 6d375a22f5a34760bd93649eeecca52e
+          name: 'Collection error'
+          type: DEPENDENT
+          key: collect.error
+          delay: '0'
+          history: 7d
+          value_type: CHAR
+          trends: '0'
+          description: 'Empty string means no error. Any text means collection failed.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error
+              error_handler: CUSTOM_VALUE
+            - type: JAVASCRIPT
+              parameters:
+                - 'return value === ''null'' ? '''' : value;'
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: db4095d50e8c4b7aa9a12b6955e9cb6f
+              expression: 'length(last(/HPE SSMC StorageArray/collect.error))>0'
+              name: 'Data collection error: {ITEM.LASTVALUE}'
+              priority: HIGH
+              description: 'The master collector failed. Check 3PAR connectivity and SSH credentials.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: c0d1e2f3a4b54c6d8e9f0a1b2c3d4e5f
+          name: 'Collect alert data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","alerts"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: 'Alert master item. Collects active alerts via SSH.'
+          tags:
+            - tag: component
+              value: master
+        - uuid: f1e2d3c4b5a64c7d8e9f0a1b2c3d4e5f
+          name: 'Collect battery data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","batteries"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: 'Battery master item. Collects battery status via SSH.'
+          tags:
+            - tag: component
+              value: master
+        - uuid: 942a2f1b5e3c4d8f9a0b7c6d5e4f3a2b
+          name: 'Collect disk data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: |
+            Disks master item. Collects physical disk inventory and state.
+            Returns JSON: {"disks":[...]}
+          tags:
+            - tag: component
+              value: master
+        - uuid: a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d
+          name: 'Collect node data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","nodes"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: 'Node master item. Collects node status via SSH.'
+          tags:
+            - tag: component
+              value: master
+        - uuid: 07d7f0710c144d4a87753c64a9b72c3c
+          name: 'Collect all data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: |
+            System master item. Calls ssmc_collect.py via SSH with "system" arg.
+            Collects: system info (name, model, capacity) and port state.
+            Returns JSON: {"system":{...},"ports":[...]}
+          tags:
+            - tag: component
+              value: master
+        - uuid: 8b7a6c5d4e3f4a2b9c8d0e1f2a3b4c5d
+          name: 'Collect volume data'
+          type: EXTERNAL
+          key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","volumes"]'
+          delay: 5m
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          description: |
+            Volumes master item. Collects volume (LUN) inventory and usage.
+            Returns JSON: {"volumes":[...]}
+          tags:
+            - tag: component
+              value: master
+        - uuid: 8491fd4b0e724fb88bfa1e1193c440b7
+          name: 'Allocated capacity (TB)'
+          type: DEPENDENT
+          key: system.allocatedcapacity
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: ' TB'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.allocatedCapacityMiB
+            - type: MULTIPLIER
+              parameters:
+                - '1.0E-6'
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: system
+        - uuid: 0881fae0cade45c09067abe9f0bf9616
+          name: 'Total physical disks'
+          type: DEPENDENT
+          key: system.diskcount
+          delay: '0'
+          history: 90d
+          description: 'Total number of physical disks in the array.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  return data.disks ? data.disks.length : 0;
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+          tags:
+            - tag: component
+              value: system
+        - uuid: ba7cb8535c8a44e487bc1926478e80e6
+          name: 'Free capacity (TB)'
+          type: DEPENDENT
+          key: system.freecapacity
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: ' TB'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.freeCapacityMiB
+            - type: MULTIPLIER
+              parameters:
+                - '1.0E-6'
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: master
+        - uuid: 5cb0ed48d47b43668dc92a2dc45746b1
+          name: 'System name'
+          type: DEPENDENT
+          key: system.name
+          delay: '0'
+          history: 7d
+          value_type: CHAR
+          trends: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.name
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: system
+        - uuid: 9568597cb97d443cbcb222578f4e0597
+          name: 'System overall state'
+          type: DEPENDENT
+          key: system.state
+          delay: '0'
+          history: 7d
+          description: '1=Normal, 2=Degraded, 3=Failed. Mapped from system.overallState in WSAPI response.'
+          valuemap:
+            name: 'HPE SSMC System State'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.overallState
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: e7ffb146252247108396c54fb1a38c66
+              expression: 'last(/HPE SSMC StorageArray/system.state)=2'
+              name: 'System state is Degraded'
+              priority: WARNING
+              description: 'The storage array overall state is Degraded.'
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: 823cd91cdf6d45c39ac35c1b368b9e06
+              expression: 'last(/HPE SSMC StorageArray/system.state)=3'
+              name: 'System state is Failed'
+              priority: DISASTER
+              description: 'The storage array overall state is Failed.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 7d69791d30f04ec7afcb6e1fc9234044
+          name: 'Total capacity (TB)'
+          type: DEPENDENT
+          key: system.totalcapacity
+          delay: '0'
+          history: 90d
+          value_type: FLOAT
+          units: ' TB'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.totalCapacityMiB
+            - type: MULTIPLIER
+              parameters:
+                - '1.0E-6'
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          tags:
+            - tag: component
+              value: system
+      discovery_rules:
+        - uuid: c4d5e6f7a8b94c0d9e1f2a3b4c5d6e7f
+          name: 'Alert discovery'
+          type: DEPENDENT
+          key: alerts.discovery
+          delay: '0'
+          description: |
+            Discovers current alerts from the hardware master item JSON.
+            Macros: '{#ALERT_ID}', '{#ALERT_MSG}'
+          item_prototypes:
+            - uuid: a2b3c4d5e6f74a8b9c0d1e2f3a4b5c6d
+              name: 'Alert [{#ALERT_ID}] message'
+              type: DEPENDENT
+              key: 'alert.message[{#ALERT_ID}]'
+              delay: '0'
+              history: 7d
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var alts = data.alerts || [];
+                      var id = '{#ALERT_ID}';
+                      for (var i = 0; i < alts.length; i++) {
+                        if (String(alts[i].id) === id) {
+                          return alts[i].message || '';
+                        }
+                      }
+                      throw 'Alert ' + id + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","alerts"]'
+              tags:
+                - tag: alert
+                  value: '{#ALERT_ID}'
+                - tag: component
+                  value: hardware
+            - uuid: f0a1b2c3d4e54f6a9b7c8d9e0f1a2b3c
+              name: 'Alert [{#ALERT_ID}] severity'
+              type: DEPENDENT
+              key: 'alert.severity[{#ALERT_ID}]'
+              delay: '0'
+              history: 90d
+              description: '3=Warning, 4=Major, 5=Critical'
+              valuemap:
+                name: 'HPE SSMC Alert Severity'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var alts = data.alerts || [];
+                      var id = '{#ALERT_ID}';
+                      for (var i = 0; i < alts.length; i++) {
+                        if (String(alts[i].id) === id) {
+                          return {INFO: 1, MINOR: 2, WARNING: 3, WARN: 3, MAJOR: 4, CRITICAL: 5, CRIT: 5}[alts[i].severity] || 0;
+                        }
+                      }
+                      throw 'Alert ' + id + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","alerts"]'
+              tags:
+                - tag: alert
+                  value: '{#ALERT_ID}'
+                - tag: component
+                  value: hardware
+              trigger_prototypes:
+                - uuid: f2a3b4c5d6e74f8a9b0c1d2e3f4a5b6c
+                  expression: 'last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])>=4'
+                  name: 'Alert [{#ALERT_ID}]: {#ALERT_MSG}'
+                  priority: HIGH
+                  description: 'Major or Critical alert on the storage array.'
+                  tags:
+                    - tag: scope
+                      value: availability
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","alerts"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var alts = data.alerts || [];
+                  var lld = [];
+                  for (var i = 0; i < alts.length; i++) {
+                    var a = alts[i];
+                    lld.push({
+                      '{#ALERT_ID}': String(a.id),
+                      '{#ALERT_MSG}': (a.message || '').substring(0, 255)
+                    });
+                  }
+                  return JSON.stringify({ data: lld });
+        - uuid: b2c3d4e5f6a74b8c9d0e1f2a3b4c5d6e
+          name: 'Battery discovery'
+          type: DEPENDENT
+          key: batteries.discovery
+          delay: '0'
+          description: |
+            Discovers all batteries from the hardware master item JSON.
+            Macros: '{#BATTERY_ID}', '{#BATTERY_POS}'
+          item_prototypes:
+            - uuid: e8f9a0b1c2d34e4f9a5b6c7d8e9f0a1b
+              name: 'Battery [{#BATTERY_POS}] status'
+              type: DEPENDENT
+              key: 'battery.status[{#BATTERY_ID}]'
+              delay: '0'
+              history: 90d
+              description: '1=OK, 4=Failed, 5=Unknown'
+              valuemap:
+                name: 'HPE SSMC Battery State'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var batts = data.batteries || [];
+                      var id = '{#BATTERY_ID}';
+                      for (var i = 0; i < batts.length; i++) {
+                        if (String(batts[i].id) === id) {
+                          return batts[i].status;
+                        }
+                      }
+                      throw 'Battery ' + id + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","batteries"]'
+              tags:
+                - tag: battery
+                  value: '{#BATTERY_POS}'
+                - tag: component
+                  value: hardware
+              trigger_prototypes:
+                - uuid: e0f1a2b3c4d54e6f9a7b8c9d0e1f2a3b
+                  expression: 'last(/HPE SSMC StorageArray/battery.status[{#BATTERY_ID}])<>1'
+                  name: 'Battery [{#BATTERY_POS}] is not OK'
+                  priority: HIGH
+                  description: 'Battery {#BATTERY_POS} is not in OK state. Cache data may be at risk.'
+                  tags:
+                    - tag: scope
+                      value: availability
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","batteries"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var batts = data.batteries || [];
+                  var lld = [];
+                  for (var i = 0; i < batts.length; i++) {
+                    var b = batts[i];
+                    lld.push({
+                      '{#BATTERY_ID}': String(b.id),
+                      '{#BATTERY_POS}': 'Node ' + b.node + ' Batt ' + b.slot
+                    });
+                  }
+                  return JSON.stringify({ data: lld });
+        - uuid: 70d2927ad4564b9dbe32a85620d29b08
+          name: 'Disk discovery'
+          type: DEPENDENT
+          key: disks.discovery
+          delay: '0'
+          description: |
+            Discovers all physical disks from the master item JSON.
+            Macros: '{#DISK_ID}', {#DISK_POS}, {#DISK_TYPE}, {#DISK_MODEL}, {#DISK_CAPACITY}
+          item_prototypes:
+            - uuid: 6c9f980d50334e37838aa86b5f8b1dd7
+              name: 'Disk [{#DISK_POS}] capacity (TB)'
+              type: DEPENDENT
+              key: 'disk.capacity[{#DISK_ID}]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: ' TB'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var disks = data.disks || [];
+                      var targetId = '{#DISK_ID}';
+                      for (var i = 0; i < disks.length; i++) {
+                        if (String(disks[i].id) === targetId) {
+                          return disks[i].capacityMiB || 0;
+                        }
+                      }
+                      throw 'Disk ID ' + targetId + ' not found';
+                - type: MULTIPLIER
+                  parameters:
+                    - '1.0E-6'
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: disk
+                  value: '{#DISK_POS}'
+            - uuid: a1b2c3d4e5f64a7b8c9d0e1f23456789
+              name: 'Disk [{#DISK_POS}] model'
+              type: DEPENDENT
+              key: 'disk.model[{#DISK_ID}]'
+              delay: '0'
+              history: 7d
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var disks = data.disks || [];
+                      var targetId = '{#DISK_ID}';
+                      for (var i = 0; i < disks.length; i++) {
+                        if (String(disks[i].id) === targetId) {
+                          return disks[i].model || 'N/A';
+                        }
+                      }
+                      throw 'Disk ID ' + targetId + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: disk
+                  value: '{#DISK_POS}'
+            - uuid: f0e1d2c3b4a5467890abcdef12345678
+              name: 'Disk [{#DISK_POS}] serial'
+              type: DEPENDENT
+              key: 'disk.serial[{#DISK_ID}]'
+              delay: '0'
+              history: 7d
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var disks = data.disks || [];
+                      var targetId = '{#DISK_ID}';
+                      for (var i = 0; i < disks.length; i++) {
+                        if (String(disks[i].id) === targetId) {
+                          return disks[i].serial || 'N/A';
+                        }
+                      }
+                      throw 'Disk ID ' + targetId + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: disk
+                  value: '{#DISK_POS}'
+            - uuid: eec3c729948940dabf756a7b0d6a90c2
+              name: 'Disk [{#DISK_POS}] state'
+              type: DEPENDENT
+              key: 'disk.state[{#DISK_ID}]'
+              delay: '0'
+              history: 90d
+              description: 'Disk state codes: 1=Normal, 2=Degraded, 3=New, 4=Failed, 5=Unknown'
+              valuemap:
+                name: 'HPE SSMC Disk State'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var disks = data.disks || [];
+                      var targetId = '{#DISK_ID}';
+                      for (var i = 0; i < disks.length; i++) {
+                        if (String(disks[i].id) === targetId) {
+                          return disks[i].state !== undefined ? disks[i].state : 5;
+                        }
+                      }
+                      throw 'Disk ID ' + targetId + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: disk
+                  value: '{#DISK_POS}'
+              trigger_prototypes:
+                - uuid: 4cafeafe3c2d49818169b363d5ddfd3d
+                  expression: 'last(/HPE SSMC StorageArray/disk.state[{#DISK_ID}])=4'
+                  name: 'Disk [{#DISK_POS}] has FAILED'
+                  priority: HIGH
+                  description: 'Physical disk at position {#DISK_POS} has failed.'
+                  tags:
+                    - tag: scope
+                      value: availability
+                - uuid: 58226fde303a4c65b6442b47e8e9c0cf
+                  expression: 'last(/HPE SSMC StorageArray/disk.state[{#DISK_ID}])=2'
+                  name: 'Disk [{#DISK_POS}] is Degraded'
+                  priority: WARNING
+                  description: 'Physical disk at position {#DISK_POS} entered Degraded state.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: e9f2a1b3c4d54a6b8c7d1e2f34a5b6c7
+              name: 'Disk [{#DISK_POS}] type'
+              type: DEPENDENT
+              key: 'disk.type[{#DISK_ID}]'
+              delay: '0'
+              history: 7d
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var disks = data.disks || [];
+                      var targetId = '{#DISK_ID}';
+                      for (var i = 0; i < disks.length; i++) {
+                        if (String(disks[i].id) === targetId) {
+                          return disks[i].diskType || 'N/A';
+                        }
+                      }
+                      throw 'Disk ID ' + targetId + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: disk
+                  value: '{#DISK_POS}'
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","disks"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var disks = data.disks || [];
+                  var lld = [];
+                  for (var i = 0; i < disks.length; i++) {
+                    var d = disks[i];
+                    lld.push({
+                      '{#DISK_ID}': String(d.id !== undefined ? d.id : i),
+                      '{#DISK_POS}': d.position ? (d.position.cage + ':' + d.position.mag + ':' + d.position.disk) : String(i),
+                      '{#DISK_TYPE}': d.diskType !== undefined ? String(d.diskType) : 'UNKNOWN',
+                      '{#DISK_MODEL}': d.model || 'N/A',
+                      '{#DISK_CAPACITY}': String(d.capacityMiB || 0),
+                      '{#DISK_SERIAL}': d.serial || 'N/A',
+                      '{#DISK_INDEX}': String(i)
+                    });
+                  }
+                  return JSON.stringify({ data: lld });
+        - uuid: b00c138bfeab428fa05e0337e88655ee
+          name: 'Node discovery'
+          type: DEPENDENT
+          key: nodes.discovery
+          delay: '0'
+          description: |
+            Discovers all controller nodes.
+            Macros: '{#NODE_ID}', '{#NODE_NAME}'
+          item_prototypes:
+            - uuid: 5527e8ce54e6470890d5c4a1ef78ab5d
+              name: 'Node [{#NODE_NAME}] model'
+              type: DEPENDENT
+              key: 'node.model[{#NODE_ID}]'
+              delay: '0'
+              history: 7d
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var n = data.nodes || [];
+                      var id = '{#NODE_ID}';
+                      for (var i = 0; i < n.length; i++) {
+                        if (String(n[i].id) === id) {
+                          return n[i].model || 'N/A';
+                        }
+                      }
+                      throw 'Node ' + id + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","nodes"]'
+              tags:
+                - tag: component
+                  value: hardware
+            - uuid: e8d9093c7ffe40d6b1a9dc03a7fbb020
+              name: 'Node [{#NODE_NAME}] status'
+              type: DEPENDENT
+              key: 'node.status[{#NODE_ID}]'
+              delay: '0'
+              history: 90d
+              description: '1=OK, 4=Failed, 5=Unknown'
+              valuemap:
+                name: 'HPE SSMC Battery State'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var n = data.nodes || [];
+                      var id = '{#NODE_ID}';
+                      for (var i = 0; i < n.length; i++) {
+                        if (String(n[i].id) === id) {
+                          return n[i].status;
+                        }
+                      }
+                      throw 'Node ' + id + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","nodes"]'
+              tags:
+                - tag: component
+                  value: hardware
+              trigger_prototypes:
+                - uuid: a326f6478894468d9fe20139199d265c
+                  expression: 'last(/HPE SSMC StorageArray/node.status[{#NODE_ID}])<>1'
+                  name: 'Node [{#NODE_NAME}] is not OK'
+                  priority: DISASTER
+                  description: 'Controller node {#NODE_NAME} is not in OK state. Array may be degraded.'
+                  tags:
+                    - tag: scope
+                      value: availability
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","nodes"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var n = data.nodes || [];
+                  var lld = [];
+                  for (var i = 0; i < n.length; i++) {
+                    lld.push({'{#NODE_ID}': String(n[i].id), '{#NODE_NAME}': n[i].name || 'Node ' + n[i].id});
+                  }
+                  return JSON.stringify({ data: lld });
+        - uuid: f363616ed0ac4178be14103864a499bc
+          name: 'Port discovery'
+          type: DEPENDENT
+          key: ports.discovery
+          delay: '0'
+          description: |
+            Discovers all FC/iSCSI/FCoE ports from the master item JSON.
+            Macros: '{#PORT_POS}', {#PORT_TYPE}, {#PORT_MODE}, {#PORT_INDEX}
+          item_prototypes:
+            - uuid: 892339a7ce7c42b0997699df07b300dd
+              name: 'Port [{#PORT_POS}] link state'
+              type: DEPENDENT
+              key: 'port.linkstate[{#PORT_POS}]'
+              delay: '0'
+              history: 90d
+              description: |
+                Port link state: 1=CONFIG_WAIT, 2=ALPA_WAIT, 3=LOGIN_WAIT, 4=READY,
+                5=LOSS_SYNC, 6=ERROR_STATE, 7=XXX, 8=NONPARTICIPATING,
+                9=INITIALIZING, 10=PENDING_RESET
+              valuemap:
+                name: 'HPE SSMC Port Link State'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var ports = data.ports || [];
+                      var pos = '{#PORT_POS}';
+                      for (var i = 0; i < ports.length; i++) {
+                        var p = ports[i];
+                        var ppos = p.portPos ? (p.portPos.node + ':' + p.portPos.slot + ':' + p.portPos.cardPort) : String(i);
+                        if (ppos === pos) {
+                          return p.linkState !== undefined ? p.linkState : 9;
+                        }
+                      }
+                      throw 'Port ' + pos + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+              tags:
+                - tag: component
+                  value: port
+                - tag: port
+                  value: '{#PORT_POS}'
+              trigger_prototypes:
+                - uuid: 1a45de76652243438240a0a65b59f2fa
+                  expression: 'last(/HPE SSMC StorageArray/port.linkstate[{#PORT_POS}])<>4'
+                  name: 'Port [{#PORT_POS}] is not READY (state={ITEM.LASTVALUE})'
+                  priority: WARNING
+                  description: 'Port {#PORT_POS} is not in READY state. Check FC/iSCSI connectivity.'
+                  tags:
+                    - tag: scope
+                      value: availability
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","system"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var ports = data.ports || [];
+                  var lld = [];
+                  for (var i = 0; i < ports.length; i++) {
+                    var p = ports[i];
+                    var pos = p.portPos ? (p.portPos.node + ':' + p.portPos.slot + ':' + p.portPos.cardPort) : String(i);
+                    lld.push({
+                      '{#PORT_POS}': pos,
+                      '{#PORT_TYPE}': p.type !== undefined ? String(p.type) : 'UNKNOWN',
+                      '{#PORT_MODE}': p.mode !== undefined ? String(p.mode) : 'UNKNOWN',
+                      '{#PORT_INDEX}': String(i)
+                    });
+                  }
+                  return JSON.stringify({ data: lld });
+        - uuid: 7a12ffb0991646eeb2e3435ae3f0855e
+          name: 'Volume discovery'
+          type: DEPENDENT
+          key: volumes.discovery
+          delay: '0'
+          description: |
+            Discovers all volumes (LUNs) from the master item JSON.
+            Macros: '{#VOLUME_NAME}', {#VOLUME_ID}, {#VOLUME_TYPE}, {#VOLUME_PROV}, {#VOLUME_CPG}
+          item_prototypes:
+            - uuid: 6b0c47bd618e403b9a8d046f651c4cd3
+              name: 'Volume [{#VOLUME_NAME}] allocated size (TB)'
+              type: DEPENDENT
+              key: 'volume.size[{#VOLUME_NAME}]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: ' TB'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var vols = data.volumes || [];
+                      var name = '{#VOLUME_NAME}';
+                      for (var i = 0; i < vols.length; i++) {
+                        if (vols[i].name === name) {
+                          return vols[i].sizeMiB || 0;
+                        }
+                      }
+                      throw 'Volume ' + name + ' not found';
+                - type: MULTIPLIER
+                  parameters:
+                    - '1.0E-6'
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","volumes"]'
+              tags:
+                - tag: component
+                  value: volume
+                - tag: volume
+                  value: '{#VOLUME_NAME}'
+            - uuid: fa0e151531264404ad3dfe08789b9a14
+              name: 'Volume [{#VOLUME_NAME}] state'
+              type: DEPENDENT
+              key: 'volume.state[{#VOLUME_NAME}]'
+              delay: '0'
+              history: 90d
+              description: 'Volume state: 1=Normal, 2=Degraded, 3=Failed'
+              valuemap:
+                name: 'HPE SSMC System State'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var vols = data.volumes || [];
+                      var name = '{#VOLUME_NAME}';
+                      for (var i = 0; i < vols.length; i++) {
+                        if (vols[i].name === name) {
+                          return vols[i].state || 1;
+                        }
+                      }
+                      throw 'Volume ' + name + ' not found';
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","volumes"]'
+              tags:
+                - tag: component
+                  value: volume
+              trigger_prototypes:
+                - uuid: 1a95e5199a43487eb96b5777c62ad992
+                  expression: 'last(/HPE SSMC StorageArray/volume.state[{#VOLUME_NAME}])>=2'
+                  name: 'Volume [{#VOLUME_NAME}] is not Normal'
+                  priority: HIGH
+                  description: 'Volume {#VOLUME_NAME} state is Degraded or Failed.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: e03f45efe7b643e0961d3ae727f418f1
+              name: 'Volume [{#VOLUME_NAME}] used space (TB)'
+              type: DEPENDENT
+              key: 'volume.used[{#VOLUME_NAME}]'
+              delay: '0'
+              history: 90d
+              value_type: FLOAT
+              units: ' TB'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var data = JSON.parse(value);
+                      var vols = data.volumes || [];
+                      var name = '{#VOLUME_NAME}';
+                      for (var i = 0; i < vols.length; i++) {
+                        if (vols[i].name === name) {
+                          if (vols[i].usedMiB !== undefined) return vols[i].usedMiB;
+                          if (vols[i].userSpace && vols[i].userSpace.usedMiB !== undefined) return vols[i].userSpace.usedMiB;
+                          if (vols[i].sizeMiB !== undefined) return vols[i].sizeMiB;
+                          return 0;
+                        }
+                      }
+                      throw 'Volume ' + name + ' not found';
+                - type: MULTIPLIER
+                  parameters:
+                    - '1.0E-6'
+              master_item:
+                key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","volumes"]'
+              tags:
+                - tag: component
+                  value: volume
+                - tag: volume
+                  value: '{#VOLUME_NAME}'
+            - uuid: 4eeb90455eb04979a199d160c432f8ed
+              name: 'Volume [{#VOLUME_NAME}] utilization (%)'
+              type: CALCULATED
+              key: 'volume.util[{#VOLUME_NAME}]'
+              delay: 5m
+              history: 90d
+              value_type: FLOAT
+              units: '%'
+              params: '100*last(//volume.used[{#VOLUME_NAME}])/max(last(//volume.size[{#VOLUME_NAME}]),1)'
+              description: 'Volume utilization percentage.'
+              tags:
+                - tag: component
+                  value: volume
+                - tag: volume
+                  value: '{#VOLUME_NAME}'
+              trigger_prototypes:
+                - uuid: 94e438cb78d94d2f899f32db7bfcd927
+                  expression: 'last(/HPE SSMC StorageArray/volume.util[{#VOLUME_NAME}])>{$VOLUME_UTIL_CRIT}'
+                  name: 'Volume [{#VOLUME_NAME}] utilization is critical (>{$VOLUME_UTIL_CRIT}%)'
+                  priority: HIGH
+                  description: 'Volume {#VOLUME_NAME} is over {$VOLUME_UTIL_CRIT}% full.'
+                  tags:
+                    - tag: scope
+                      value: capacity
+                - uuid: 233024a5894f4718b25e9b382bb76fa4
+                  expression: 'last(/HPE SSMC StorageArray/volume.util[{#VOLUME_NAME}])>{$VOLUME_UTIL_WARN} and last(/HPE SSMC StorageArray/volume.util[{#VOLUME_NAME}])<={$VOLUME_UTIL_CRIT}'
+                  name: 'Volume [{#VOLUME_NAME}] utilization is high (>{$VOLUME_UTIL_WARN}%)'
+                  priority: WARNING
+                  description: 'Volume {#VOLUME_NAME} is over {$VOLUME_UTIL_WARN}% full.'
+                  tags:
+                    - tag: scope
+                      value: capacity
+          master_item:
+            key: 'ssmc_collect.py["{$SSMC_HOST}","{$SSMC_SSH_USER}","{$SSMC_SSH_PASS}","volumes"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var volumes = data.volumes || [];
+                  var lld = [];
+                  for (var i = 0; i < volumes.length; i++) {
+                    var v = volumes[i];
+                    lld.push({
+                      '{#VOLUME_NAME}': v.name || ('vol_' + i),
+                      '{#VOLUME_ID}': String(v.id !== undefined ? v.id : i),
+                      '{#VOLUME_TYPE}': v.type !== undefined ? String(v.type) : '1',
+                      '{#VOLUME_PROV}': v.provisioningType !== undefined ? String(v.provisioningType) : 'UNKNOWN',
+                      '{#VOLUME_CPG}': v.userCPG || v.snapCPG || 'N/A'
+                    });
+                  }
+                  return JSON.stringify({ data: lld });
+      macros:
+        - macro: '{$DISK_CRIT_STATE}'
+          value: '4'
+          description: 'Disk state that triggers CRITICAL (4=Failed)'
+        - macro: '{$DISK_WARN_STATE}'
+          value: '2'
+          description: 'Disk state that triggers WARNING (2=Degraded)'
+        - macro: '{$SSMC_HOST}'
+          value: ssmc.example.com
+          description: '3PAR array hostname or IP address'
+        - macro: '{$SSMC_SSH_PASS}'
+          type: SECRET_TEXT
+          description: '3PAR SSH password'
+        - macro: '{$SSMC_SSH_USER}'
+          value: 3paradm
+          description: '3PAR SSH username'
+        - macro: '{$VOLUME_UTIL_CRIT}'
+          value: '90'
+          description: 'Volume utilization % critical threshold'
+        - macro: '{$VOLUME_UTIL_WARN}'
+          value: '80'
+          description: 'Volume utilization % warning threshold'
+      valuemaps:
+        - uuid: d2e3f4a5b6c74d8e9f0a1b2c3d4e5f6a
+          name: 'HPE SSMC Alert Severity'
+          mappings:
+            - value: '1'
+              newvalue: Info
+            - value: '2'
+              newvalue: Minor
+            - value: '3'
+              newvalue: Warning
+            - value: '4'
+              newvalue: Major
+            - value: '5'
+              newvalue: Critical
+        - uuid: 683929b2b3d6452083ad05ea4f2775be
+          name: 'HPE SSMC Battery State'
+          mappings:
+            - value: '1'
+              newvalue: OK
+            - value: '4'
+              newvalue: Failed
+            - value: '5'
+              newvalue: Unknown
+        - uuid: d9c0456447584b6aade520b33e5a0a8d
+          name: 'HPE SSMC Disk State'
+          mappings:
+            - value: '1'
+              newvalue: Normal
+            - value: '2'
+              newvalue: Degraded
+            - value: '3'
+              newvalue: New
+            - value: '4'
+              newvalue: Failed
+            - value: '5'
+              newvalue: Unknown
+        - uuid: f963199e48ac42aab132c9d01e4ee3b7
+          name: 'HPE SSMC Port Link State'
+          mappings:
+            - value: '1'
+              newvalue: CONFIG_WAIT
+            - value: '2'
+              newvalue: ALPA_WAIT
+            - value: '3'
+              newvalue: LOGIN_WAIT
+            - value: '4'
+              newvalue: READY
+            - value: '5'
+              newvalue: LOSS_SYNC
+            - value: '6'
+              newvalue: ERROR_STATE
+            - value: '7'
+              newvalue: XXX
+            - value: '8'
+              newvalue: NONPARTICIPATING
+            - value: '9'
+              newvalue: INITIALIZING
+            - value: '10'
+              newvalue: PENDING_RESET
+        - uuid: 0e902fd748af4552a97f94525498f638
+          name: 'HPE SSMC System State'
+          mappings:
+            - value: '1'
+              newvalue: Normal
+            - value: '2'
+              newvalue: Degraded
+            - value: '3'
+              newvalue: Failed
+            - value: '4'
+              newvalue: Failed
+            - value: '5'
+              newvalue: Unknown
