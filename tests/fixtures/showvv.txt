@@ -1,0 +1,9 @@
+                                                                              ----Rsvd(MiB)---- -(MiB)--
+  Id Name           Prov Compr Dedup Type  CopyOf    BsId Rd -Detailed_State- Adm Snp    Usr   VSize
+   0 admin          full NA    NA    base  ---          0 RW normal             0   0  10240   10240
+   2 .srdata        full NA    NA    base  ---          2 RW normal             0   0  61440   61440
+   5 vol_db01       tpvv No    No    base  ---          5 RW normal           256 512 409600 1048576
+   6 vol_app01      tdvv No    Yes   base  ---          6 RW degraded         256   0 996147 1048576
+   7 vol_app01.snap snp  NA    NA    vcopy vol_app01    6 RO normal            --  --     --  1048576
+-----------------------------------------------------------------------------------------------------
+   5 total                                                                    512 512 1477427 3217408

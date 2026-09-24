@@ -1,0 +1,6 @@
+Service           Commonname               Type   Enddate                  Fingerprint
+cim               HPE_3PAR 8200-CZ3812ABCD cert   {{now+400d}} 9B:3F:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22
+unified-server    HPE_3PAR 8200-CZ3812ABCD cert   {{now+20d}} 1D:36:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22
+wsapi             HPE_3PAR 8200-CZ3812ABCD cert   {{now+5d}} 1D:36:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:23
+syslog-sec-client syslog.example.com       cert   {{now-3d}} 44:55:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:24
+ldap              Corp Root CA             rootca {{now+3000d}} AA:BB:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:25

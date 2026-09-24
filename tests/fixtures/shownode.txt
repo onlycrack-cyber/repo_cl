@@ -1,0 +1,4 @@
+                                                                    Control    Data        Cache
+Node ----Name---- -State-- Master InCluster -Service_LED- ---LED--- Mem(MB) Mem(MB) Available(%)
+   0 CZ3812ABCD-0 OK       Yes    Yes       Off           GreenBlnk   32768   32768          100
+   1 CZ3812ABCD-1 Degraded No     Yes       Off           AmberBlnk   32768   32768          100

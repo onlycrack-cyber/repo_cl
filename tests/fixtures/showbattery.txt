@@ -1,0 +1,5 @@
+Node PS Bat Serial          State  ChrgLvl(%) ExpDate    Expired Testing
+   0  0   0 BCC0974242G00C7 OK            100 04/07/2029 No      No
+   0  1   0 BCC0974242G006J OK            100 04/07/2029 No      No
+   1  0   0 BCC0974242G00CY Failed          0 04/07/2029 No      No
+   1  1   0 BCC0974242G00E1 OK            100 01/15/2025 Yes     No

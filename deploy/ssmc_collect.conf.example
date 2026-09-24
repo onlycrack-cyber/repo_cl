@@ -1,0 +1,29 @@
+# /etc/zabbix/ssmc_collect.conf -- credentials for ssmc_collect.py
+#
+#   install -o root -g zabbix -m 640 ssmc_collect.conf.example /etc/zabbix/ssmc_collect.conf
+#
+# [default] applies to every array; a section named after the --host value
+# ({$SSMC_HOST}) overrides it. Environment variables (SSMC_SSH_USER,
+# SSMC_SSH_PASS, SSMC_SSH_PASS_FILE, SSMC_SSH_KEY_FILE, SSMC_KNOWN_HOSTS,
+# SSMC_HOST_KEY_POLICY) take precedence over this file.
+#
+# Use a read-only 3PAR account: createuser -c <pwd> zabbix all browse
+
+[default]
+user = zabbix
+# Either a password ...
+password =
+# ... or a file holding only the password (chmod 600) ...
+password_file =
+# ... or an SSH private key registered with setsshkey on the array.
+key_file =
+port = 22
+# strict   - only hosts already in known_hosts are accepted
+# tofu     - first key seen is saved and enforced afterwards (default)
+# insecure - no host key verification (not recommended)
+host_key_policy = tofu
+known_hosts = /var/lib/zabbix/.ssh/ssmc_known_hosts
+
+[10.0.0.5]
+user = zabbix-ro
+password_file = /etc/zabbix/ssmc_10.0.0.5.pass

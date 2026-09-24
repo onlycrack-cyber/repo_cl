@@ -1,0 +1,11 @@
+N:S:P      Mode     State ----Node_WWN---- -Port_WWN/HW_Addr- Type Protocol Label Partner FailoverState
+0:0:1 initiator     ready 50002ACFF7012345   50002AC001012345 disk      SAS DP-1       -             -
+0:0:2 initiator     ready 50002ACFF7012345   50002AC002012345 disk      SAS DP-2       -             -
+0:1:1    target     ready 2FF70002AC012345   20110002AC012345 host       FC     -   1:1:1          none
+0:1:2    target loss_sync 2FF70002AC012345   20120002AC012345 free       FC     -   1:1:2          none
+0:3:1      peer   offline                -       B4B52FA71234 rcip       IP RCIP0       -             -
+1:1:1    target     ready 2FF70002AC012345   21110002AC012345 host       FC     -   0:1:1          none
+1:1:2    target loss_sync 2FF70002AC012345   21120002AC012345 host       FC     -   0:1:2          none
+1:2:1    target     ready                -       5065F3A1B2C4 host    iSCSI     -       -             -
+------------------------------------------------------------------------------------------------------
+    8

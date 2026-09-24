@@ -1,0 +1,3 @@
+                                                                       ---------------(MB)----------------
+    ID --Name--- ---Model---- -Serial--- Nodes Master TotalCap AllocCap  FreeCap FailedCap
+ 12345 3PAR-ST01 HPE_3PAR 8200 CZ3812ABCD     2      0 23068672 14680064  8388608         0
