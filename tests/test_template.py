@@ -176,16 +176,24 @@ class TemplateTests(unittest.TestCase):
         for u in uuids:
             self.assertRegex(u, UUID_V4)
 
-    def test_masters_are_active_agent_and_dependents_resolve(self):
+    def test_masters_are_external_checks_and_dependents_resolve(self):
         masters = {k for k, i in self.items.items() if i['type'] != 'DEPENDENT'}
-        self.assertEqual({self.items[k]['type'] for k in masters}, {'ZABBIX_ACTIVE'})
+        self.assertEqual(len(masters), 2)
+        self.assertEqual({self.items[k]['type'] for k in masters}, {'EXTERNAL'})
         for k in masters:
-            self.assertNotIn('PASS', k, 'credentials must not be part of an item key')
+            self.assertTrue(k.startswith('ssmc_collect.py['), k)
+            # Every parameter is --opt=value, so a value starting with '-' is never an option.
+            params = re.findall(r'"([^"]*)"', k)
+            self.assertTrue(params and all(re.match(r'^--[a-z-]+=', p) for p in params), k)
+        self.assertIn('"--password={$SSMC_SSH_PASS}"',
+                      [k for k in masters if '--section=all' in k][0])
+        self.assertNotIn('PASS', [k for k in masters if '--section=net' in k][0],
+                         'the net section must not receive the password')
         for it in list(self.all_items()) + list(self.rules.values()):
             if it['type'] == 'DEPENDENT':
                 self.assertIn(it['master_item']['key'], masters, it['key'])
             else:
-                self.assertIn(it['type'], ('ZABBIX_ACTIVE',), it['key'])
+                self.assertEqual(it['type'], 'EXTERNAL', it['key'])
 
     def test_trigger_expressions_reference_existing_items(self):
         for trig, keys in self.all_triggers():
@@ -216,7 +224,9 @@ class TemplateTests(unittest.TestCase):
         text = read_text()
         used = set(USER_MACRO.findall(text))
         self.assertEqual(used - set(self.macros), set())
-        self.assertNotIn('{$SSMC_SSH_PASS}', self.macros)
+        pw = [m for m in self.tpl['macros'] if m['macro'] == '{$SSMC_SSH_PASS}'][0]
+        self.assertEqual(pw.get('type'), 'SECRET_TEXT')
+        self.assertNotIn('value', pw)
 
     def test_tags(self):
         for it in self.all_items():
@@ -265,8 +275,8 @@ class TemplateTests(unittest.TestCase):
         self.assertIsNone(doc_all['error'])
         master_for = {}
         for key in self.items:
-            if key.startswith('ssmc.collect['):
-                master_for[key] = outputs['net' if ',net,' in key else 'all']
+            if key.startswith('ssmc_collect.py['):
+                master_for[key] = outputs['net' if '--section=net' in key else 'all']
 
         values = {}
         for it in self.tpl['items']:
@@ -333,7 +343,7 @@ class TemplateTests(unittest.TestCase):
             preprocess(rules['disks.discovery']['preprocessing'], failed, self.macros)
 
     def test_non_json_output_raises_collection_failed(self):
-        # e.g. script missing or python traceback: the agent returns that text as the value.
+        # e.g. script missing or python traceback: Zabbix stores that text as the value.
         if not shutil.which('node'):
             self.skipTest('node not installed')
         raw = "python3: can't open file '/usr/lib/zabbix/ssmc/ssmc_collect.py': [Errno 13] Permission denied"

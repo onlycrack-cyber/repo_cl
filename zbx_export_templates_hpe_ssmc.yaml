@@ -10,17 +10,14 @@ zabbix_export:
       description: |-
         Monitors HPE 3PAR / Primera storage arrays through the 3PAR CLI over SSH.
 
-        Data comes from ssmc_collect.py run by Zabbix agent (active) on a collector host:
-          UserParameter=ssmc.collect[*],/usr/lib/zabbix/ssmc/ssmc_collect.py --host "$1" --section "$2" --node-addrs "$3" --tls-endpoints "$4"
+        Data comes from ssmc_collect.py, run by the Zabbix server (or proxy) as an External check: put the script into the ExternalScripts directory (python3 + paramiko). No agent is needed.
         Two master items (SSH poll every {$SSMC_COLLECT_INTERVAL}, network probes every {$SSMC_NET_INTERVAL}) feed all other items as dependent items.
 
-        SSH credentials are NOT stored in Zabbix. Put them in /etc/zabbix/ssmc_collect.conf (mode 640, owner root:zabbix) on the collector host, see ssmc_collect.conf.example.
-        The agent Hostname (or Hostname list) must include this host's name.
-
-        Required macros: {$SSMC_HOST}. Optional: {$SSMC_NODE_ADDRS}, {$SSMC_TLS_ENDPOINTS}.
+        Required macros: {$SSMC_HOST}, {$SSMC_SSH_USER}, {$SSMC_SSH_PASS} (Secret text).
+        Optional: {$SSMC_NODE_ADDRS}, {$SSMC_TLS_ENDPOINTS}.
       vendor:
         name: Custom
-        version: 7.0-2.0.0
+        version: 7.0-2.1.0
       groups:
         - name: Templates/Storage
       items:
@@ -37,7 +34,7 @@ zabbix_export:
                 - $.alert_summary.critical
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: alert
@@ -57,7 +54,7 @@ zabbix_export:
                 - $.alert_summary.major
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: alert
@@ -78,7 +75,7 @@ zabbix_export:
                 - $.alert_summary.total
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: alert
@@ -103,7 +100,7 @@ zabbix_export:
               parameters:
                 - 1d
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: alert
@@ -125,7 +122,7 @@ zabbix_export:
                 - $.duration
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: collector
@@ -159,7 +156,7 @@ zabbix_export:
           history: 7d
           trends: '0'
           value_type: CHAR
-          description: 'Empty string means no error. "partial: ..." lists failed commands; "invalid collector output: ..." means the agent did not get JSON from the script; anything else means the whole poll failed.'
+          description: 'Empty string means no error. "partial: ..." lists failed commands; "invalid collector output: ..." means Zabbix did not get JSON from the script; anything else means the whole poll failed.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -172,7 +169,7 @@ zabbix_export:
                   }
                   return data.error ? String(data.error) : '';
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: collector
@@ -196,7 +193,7 @@ zabbix_export:
               error_handler: CUSTOM_VALUE
               error_handler_params: '4'
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: collector
@@ -204,44 +201,10 @@ zabbix_export:
               value: '{$SSMC_SERVICE}'
             - tag: target
               value: hpe-3par
-        - uuid: 07d7f0710c144d4a87753c64a9b72c3c
-          name: Collect all data
-          type: ZABBIX_ACTIVE
-          key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
-          delay: '{$SSMC_COLLECT_INTERVAL}'
-          history: 1h
-          value_type: TEXT
-          trends: '0'
-          timeout: '{$SSMC_ITEM_TIMEOUT}'
-          description: |-
-            Master item. One SSH session per poll runs showsys, showport, showpd, showpd -i, showvv, showbattery, shownode, showalert and showcert in parallel and probes TLS certificates on {$SSMC_TLS_ENDPOINTS}.
-            Replaces the six former External check master items; credentials stay on the collector host (see README).
-          tags:
-            - tag: component
-              value: collector
-            - tag: service
-              value: '{$SSMC_SERVICE}'
-            - tag: target
-              value: hpe-3par
-          triggers:
-            - uuid: 2812dc6b819f48dc8058ae46a9c23f96
-              expression: nodata(/HPE SSMC StorageArray/ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"],{$SSMC_NODATA_TIMEOUT})=1
-              name: No data from the collector for {$SSMC_NODATA_TIMEOUT}
-              priority: HIGH
-              description: ssmc_collect.py has not returned data. Check that the Zabbix agent (active) on the collector host is running, the UserParameter is installed and the host name matches the agent Hostname list.
-              tags:
-                - tag: component
-                  value: collector
-                - tag: scope
-                  value: availability
-                - tag: service
-                  value: '{$SSMC_SERVICE}'
-                - tag: target
-                  value: hpe-3par
         - uuid: fb126d482d6f47de8b61a045c15a5f03
           name: Collect network reachability
-          type: ZABBIX_ACTIVE
-          key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+          type: EXTERNAL
+          key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
           delay: '{$SSMC_NET_INTERVAL}'
           history: 1h
           value_type: TEXT
@@ -256,11 +219,45 @@ zabbix_export:
             - tag: target
               value: hpe-3par
           triggers:
-            - uuid: 2e26032a76514449bebd8fedde0ff4ab
-              expression: nodata(/HPE SSMC StorageArray/ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"],{$SSMC_NODATA_TIMEOUT})=1
+            - uuid: 2ce668553e0349bd956ae8d9dfeac48f
+              expression: nodata(/HPE SSMC StorageArray/ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"],{$SSMC_NODATA_TIMEOUT})=1
               name: No network reachability data for {$SSMC_NODATA_TIMEOUT}
               priority: WARNING
               description: The net section of ssmc_collect.py has stopped reporting.
+              tags:
+                - tag: component
+                  value: collector
+                - tag: scope
+                  value: availability
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+        - uuid: 07d7f0710c144d4a87753c64a9b72c3c
+          name: Collect all data
+          type: EXTERNAL
+          key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
+          delay: '{$SSMC_COLLECT_INTERVAL}'
+          history: 1h
+          value_type: TEXT
+          trends: '0'
+          timeout: '{$SSMC_ITEM_TIMEOUT}'
+          description: |-
+            Master item. One SSH session per poll runs showsys, showport, showpd, showpd -i, showvv, showbattery, shownode, showalert and showcert in parallel and probes TLS certificates on {$SSMC_TLS_ENDPOINTS}.
+            Replaces the six former per-section master items. Credentials come from {$SSMC_SSH_USER} / {$SSMC_SSH_PASS} (Secret text); if the macros are empty the script falls back to /etc/zabbix/ssmc_collect.conf.
+          tags:
+            - tag: component
+              value: collector
+            - tag: service
+              value: '{$SSMC_SERVICE}'
+            - tag: target
+              value: hpe-3par
+          triggers:
+            - uuid: 8375174e714544f4b86d0d2c83191e57
+              expression: nodata(/HPE SSMC StorageArray/ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"],{$SSMC_NODATA_TIMEOUT})=1
+              name: No data from the collector for {$SSMC_NODATA_TIMEOUT}
+              priority: HIGH
+              description: ssmc_collect.py has not returned data. Check that the script is in the Zabbix server (or proxy) ExternalScripts directory and executable, and that external pollers are running.
               tags:
                 - tag: component
                   value: collector
@@ -287,7 +284,7 @@ zabbix_export:
               parameters:
                 - '1.0E-6'
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: capacity
@@ -309,7 +306,7 @@ zabbix_export:
                 - $.system.usedPct
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: capacity
@@ -365,7 +362,7 @@ zabbix_export:
                 - $.disks.length()
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: disk
@@ -390,7 +387,7 @@ zabbix_export:
               parameters:
                 - '1.0E-6'
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: capacity
@@ -416,7 +413,7 @@ zabbix_export:
               parameters:
                 - 1d
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: system
@@ -442,7 +439,7 @@ zabbix_export:
               parameters:
                 - 1d
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: system
@@ -468,7 +465,7 @@ zabbix_export:
               parameters:
                 - 1d
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: system
@@ -491,7 +488,7 @@ zabbix_export:
                 - $.system.overallState
               error_handler: DISCARD_VALUE
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: system
@@ -552,7 +549,7 @@ zabbix_export:
               parameters:
                 - 1d
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: system
@@ -577,7 +574,7 @@ zabbix_export:
               parameters:
                 - '1.0E-6'
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           tags:
             - tag: component
               value: capacity
@@ -618,7 +615,7 @@ zabbix_export:
                     - $.alerts[?(@.id == {#ALERT_ID})].message.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: alert
                   value: '{#ALERT_ID}'
@@ -653,7 +650,7 @@ zabbix_export:
                       return 0;
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: alert
                   value: '{#ALERT_ID}'
@@ -703,7 +700,7 @@ zabbix_export:
                     - tag: target
                       value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -748,7 +745,7 @@ zabbix_export:
                     - $.batteries[?(@.id == '{#BATTERY_ID}')].status.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: battery
                   value: '{#BATTERY_POS}'
@@ -789,7 +786,7 @@ zabbix_export:
                     - $.batteries[?(@.id == '{#BATTERY_ID}')].expired.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: battery
                   value: '{#BATTERY_POS}'
@@ -820,7 +817,7 @@ zabbix_export:
                     - tag: target
                       value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#BATTERY_ID}'
               path: $.id
@@ -866,7 +863,7 @@ zabbix_export:
                     - $.certificates[?(@.id == '{#CERT_ID}')].notAfter.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: certificate
                   value: '{#CERT_SERVICE}'
@@ -949,7 +946,7 @@ zabbix_export:
                     - $.certificates[?(@.id == '{#CERT_ID}')].daysLeft.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: certificate
                   value: '{#CERT_SERVICE}'
@@ -960,7 +957,7 @@ zabbix_export:
                 - tag: target
                   value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#CERT_ID}'
               path: $.id
@@ -1002,7 +999,7 @@ zabbix_export:
                   parameters:
                     - '1.0E-6'
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: disk
@@ -1029,7 +1026,7 @@ zabbix_export:
                   parameters:
                     - 1d
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: disk
@@ -1056,7 +1053,7 @@ zabbix_export:
                   parameters:
                     - 1d
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: disk
@@ -1081,7 +1078,7 @@ zabbix_export:
                     - $.disks[?(@.id == {#DISK_ID})].state.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: disk
@@ -1141,7 +1138,7 @@ zabbix_export:
                   parameters:
                     - 1d
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: disk
@@ -1152,7 +1149,7 @@ zabbix_export:
                 - tag: target
                   value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#DISK_ID}'
               path: $.id
@@ -1194,7 +1191,7 @@ zabbix_export:
                     - $.net[?(@.addr == '{#NET_ADDR}')].up.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
               tags:
                 - tag: component
                   value: network
@@ -1237,7 +1234,7 @@ zabbix_export:
                     - $.net[?(@.addr == '{#NET_ADDR}')].ssh.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
               tags:
                 - tag: component
                   value: network
@@ -1262,7 +1259,7 @@ zabbix_export:
                     - $.net[?(@.addr == '{#NET_ADDR}')].loss.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
               tags:
                 - tag: component
                   value: network
@@ -1308,7 +1305,7 @@ zabbix_export:
                     - $.net[?(@.addr == '{#NET_ADDR}')].rtt.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
               tags:
                 - tag: component
                   value: network
@@ -1364,7 +1361,7 @@ zabbix_export:
                 - tag: target
                   value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},net,"{$SSMC_NODE_ADDRS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--section=net","--node-addrs={$SSMC_NODE_ADDRS}"]
           lld_macro_paths:
             - lld_macro: '{#NET_ADDR}'
               path: $.addr
@@ -1402,7 +1399,7 @@ zabbix_export:
                   parameters:
                     - 1d
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: node
@@ -1437,7 +1434,7 @@ zabbix_export:
                       return 4;
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: node
@@ -1484,7 +1481,7 @@ zabbix_export:
                     - tag: target
                       value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#NODE_ID}'
               path: $.id
@@ -1525,7 +1522,7 @@ zabbix_export:
                     - $.ports[?(@.pos == '{#PORT_POS}')].linkState.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: port
@@ -1555,7 +1552,7 @@ zabbix_export:
                     - tag: target
                       value: hpe-3par
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#PORT_POS}'
               path: $.pos
@@ -1606,7 +1603,7 @@ zabbix_export:
                   parameters:
                     - '1.0E-6'
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: volume
@@ -1631,7 +1628,7 @@ zabbix_export:
                     - $.volumes[?(@.name == '{#VOLUME_NAME}')].state.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: volume
@@ -1675,7 +1672,7 @@ zabbix_export:
                   parameters:
                     - '1.0E-6'
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: volume
@@ -1700,7 +1697,7 @@ zabbix_export:
                     - $.volumes[?(@.name == '{#VOLUME_NAME}')].utilPct.first()
                   error_handler: DISCARD_VALUE
               master_item:
-                key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+                key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
               tags:
                 - tag: component
                   value: volume
@@ -1752,7 +1749,7 @@ zabbix_export:
                     - tag: volume
                       value: '{#VOLUME_NAME}'
           master_item:
-            key: ssmc.collect[{$SSMC_HOST},all,,"{$SSMC_TLS_ENDPOINTS}"]
+            key: ssmc_collect.py["--host={$SSMC_HOST}","--user={$SSMC_SSH_USER}","--password={$SSMC_SSH_PASS}","--section=all","--tls-endpoints={$SSMC_TLS_ENDPOINTS}"]
           lld_macro_paths:
             - lld_macro: '{#VOLUME_NAME}'
               path: $.name
@@ -1825,7 +1822,7 @@ zabbix_export:
           description: 3PAR array management hostname or IP address.
         - macro: '{$SSMC_ITEM_TIMEOUT}'
           value: 30s
-          description: Agent timeout for the SSH master item. Keep above the script --deadline (25s).
+          description: Timeout of the SSH master item. Keep above the script --deadline (25s).
         - macro: '{$SSMC_NET_INTERVAL}'
           value: 1m
           description: Update interval of the network reachability master item.
@@ -1847,6 +1844,12 @@ zabbix_export:
         - macro: '{$SSMC_SERVICE}'
           value: storage
           description: Value of the "service" tag on every item and trigger.
+        - macro: '{$SSMC_SSH_PASS}'
+          type: SECRET_TEXT
+          description: '3PAR SSH password (Secret text). Empty: taken from /etc/zabbix/ssmc_collect.conf.'
+        - macro: '{$SSMC_SSH_USER}'
+          value: 3paradm
+          description: 3PAR SSH user. A read-only (browse) account is enough.
         - macro: '{$SSMC_TLS_ENDPOINTS}'
           value: '8080'
           description: Comma separated [host:]port list whose TLS certificate is checked (8080 = WSAPI). Empty disables.

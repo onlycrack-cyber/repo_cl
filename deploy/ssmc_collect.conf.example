@@ -1,6 +1,11 @@
-# /etc/zabbix/ssmc_collect.conf -- credentials for ssmc_collect.py
+# /etc/zabbix/ssmc_collect.conf -- OPTIONAL settings for ssmc_collect.py
 #
 #   install -o root -g zabbix -m 640 ssmc_collect.conf.example /etc/zabbix/ssmc_collect.conf
+#
+# The template passes {$SSMC_SSH_USER} / {$SSMC_SSH_PASS} on the command line.
+# Leave {$SSMC_SSH_PASS} empty on a host to take the password from this file
+# instead (it then never appears in the process list), or use this file only
+# for SSH port / host key settings.
 #
 # [default] applies to every array; a section named after the --host value
 # ({$SSMC_HOST}) overrides it. Environment variables (SSMC_SSH_USER,
