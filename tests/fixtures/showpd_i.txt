@@ -1,0 +1,8 @@
+ Id CagePos State    ----Node_WWN---- --MFR-- -----Model------ ---Serial--- -FW_Rev- Protocol MediaType -----AdmissionTime-----
+  0 0:0:0   normal   5000CCA07A123450 HGST    HUC101860CS4204  0BGK1230     3P00     SAS      Magnetic  2019-05-01 10:11:12 MSK
+  1 0:1:0   normal   5000CCA07A123451 HGST    HUC101860CS4204  0BGK1231     3P00     SAS      Magnetic  2019-05-01 10:11:12 MSK
+  2 0:2:0   degraded 5000CCA07A123452 SAMSUNG AREA1920S5xnFTRI S3SJNA0K1232 3P04     SAS      SSD       2019-05-01 10:11:12 MSK
+  3 0:3:0   failed   5000CCA07A123453 SEAGATE ST4000NM0025     ZC11233      3P02     SAS      Magnetic  2019-05-01 10:11:12 MSK
+  4 0:4:0   new      5000CCA07A123454 SAMSUNG AREA1920S5xnFTRI S3SJNA0K1234 3P04     SAS      SSD       2026-09-20 09:00:00 MSK
+----------------------------------------------------------------------------------------------------------------------------
+  5 total

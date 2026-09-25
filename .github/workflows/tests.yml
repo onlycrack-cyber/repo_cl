@@ -1,0 +1,24 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: pip install paramiko pyyaml cryptography pyflakes
+      - run: python -m pyflakes ssmc_collect.py tests deploy
+      - run: python ssmc_collect.py --test > /dev/null
+      - run: python -m unittest discover -s tests -v
