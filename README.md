@@ -21,6 +21,8 @@ Zabbix server / proxy (External check)
 
 ## Установка
 
+Пошаговая инструкция по импорту и обновлению шаблона: [docs/IMPORT.md](docs/IMPORT.md).
+
 1. На сервере Zabbix (или на прокси, через который мониторится массив) нужен Python 3.8+
    (CI проверяет 3.9 и 3.12) и `paramiko`:
 
