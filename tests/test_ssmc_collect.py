@@ -154,11 +154,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)  # argparse rejects it
 
     def test_unreachable_host_fails_fast_with_json(self):
+        # Use a port nothing listens on: CI runners have a real sshd on 127.0.0.1:22.
+        probe = socket.socket()
+        probe.bind(('127.0.0.1', 0))
+        closed_port = probe.getsockname()[1]
+        probe.close()
+        cfg = os.path.join(tempfile.mkdtemp(), 'ssmc.conf')
+        with open(cfg, 'w') as fh:
+            fh.write('[default]\nuser = u\npassword = p\nport = %d\n' % closed_port)
         start = time.monotonic()
         code, out, _ = run_script('--host', '127.0.0.1', '--section', 'system',
-                                  '--connect-timeout', '2',
-                                  env={'SSMC_SSH_USER': 'u', 'SSMC_SSH_PASS': 'p',
-                                       'SSMC_KNOWN_HOSTS': '/dev/null'})
+                                  '--connect-timeout', '2', '--config', cfg,
+                                  env={'SSMC_KNOWN_HOSTS': '/dev/null'})
         self.assertLess(time.monotonic() - start, 5)
         self.assertEqual(code, sc.EXIT_FAILED)
         self.assertIn('SSH connect', out['error'])
