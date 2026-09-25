@@ -15,16 +15,24 @@ Sections (--section, comma separated):
   certs      showcert + TLS probes       -> "certificates"
   net        ICMP/TCP reachability of the array and its nodes (no SSH) -> "net"
 
-Credentials are never passed on the command line. They are resolved from,
-in order: --user / --password-file, the SSMC_SSH_USER / SSMC_SSH_PASS /
-SSMC_SSH_PASS_FILE / SSMC_SSH_KEY_FILE environment variables, and the
-[<host>] or [default] section of the --config INI file.
+Credentials are resolved from, in order: --user / --password /
+--password-file, the SSMC_SSH_USER / SSMC_SSH_PASS / SSMC_SSH_PASS_FILE /
+SSMC_SSH_KEY_FILE environment variables, and the [<host>] or [default]
+section of the --config INI file. Empty values fall through to the next source.
+
+--password exists for the Zabbix External check, where the template passes
+the {$SSMC_SSH_PASS} Secret text macro. Arguments are visible to local users
+in the process list while the script runs; use --password-file or the config
+file where that matters. Pass it as --password=VALUE so a password starting
+with "-" is not mistaken for an option.
 
 Exit codes: 0 OK, 1 partial (some commands failed), 2 collection failed
 (e.g. SSH unreachable), 3 usage or configuration error, 4 --validate failed.
-A JSON document is printed on stdout in every case except usage errors, so
-Zabbix always gets something to parse. The Zabbix agent ignores the exit code
-of a UserParameter; it is there for cron/manual runs and --test.
+A JSON document is printed on stdout in every case except an unknown option
+(argparse prints usage to stderr and exits 2).
+Zabbix 7.0 stores the output of an External check whatever its exit code
+(verified on 7.0.31), so failures reach Zabbix as JSON ("error", "status")
+and fire the collector triggers; the exit code is for cron/manual runs.
 
 The deprecated positional form used by the old External check,
 `ssmc_collect.py HOST USER PASS SECTION`, still works and always exits 0.
@@ -48,7 +56,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-VERSION = '2.0.0'
+VERSION = '2.1.0'
 
 EXIT_OK = 0
 EXIT_PARTIAL = 1
@@ -919,7 +927,10 @@ def resolve_credentials(host, args, warnings):
             creds[key] = env[var]
     if args.user:
         creds['user'] = args.user
-    if args.password_file:
+    if args.password:
+        creds['password'] = args.password
+        creds.pop('password_file', None)
+    elif args.password_file:
         creds['password_file'] = args.password_file
         creds.pop('password', None)
     if creds.get('password_file') and not creds.get('password'):
@@ -930,7 +941,7 @@ def resolve_credentials(host, args, warnings):
     if not creds.get('user'):
         raise ConfigError('SSH user not set (use --user, SSMC_SSH_USER or %s)' % cfg_path)
     if not creds.get('password') and not creds.get('key_file'):
-        raise ConfigError('no SSH password or key for %s (use SSMC_SSH_PASS, '
+        raise ConfigError('no SSH password or key for %s (use {$SSMC_SSH_PASS}, SSMC_SSH_PASS, '
                           '--password-file or %s)' % (host, cfg_path))
     return creds
 
@@ -947,13 +958,14 @@ def parse_sections(value):
 
 
 def build_arg_parser():
-    # allow_abbrev=False: otherwise '--password' would silently match '--password-file'.
+    # allow_abbrev=False: otherwise e.g. '--pass' would silently match '--password-file'.
     p = argparse.ArgumentParser(description='HPE 3PAR collector for Zabbix (JSON on stdout).',
                                 allow_abbrev=False)
     p.add_argument('--host', help='array management address')
     p.add_argument('--section', default='all', help='comma separated sections (default: all)')
     p.add_argument('--config', help='INI file with credentials (default %s)' % DEFAULT_CONFIG)
-    p.add_argument('--user', help='SSH user (password is never accepted on the command line)')
+    p.add_argument('--user', help='SSH user')
+    p.add_argument('--password', help='SSH password (use --password=VALUE; visible in the process list)')
     p.add_argument('--password-file', help='file containing only the SSH password')
     p.add_argument('--node-addrs', default='', help="node addresses, e.g. '0=10.0.0.11,1=10.0.0.12'")
     p.add_argument('--tls-endpoints', default='', help="TLS ports to check certs on, e.g. '8080,ssmc:8443'")
@@ -1044,7 +1056,7 @@ def main(argv=None):
         problems = validate(result)
         if problems:
             result['validation'] = problems
-            status = EXIT_INVALID
+            status = result['status'] = EXIT_INVALID
     print(json.dumps(result, indent=2 if args.pretty else None, sort_keys=False))
     return status
 

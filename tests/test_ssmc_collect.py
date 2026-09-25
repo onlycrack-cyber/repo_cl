@@ -148,10 +148,28 @@ class CliTests(unittest.TestCase):
         code, out, _ = run_script('--host', 'x', '--section', 'bogus')
         self.assertEqual(code, sc.EXIT_USAGE)
 
-    def test_password_not_accepted_on_command_line(self):
-        proc = subprocess.run([sys.executable, SCRIPT, '--host', 'x', '--password', 'p'],
+    def test_option_abbreviations_rejected(self):
+        # '--pass' must not silently resolve to --password or --password-file.
+        proc = subprocess.run([sys.executable, SCRIPT, '--host', 'x', '--pass', 'p'],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.assertEqual(proc.returncode, 2)  # argparse rejects it
+        self.assertEqual(proc.returncode, 2)
+
+    def test_password_argument_resolution(self):
+        parser = sc.build_arg_parser()
+        # The template passes --password=VALUE, so a leading '-' stays part of the value.
+        args = parser.parse_args(['--host', 'h', '--user=u', '--password=-a"b c,d]$x'])
+        creds = sc.resolve_credentials('h', args, [])
+        self.assertEqual((creds['user'], creds['password']), ('u', '-a"b c,d]$x'))
+        # Empty macro -> falls back to the environment / config file.
+        args = parser.parse_args(['--host', 'h', '--user=', '--password='])
+        old = dict(os.environ)
+        os.environ.update(SSMC_SSH_USER='envu', SSMC_SSH_PASS='envp', SSMC_CONFIG='/nonexistent')
+        try:
+            creds = sc.resolve_credentials('h', args, [])
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertEqual((creds['user'], creds['password']), ('envu', 'envp'))
 
     def test_unreachable_host_fails_fast_with_json(self):
         # Use a port nothing listens on: CI runners have a real sshd on 127.0.0.1:22.
