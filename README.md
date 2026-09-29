@@ -103,6 +103,10 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 Старый вызов `ssmc_collect.py HOST USER PASS SECTION` по-прежнему работает: всегда exit 0,
 формат ответа прежний, в ответе есть поле `deprecated`.
 
+## Дашборд Grafana
+
+Готовый дашборд для этого шаблона (через плагин Zabbix для Grafana): [grafana/](grafana/README.md).
+
 ## Скрипт
 
 ```
