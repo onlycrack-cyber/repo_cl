@@ -1,0 +1,3197 @@
+{
+  "uid": "hpe-3par-zabbix",
+  "title": "HPE 3PAR — мониторинг массива",
+  "description": "Дашборд для шаблона Zabbix «HPE SSMC StorageArray» (ssmc_collect.py). Источник данных — плагин Zabbix для Grafana.",
+  "tags": [
+    "zabbix",
+    "storage",
+    "hpe-3par"
+  ],
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "weekStart": "",
+  "links": [],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Zabbix",
+        "type": "datasource",
+        "query": "alexanderzobnin-zabbix-datasource",
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "group",
+        "label": "Группа",
+        "type": "query",
+        "datasource": {
+          "type": "alexanderzobnin-zabbix-datasource",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "group": "/.*/",
+          "host": "",
+          "application": "",
+          "itemTag": "",
+          "item": "",
+          "queryType": "group"
+        },
+        "definition": "",
+        "refresh": 1,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "host",
+        "label": "Массив",
+        "type": "query",
+        "datasource": {
+          "type": "alexanderzobnin-zabbix-datasource",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "group": "$group",
+          "host": "/.*/",
+          "application": "",
+          "itemTag": "",
+          "item": "",
+          "queryType": "host"
+        },
+        "definition": "",
+        "refresh": 1,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Обзор",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Состояние массива",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "System overall state"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Normal",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Degraded",
+                  "color": "orange",
+                  "index": 1
+                },
+                "3": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 2
+                },
+                "4": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "5": {
+                  "text": "Unknown",
+                  "color": "text",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Вычисляется скриптом по нодам, дискам, батареям и томам. Причина — на панели «Причина состояния»."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Сбор данных",
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collection status"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Partial",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Config error",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Invalid output",
+                  "color": "dark-red",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Статус последнего запуска ssmc_collect.py. Текст ошибки — в разделе «Сбор данных»."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "CRITICAL алерты",
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Active CRITICAL alerts"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "dark-red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Активные алерты массива с severity Critical или Fatal. На каждый заводится проблема Disaster."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "MAJOR алерты",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Active MAJOR alerts"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Активные алерты массива с severity Major."
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "Заполненность массива",
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Capacity used, in %"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "sizing": "auto"
+      },
+      "description": "Пороги как в макросах шаблона {$SSMC_CAPACITY_PUSED_WARN} = 80 и {$SSMC_CAPACITY_PUSED_CRIT} = 90."
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Время сбора",
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collection duration"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Длительность последнего опроса. Порог {$SSMC_COLLECT_TIME_WARN} = 5 с."
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Массив",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "System name"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "System model"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "System serial number"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "System name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Имя"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "System model"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Модель"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "System serial number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Серийный номер"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 20
+        }
+      },
+      "description": "Имя, модель и серийный номер из showsys.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Причина состояния",
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "System state reasons"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "нет",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        }
+      },
+      "description": "Почему массив считается Degraded или Failed. «none» — всё в норме.",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Последний CRITICAL алерт",
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Latest CRITICAL alert"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "нет",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        }
+      },
+      "description": "Текст самого нового активного алерта Critical/Fatal. «нет» — таких алертов нет.",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "alexanderzobnin-zabbix-triggers-panel",
+      "title": "Активные проблемы",
+      "description": "Проблемы Zabbix по хосту, от Warning и выше, самые важные сверху.",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "5",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "proxy": {
+            "filter": ""
+          },
+          "trigger": {
+            "filter": ""
+          },
+          "tags": {
+            "filter": ""
+          },
+          "showProblems": "problems",
+          "options": {
+            "hostsInMaintenance": false,
+            "hostProxy": false,
+            "limit": 100,
+            "sortProblems": "priority",
+            "acknowledged": 2,
+            "minSeverity": 2
+          }
+        }
+      ],
+      "options": {
+        "layout": "table",
+        "showTags": true,
+        "hostField": false,
+        "hostTechNameField": false,
+        "statusField": true,
+        "severityField": true,
+        "ackField": true,
+        "ageField": true,
+        "descriptionField": true,
+        "descriptionAtNewLine": false,
+        "sortProblems": "priority",
+        "fontSize": "100%",
+        "pageSize": 10,
+        "problemTimeline": true,
+        "highlightNewEvents": true,
+        "highlightNewerThan": "1h",
+        "customLastChangeFormat": false
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Ёмкость",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Ёмкость массива",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^(Total|Allocated|Free) capacity \\(TB\\)$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: TB",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisBorderShow": false,
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Общая, выделенная и свободная ёмкость (showsys). Единицы — как в шаблоне (MiB × 10⁻⁶).",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(Total|Allocated|Free) capacity \\(TB\\)$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Заполненность массива",
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Capacity used, in %"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisBorderShow": false,
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Пунктир — пороги 80 и 90 %."
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "Утилизация томов",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Volume \\[.*\\] utilization \\(%\\)$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "left",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "description": "Занятое место от размера тома. Пороги {$VOLUME_UTIL_WARN} = 80 и {$VOLUME_UTIL_CRIT} = 90. У томов с полным выделением (admin, .srdata) всегда 100%, триггеров на них нет.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Volume \\[(.*)\\] utilization \\(%\\)$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Состояние томов",
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Volume \\[.*\\] state$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Normal",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Degraded",
+                  "color": "orange",
+                  "index": 1
+                },
+                "3": {
+                  "text": "Starting/Copy",
+                  "color": "blue",
+                  "index": 2
+                },
+                "4": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "5": {
+                  "text": "Unknown",
+                  "color": "text",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Состояние"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Объект"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Состояние",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Последнее состояние каждого тома (showvv).",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Volume \\[(.*)\\] state$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "Оборудование",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "state-timeline",
+      "title": "Ноды",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Node \\[.*\\] status$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Degraded",
+                  "color": "orange",
+                  "index": 1
+                },
+                "4": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 2
+                },
+                "5": {
+                  "text": "Unknown",
+                  "color": "text",
+                  "index": 3
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "description": "Состояние контроллеров (shownode). Failed — нода отказала или вышла из кластера.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Node \\[(.*)\\] status$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "state-timeline",
+      "title": "Батареи",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Battery \\[.*\\] status$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Degraded",
+                  "color": "orange",
+                  "index": 1
+                },
+                "4": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 2
+                },
+                "5": {
+                  "text": "Unknown",
+                  "color": "text",
+                  "index": 3
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "description": "Батареи блоков питания нод (showbattery).",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Battery \\[(.*)\\] status$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Диски",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Disk \\[.*\\] state$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Normal",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Degraded",
+                  "color": "orange",
+                  "index": 1
+                },
+                "3": {
+                  "text": "New",
+                  "color": "blue",
+                  "index": 2
+                },
+                "4": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "5": {
+                  "text": "Unknown",
+                  "color": "text",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Состояние"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Объект"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Состояние",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Последнее состояние каждого физического диска по позиции cage:mag:disk. Проблемные сверху.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Disk \\[(.*)\\] state$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Порты",
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Port \\[.*\\] link state$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "UNKNOWN",
+                  "color": "text",
+                  "index": 0
+                },
+                "1": {
+                  "text": "CONFIG_WAIT",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "ALPA_WAIT",
+                  "color": "orange",
+                  "index": 2
+                },
+                "3": {
+                  "text": "LOGIN_WAIT",
+                  "color": "orange",
+                  "index": 3
+                },
+                "4": {
+                  "text": "READY",
+                  "color": "green",
+                  "index": 4
+                },
+                "5": {
+                  "text": "LOSS_SYNC",
+                  "color": "red",
+                  "index": 5
+                },
+                "6": {
+                  "text": "ERROR_STATE",
+                  "color": "dark-red",
+                  "index": 6
+                },
+                "7": {
+                  "text": "XXX",
+                  "color": "orange",
+                  "index": 7
+                },
+                "8": {
+                  "text": "NONPARTICIPATING",
+                  "color": "orange",
+                  "index": 8
+                },
+                "9": {
+                  "text": "INITIALIZING",
+                  "color": "orange",
+                  "index": 9
+                },
+                "10": {
+                  "text": "PENDING_RESET",
+                  "color": "orange",
+                  "index": 10
+                },
+                "11": {
+                  "text": "OFFLINE",
+                  "color": "red",
+                  "index": 11
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Состояние"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Объект"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Состояние",
+            "desc": false
+          }
+        ]
+      },
+      "description": "Состояние линка FC/iSCSI/SAS/RCIP-портов. Неиспользуемые порты (free) не обнаруживаются.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Port \\[(.*)\\] link state$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Сертификаты",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "Дней до истечения сертификата",
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Certificate \\[.*\\] days left$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн.",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 7
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Осталось"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Объект"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Осталось",
+            "desc": false
+          }
+        ]
+      },
+      "description": "showcert и TLS-порты из {$SSMC_TLS_ENDPOINTS}. Пороги как в шаблоне: {$SSMC_CERT_EXPIRY_CRIT} = 7 и {$SSMC_CERT_EXPIRY_WARN} = 30 дней. Отрицательное — истёк.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Certificate \\[(.*)\\] days left$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Сеть",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 25,
+      "type": "state-timeline",
+      "title": "Доступность",
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/: reachable$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "dark-red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "description": "Ответ по ICMP или TCP с сервера Zabbix. Адреса нод — макрос {$SSMC_NODE_ADDRS}.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): reachable$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "state-timeline",
+      "title": "SSH-порт",
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/: SSH port$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "dark-red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "description": "Доступность TCP/22. Без него скрипт не может опросить массив.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): SSH port$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Время отклика ICMP",
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/: ICMP response time$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisBorderShow": false,
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Средняя задержка ping. Порог {$SSMC_NET_RTT_WARN} = 100 мс.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): ICMP response time$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Потери ICMP",
+      "gridPos": {
+        "x": 12,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/: ICMP loss$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisBorderShow": false,
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Потери пакетов ping. Порог {$SSMC_NET_LOSS_WARN} = 20 %.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): ICMP loss$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "Сбор данных",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Время сбора",
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collection duration"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisBorderShow": false,
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Длительность опроса. Пунктир — порог {$SSMC_COLLECT_TIME_WARN} = 5 с."
+    },
+    {
+      "id": 31,
+      "type": "state-timeline",
+      "title": "Статус сбора",
+      "gridPos": {
+        "x": 12,
+        "y": 77,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collection status"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Partial",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Failed",
+                  "color": "dark-red",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Config error",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Invalid output",
+                  "color": "dark-red",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "description": "OK, Partial (часть команд не выполнилась) или Failed.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^Collection status$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "table",
+      "title": "Ошибка сбора",
+      "gridPos": {
+        "x": 0,
+        "y": 84,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collection error"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "нет ошибок",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        }
+      },
+      "description": "Текст последней ошибки ssmc_collect.py. «нет ошибок» — последний опрос прошёл чисто.",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        }
+      ]
+    }
+  ],
+  "version": 1
+}
