@@ -1,0 +1,642 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: 64b47dfd578d4f24b604bf8a01be3e6b
+      template: VMware capacity planning
+      name: VMware capacity planning
+      description: |-
+        Capacity planning for VMware: forecasts and year-over-year changes for datastores, cluster CPU, memory and power.
+
+        Link to the vCenter host together with the standard "VMware" template (uses its {$VMWARE.URL}, {$VMWARE.USERNAME}, {$VMWARE.PASSWORD} macros and its items). Cluster items aggregate the hypervisor hosts that template discovers into the "<cluster> (hypervisor)" host groups.
+
+        Year-over-year items need trends older than one year: the standard templates keep trends for 365d, so raise it (Administration > Housekeeping > Override item trend period, e.g. 800d).
+      vendor:
+        name: Custom
+        version: 7.0-1.0.0
+      groups:
+        - name: Templates/Applications
+      discovery_rules:
+        - uuid: 6a912a3129424b9aa743103322699a8e
+          name: 'Capacity: datastore discovery'
+          type: SIMPLE
+          key: vmware.datastore.discovery["{$VMWARE.URL}"]
+          delay: 1h
+          username: '{$VMWARE.USERNAME}'
+          password: '{$VMWARE.PASSWORD}'
+          lifetime: 7d
+          description: Same request as the standard datastore discovery; the quoted parameter only makes the key distinct.
+          item_prototypes:
+            - uuid: c64e682202fc4346ad1a8296db3b0ec3
+              name: 'Datastore [{#DATASTORE}]: used, %'
+              type: CALCULATED
+              key: vmw.cap.ds.pused[{#DATASTORE.UUID}]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: 100-last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 85a95346d56548579c0ce2b52570bf49
+              name: 'Datastore [{#DATASTORE}]: used space'
+              type: CALCULATED
+              key: vmw.cap.ds.used[{#DATASTORE.UUID}]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}])*(100-last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree]))/100
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 265e5c5d3f2444b695a3fd1fe2c59eff
+              name: 'Datastore [{#DATASTORE}]: free space'
+              type: CALCULATED
+              key: vmw.cap.ds.free[{#DATASTORE.UUID}]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}])*last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])/100
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 752d0c0bb13e4cef9578423602e86903
+              name: 'Datastore [{#DATASTORE}]: days until free space below threshold'
+              type: CALCULATED
+              key: vmw.cap.ds.daysleft[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: d
+              params: (count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])>{$VMW.DS.PFREE.MIN})*((1-(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})<0))*min(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})<0))-(1-(count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              description: 'Linear trend of free space over {$VMW.FORECAST.PERIOD}. 0: already below the threshold. {$VMW.FORECAST.MAX.DAYS}: not decreasing or later than that. -1: less than {$VMW.FORECAST.MIN.HISTORY} of history, no forecast yet.'
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+              trigger_prototypes:
+                - uuid: 746a794210a74639a2403385fd18f9f3
+                  expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.CRIT}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
+                  name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.CRIT} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}. 0 days means the threshold is already reached. Ignores -1 (not enough history yet).
+                  tags:
+                    - tag: component
+                      value: datastore
+                    - tag: datastore
+                      value: '{#DATASTORE}'
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+                - uuid: 495db132e235455d8d2106136bab516a
+                  expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.WARN}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.WARN}*1.2
+                  name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.WARN} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}.
+                  dependencies:
+                    - name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.CRIT} days'
+                      expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.CRIT}
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
+                  tags:
+                    - tag: component
+                      value: datastore
+                    - tag: datastore
+                      value: '{#DATASTORE}'
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+            - uuid: 403044fbb0dd483481c3ca270506a852
+              name: 'Datastore [{#DATASTORE}]: date free space below threshold (forecast)'
+              type: CALCULATED
+              key: vmw.cap.ds.exhaust.date[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: unixtime
+              params: (last(//vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0)*(last(//vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.MAX.DAYS})*(now()+last(//vmw.cap.ds.daysleft[{#DATASTORE.UUID}])*86400)
+              description: 'When free space is expected to fall below {$VMW.DS.PFREE.MIN}%. 0: no forecast (not decreasing, later than {$VMW.FORECAST.MAX.DAYS} days, or not enough history).'
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 8d9246aa546f4fe3abed601f795782ba
+              name: 'Datastore [{#DATASTORE}]: used at forecast horizon, %'
+              type: CALCULATED
+              key: vmw.cap.ds.forecast[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: min(max((count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(100-forecast(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON}))+(1-(count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*(100-last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])),0),100)
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 79f265fd1c264f2893b7e0e15b1fde78
+              name: 'Datastore [{#DATASTORE}]: used change over 30 days, p.p.'
+              type: CALCULATED
+              key: vmw.cap.ds.pused.change30d[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now/d-30d)-avg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d)
+              description: Daily average now minus the daily average 30 days ago, percentage points.
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 5bc719e4c11145a69d814b19b25b3bc3
+              name: 'Datastore [{#DATASTORE}]: used change over 1 year, p.p.'
+              type: CALCULATED
+              key: vmw.cap.ds.pused.change1y[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now/d-1y)-avg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d)
+              description: Daily average now minus the same day a year ago. Needs trends older than one year.
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 7f874b20681e4b64b64a05b174d7f84d
+              name: 'Datastore [{#DATASTORE}]: used space 1 year ago'
+              type: CALCULATED
+              key: vmw.cap.ds.used.1y[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}],1d:now/d-1y)*(100-trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now/d-1y))/100
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: c80700348fa14f8cabdceb1d020888c7
+              name: 'Datastore [{#DATASTORE}]: used space change over 1 year'
+              type: CALCULATED
+              key: vmw.cap.ds.used.change1y[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: avg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}],1d)*(100-avg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d))/100-trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}],1d:now/d-1y)*(100-trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now/d-1y))/100
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: 4509106c74f248a5a703012a55809bcf
+              name: 'Datastore [{#DATASTORE}]: capacity change over 1 year'
+              type: CALCULATED
+              key: vmw.cap.ds.total.change1y[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: avg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}],1d)-trendavg(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID}],1d:now/d-1y)
+              description: Added (positive) or removed capacity compared with a year ago.
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+        - uuid: c36ff39850e24494bcfb6ea0c233be53
+          name: 'Capacity: cluster discovery'
+          type: SIMPLE
+          key: vmware.cluster.discovery["{$VMWARE.URL}"]
+          delay: 1h
+          username: '{$VMWARE.USERNAME}'
+          password: '{$VMWARE.PASSWORD}'
+          lifetime: 7d
+          description: Same request as the standard cluster discovery. Cluster items aggregate the hypervisor hosts in the host group "<cluster> (hypervisor)" that the standard template creates.
+          item_prototypes:
+            - uuid: fa5bfa12ea9143c79c8a7a5b25ef1f9f
+              name: 'Cluster [{#CLUSTER.NAME}]: hypervisors'
+              type: CALCULATED
+              key: vmw.cap.cl.hosts["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              params: count(last_foreach(/*/vmware.hv.hw.memory[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cluster
+                - tag: target
+                  value: vmware
+            - uuid: efb22f7df112498598f61fbebbf77007
+              name: 'Cluster [{#CLUSTER.NAME}]: CPU usage'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.used["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: Hz
+              params: sum(last_foreach(/*/vmware.hv.cpu.usage[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: 897e8b4bd50c4873a66ac3aee4958cd7
+              name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization, %'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: avg(last_foreach(/*/vmware.hv.cpu.usage.perf[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              description: Average of the hosts' "CPU usage in percent" (exact for clusters of identical hosts).
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: 5b43cceabe4f4808ae731a1bf00bedb7
+              name: 'Cluster [{#CLUSTER.NAME}]: memory used'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.used["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: sum(last_foreach(/*/vmware.hv.memory.used[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+            - uuid: 0e0be3961cbf47b38e7296046eddf32c
+              name: 'Cluster [{#CLUSTER.NAME}]: memory total'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.total["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: B
+              params: sum(last_foreach(/*/vmware.hv.hw.memory[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+            - uuid: cf4b7e4a1c7b4d1cb1ac4507ac68e323
+              name: 'Cluster [{#CLUSTER.NAME}]: memory utilization, %'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: 100*sum(last_foreach(/*/vmware.hv.memory.used[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))/sum(last_foreach(/*/vmware.hv.hw.memory[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+            - uuid: bced735f33b14207941be208eb0a4c51
+              name: 'Cluster [{#CLUSTER.NAME}]: power usage'
+              type: CALCULATED
+              key: vmw.cap.cl.power["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: W
+              params: sum(last_foreach(/*/vmware.hv.power[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: power
+                - tag: target
+                  value: vmware
+            - uuid: a4116d8995e54fa180eb48beeb63756d
+              name: 'Cluster [{#CLUSTER.NAME}]: power usage maximum allowed'
+              type: CALCULATED
+              key: vmw.cap.cl.power.max["{#CLUSTER.NAME}"]
+              delay: 5m
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: W
+              params: sum(last_foreach(/*/vmware.hv.power[*,*,max]?[group="{#CLUSTER.NAME} (hypervisor)"]))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: power
+                - tag: target
+                  value: vmware
+            - uuid: f0d3569aa3db4e3da2cb9c55a49006b1
+              name: 'Cluster [{#CLUSTER.NAME}]: energy per day'
+              type: CALCULATED
+              key: vmw.cap.cl.energy.day["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: kWh
+              params: sum(avg_foreach(/*/vmware.hv.power[*,*]?[group="{#CLUSTER.NAME} (hypervisor)"],1d))*24/1000
+              description: Average power over the last 24 hours × 24 h.
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: power
+                - tag: target
+                  value: vmware
+            - uuid: 3997c6a533514c23b16b772543d91750
+              name: 'Cluster [{#CLUSTER.NAME}]: days until CPU above threshold'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: d
+              params: (count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"])<{$VMW.CL.CPU.MAX})*((1-(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})<0))*min(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})<0))-(1-(count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              description: Linear trend of cluster CPU utilization over {$VMW.FORECAST.PERIOD}. -1 until the cluster item has {$VMW.FORECAST.MIN.HISTORY} of history (it starts when the template is linked).
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+              trigger_prototypes:
+                - uuid: 89b25940ce9a48eab11eaed855f035d3
+                  expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.CRIT} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}. 0 days means the threshold is already reached. Ignores -1 (not enough history yet).
+                  tags:
+                    - tag: cluster
+                      value: '{#CLUSTER.NAME}'
+                    - tag: component
+                      value: cpu
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+                - uuid: 0f5e1fdf2db449349210e7b679a46ed3
+                  expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.WARN}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
+                  name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.WARN} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}.
+                  dependencies:
+                    - name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.CRIT} days'
+                      expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  tags:
+                    - tag: cluster
+                      value: '{#CLUSTER.NAME}'
+                    - tag: component
+                      value: cpu
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+            - uuid: 503053c5940f481fb850508018c32de8
+              name: 'Cluster [{#CLUSTER.NAME}]: date CPU above threshold (forecast)'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.exhaust.date["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: unixtime
+              params: (last(//vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0)*(last(//vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.MAX.DAYS})*(now()+last(//vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])*86400)
+              description: '0: no forecast (not growing, too far ahead, or not enough history).'
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: 2eb49b78c36e43e58d13dea70f1360c1
+              name: 'Cluster [{#CLUSTER.NAME}]: CPU at forecast horizon, %'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.forecast["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: min(max((count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*forecast(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-(count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"]),0),100)
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: f4d0e9076218473b96eb4f455c5f42ed
+              name: 'Cluster [{#CLUSTER.NAME}]: days until memory above threshold'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: d
+              params: (count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"])<{$VMW.CL.MEM.MAX})*((1-(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})<0))*min(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})<0))-(1-(count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+              trigger_prototypes:
+                - uuid: 6622052064e349868746773489847a9e
+                  expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.CRIT} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}. 0 days means the threshold is already reached. Ignores -1 (not enough history yet).
+                  tags:
+                    - tag: cluster
+                      value: '{#CLUSTER.NAME}'
+                    - tag: component
+                      value: memory
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+                - uuid: d8e9b8104d5240bf948f2703f54f9206
+                  expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.WARN}
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
+                  name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.WARN} days'
+                  opdata: 'Days left: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: Linear forecast over the last {$VMW.FORECAST.PERIOD}.
+                  dependencies:
+                    - name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.CRIT} days'
+                      expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  tags:
+                    - tag: cluster
+                      value: '{#CLUSTER.NAME}'
+                    - tag: component
+                      value: memory
+                    - tag: scope
+                      value: capacity
+                    - tag: target
+                      value: vmware
+            - uuid: 76c64222f74f46b6ab73f29b6cb7bf8a
+              name: 'Cluster [{#CLUSTER.NAME}]: date memory above threshold (forecast)'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.exhaust.date["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: unixtime
+              params: (last(//vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0)*(last(//vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.MAX.DAYS})*(now()+last(//vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])*86400)
+              description: '0: no forecast (not growing, too far ahead, or not enough history).'
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+            - uuid: c6d463caf90a4f158423d83eb6932c97
+              name: 'Cluster [{#CLUSTER.NAME}]: memory at forecast horizon, %'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.forecast["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 90d
+              trends: 730d
+              value_type: FLOAT
+              units: '%'
+              params: min(max((count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*forecast(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-(count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"]),0),100)
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+      tags:
+        - tag: class
+          value: software
+        - tag: target
+          value: vmware
+      macros:
+        - macro: '{$VMW.CL.CPU.MAX}'
+          value: '80'
+          description: Cluster CPU utilization, %, considered exhausted for planning.
+        - macro: '{$VMW.CL.MEM.MAX}'
+          value: '85'
+          description: Cluster memory utilization, %, considered exhausted for planning.
+        - macro: '{$VMW.DS.PFREE.MIN}'
+          value: '10'
+          description: Datastore free space, %, considered exhausted for planning.
+        - macro: '{$VMW.FORECAST.CRIT}'
+          value: '30'
+          description: High trigger when a resource runs out in fewer days.
+        - macro: '{$VMW.FORECAST.HORIZON}'
+          value: 90d
+          description: How far ahead the "forecast" items look.
+        - macro: '{$VMW.FORECAST.MAX.DAYS}'
+          value: '3650'
+          description: '"Days until" value meaning "not within 10 years / not growing".'
+        - macro: '{$VMW.FORECAST.MIN.HISTORY}'
+          value: 7d
+          description: Minimum history before forecasting; until then "days until" is -1.
+        - macro: '{$VMW.FORECAST.PERIOD}'
+          value: 30d
+          description: History window the linear forecasts are fitted on.
+        - macro: '{$VMW.FORECAST.WARN}'
+          value: '90'
+          description: Warning trigger when a resource runs out in fewer days.

@@ -1,0 +1,2385 @@
+{
+  "uid": "vmware-power",
+  "title": "VMware — питание",
+  "description": "Потребление гипервизоров vCenter в кВт, энергия по дням и сравнение с прошлым годом.",
+  "tags": [
+    "vmware",
+    "zabbix",
+    "capacity",
+    "power"
+  ],
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "weekStart": "",
+  "links": [
+    {
+      "title": "VMware",
+      "type": "dashboards",
+      "tags": [
+        "vmware",
+        "capacity"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Zabbix",
+        "type": "datasource",
+        "query": "alexanderzobnin-zabbix-datasource",
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "vcgroup",
+        "label": "Группа vCenter",
+        "type": "query",
+        "datasource": {
+          "type": "alexanderzobnin-zabbix-datasource",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "queryType": "group",
+          "group": "/.*/",
+          "host": "",
+          "application": "",
+          "itemTag": "",
+          "item": ""
+        },
+        "definition": "",
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "vcenter",
+        "label": "vCenter",
+        "type": "query",
+        "datasource": {
+          "type": "alexanderzobnin-zabbix-datasource",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "queryType": "host",
+          "group": "$vcgroup",
+          "host": "/.*/",
+          "application": "",
+          "itemTag": "",
+          "item": ""
+        },
+        "definition": "",
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "cluster",
+        "label": "Кластер",
+        "type": "query",
+        "datasource": {
+          "type": "alexanderzobnin-zabbix-datasource",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "queryType": "item",
+          "group": "$vcgroup",
+          "host": "$vcenter",
+          "application": "",
+          "itemTag": "",
+          "item": "/^Cluster \\[.*\\]: power usage$/"
+        },
+        "definition": "",
+        "refresh": 2,
+        "sort": 1,
+        "regex": "/^Cluster \\[(.*)\\]: power/",
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Сводка",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Потребление сейчас",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Суммарная мощность всех гипервизоров выбранных кластеров.",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 5,
+        "h": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Разрешённый максимум",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage maximum allowed"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Сумма «Power usage maximum allowed» хостов: предел, заданный политикой питания.",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "id": 3,
+      "gridPos": {
+        "x": 5,
+        "y": 1,
+        "w": 5,
+        "h": 5
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Загрузка по питанию",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "power"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage maximum allowed"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "max"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "description": "Потребление сейчас / разрешённый максимум.",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "load",
+            "replaceFields": false,
+            "binary": {
+              "left": "power",
+              "operator": "/",
+              "right": "max"
+            }
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "load"
+              ]
+            }
+          }
+        }
+      ],
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "id": 4,
+      "gridPos": {
+        "x": 10,
+        "y": 1,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Энергия за период",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.024"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Сумма суточного потребления за выбранный период (средняя мощность за сутки × 24 ч).",
+      "id": 5,
+      "gridPos": {
+        "x": 14,
+        "y": 1,
+        "w": 5,
+        "h": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Изменение к прошлому году",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "power"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1y"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "power_1y"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.25
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "description": "Средняя мощность за выбранный период против того же периода год назад.",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "mean"
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "YOY_d",
+            "replaceFields": false,
+            "binary": {
+              "left": "power",
+              "operator": "-",
+              "right": "power_1y"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "YOY",
+            "replaceFields": false,
+            "binary": {
+              "left": "YOY_d",
+              "operator": "/",
+              "right": "power_1y"
+            }
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "YOY"
+              ]
+            }
+          }
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "x": 19,
+        "y": 1,
+        "w": 5,
+        "h": 5
+      }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Динамика",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Потребление: этот год и прошлый",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1y"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "gradientMode": "opacity",
+            "axisBorderShow": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "сейчас"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "год назад"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Суммарная мощность выбранных кластеров и тот же период год назад (пунктир).",
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Энергия по дням: этот год и прошлый",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.024"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.024"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1y"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": true,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "сейчас"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "год назад"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — этот год, пунктир — тот же день год назад.",
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Кластер $cluster",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "repeat": "cluster"
+    },
+    {
+      "type": "timeseries",
+      "title": "Потребление по хостам",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^$cluster \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "spanNulls": true,
+            "gradientMode": "opacity",
+            "axisBorderShow": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Мощность каждого гипервизора кластера, накопительно.",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): Power usage$",
+            "renamePattern": "$1"
+          }
+        }
+      ],
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Кластер: этот год и прошлый",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^$cluster \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^$cluster \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "sumSeries",
+                "category": "",
+                "params": [],
+                "defaultParams": []
+              },
+              "params": [],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1y"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "gradientMode": "opacity",
+            "axisBorderShow": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "сейчас"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "год назад"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Хосты",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Гипервизоры",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "/^Power usage( maximum allowed)?$/"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "entity\\metric"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Хост"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Power usage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Сейчас"
+              },
+              {
+                "id": "unit",
+                "value": "watt"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Power usage maximum allowed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Максимум"
+              },
+              {
+                "id": "unit",
+                "value": "watt"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Сейчас",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Текущая мощность каждого гипервизора.",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "mode": "seriesToRows",
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Field",
+            "format": "regexp",
+            "regExp": "/^(?<entity>[^:]+): (?<metric>.*)$/",
+            "replace": false,
+            "keepTime": false
+          }
+        },
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "metric",
+            "rowField": "entity",
+            "valueField": "Last *",
+            "emptyValue": "null"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "entity\\metric": 0,
+              "Power usage": 1,
+              "Power usage maximum allowed": 2
+            }
+          }
+        }
+      ],
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Самые нагруженные хосты",
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "0",
+          "group": {
+            "filter": "/^($cluster) \\(hypervisor\\)$/"
+          },
+          "host": {
+            "filter": "/.*/"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Power usage"
+          },
+          "functions": [
+            {
+              "def": {
+                "name": "scale",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "0.001"
+              ],
+              "added": false
+            }
+          ],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "left",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 26,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*): Power usage$",
+            "renamePattern": "$1"
+          }
+        }
+      ],
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "id": 15,
+      "gridPos": {
+        "x": 12,
+        "y": 33,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}
