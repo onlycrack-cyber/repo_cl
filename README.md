@@ -107,6 +107,12 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 
 Готовый дашборд для этого шаблона (через плагин Zabbix для Grafana): [grafana/](grafana/README.md).
 
+## VMware vCenter: ёмкость и прогнозы
+
+Отдельный набор: шаблон Zabbix **VMware capacity planning** и три дашборда Grafana
+(датасторы, CPU и память, питание) с изменениями за год и прогнозом исчерпания ресурсов:
+[vmware/](vmware/README.md).
+
 ## Скрипт
 
 ```
