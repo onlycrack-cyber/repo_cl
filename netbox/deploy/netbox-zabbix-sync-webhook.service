@@ -1,0 +1,21 @@
+[Unit]
+Description=NetBox -> Zabbix sync: NetBox webhook receiver
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=nbzs
+Group=nbzs
+EnvironmentFile=/etc/netbox-zabbix-sync/env
+ExecStart=/opt/netbox-zabbix-sync/venv/bin/python /opt/netbox-zabbix-sync/netbox_zabbix_sync.py serve
+Restart=on-failure
+RestartSec=10
+RuntimeDirectory=netbox-zabbix-sync
+StateDirectory=netbox-zabbix-sync
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

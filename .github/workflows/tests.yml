@@ -19,6 +19,6 @@ jobs:
         with:
           node-version: '20'
       - run: pip install paramiko pyyaml cryptography pyflakes
-      - run: python -m pyflakes ssmc_collect.py tests deploy vmware/tools
+      - run: python -m pyflakes ssmc_collect.py tests deploy vmware/tools netbox
       - run: python ssmc_collect.py --test > /dev/null
       - run: python -m unittest discover -s tests -v

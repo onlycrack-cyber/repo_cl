@@ -1,0 +1,124 @@
+# Конфиг netbox_zabbix_sync.py. Копия: /etc/netbox-zabbix-sync/config.yaml (640, root:nbzs).
+#
+# Секреты НЕ храните здесь: они берутся из переменных окружения
+# (NETBOX_TOKEN, ZABBIX_TOKEN или ZABBIX_USER/ZABBIX_PASSWORD, NETBOX_WEBHOOK_SECRET).
+# В любой строке можно сослаться на окружение: ${VAR} или ${VAR:-значение по умолчанию}.
+
+netbox:
+  url: ${NETBOX_URL:-https://netbox.example.local}
+  verify_ssl: true              # или путь к CA: /etc/ssl/certs/corp-ca.pem
+  timeout: 30
+  retries: 3
+  # Фильтры API /dcim/devices/. Статус не указывайте: устройства в других
+  # статусах нужны, чтобы деактивировать их хосты.
+  filters: {}
+  #  site: [dc1, dc2]
+  #  tag: [monitoring]
+  ip_sources: [primary_ip4]     # можно [primary_ip4, oob_ip]
+
+zabbix:
+  url: ${ZABBIX_URL:-https://zabbix.example.local}
+  verify_ssl: true
+  managed_tag: {tag: netbox_sync, value: managed}
+  adopt_existing: false         # true — забрать под управление существующие хосты с тем же именем
+  enable_on_active: true
+  proxy:
+    default: null
+    by_site: {}
+    #  dc2: zbx-proxy-dc2
+
+# Статус устройства NetBox -> действие: sync | disable | maintenance | ignore
+status_actions:
+  active: sync
+  decommissioning: maintenance  # предложить режим обслуживания (MM)
+  staged: disable
+  offline: disable
+  planned: disable
+  failed: disable
+  inventory: disable
+default_action: disable
+missing_action: disable         # устройство удалено из NetBox
+
+# Интерфейс по умолчанию (IP = primary IPv4 устройства)
+interface:
+  type: agent                   # agent | snmp | ipmi | jmx
+  port: 10050
+
+# Группы хостов: сайт и роль устройства
+host_groups:
+  patterns:
+    - "NetBox/Sites/{site}"
+    - "NetBox/Roles/{role}"
+  # - "NetBox/Tenants/{tenant}"   # группа пропускается, если tenant пуст
+  managed_prefixes: ["NetBox/"] # группы вне префикса (ручные) сохраняются
+  create_missing: true
+  fallback: "NetBox/Unsorted"
+
+# Шаблоны по модели устройства (device_type.model), правила сверху вниз,
+# срабатывает первое подошедшее. contains сравнивается после нормализации:
+# регистр, пробелы, точки и дефисы не важны, "Gen10" == "G10".
+# Поэтому более специфичные правила (Gen10 Plus) должны идти раньше общих (Gen10).
+# Имена шаблонов — как в Zabbix (видимое или техническое имя).
+templates:
+  rules:
+    - name: DL380 Gen10 Plus
+      contains: "380 g10 plus"
+      templates: ["HPE ProLiant DL380 Gen10 Plus by SNMP"]
+      interface: {type: snmp, details: {version: 2, community: "{$SNMP_COMMUNITY}"}}
+    - name: DL380 Gen10
+      contains: "380 g10"       # ProLiant DL380 Gen10, DL380G10, 380 G10
+      templates: ["HPE ProLiant DL380 Gen10 by SNMP"]
+      interface: {type: snmp, details: {version: 2, community: "{$SNMP_COMMUNITY}"}}
+    - name: DL360 Gen10
+      contains: [".360G10", "360 gen10"]
+      templates: ["HPE ProLiant DL360 Gen10 by SNMP"]
+      interface: {type: snmp, details: {version: 2, community: "{$SNMP_COMMUNITY}"}}
+    - name: DL380/DL360 Gen9
+      regex: 'DL3[68]0\s*G(en)?9'
+      templates: ["HPE ProLiant Gen9 by SNMP"]
+      interface: {type: snmp, details: {version: 2, community: "{$SNMP_COMMUNITY}"}}
+  default: ["ICMP Ping"]        # модель не распознана
+  always: []                    # добавить всем, например ["ICMP Ping"]
+  first_match_only: true
+  custom_field: null            # например zabbix_templates — ручное переопределение в NetBox
+  clear_on_unlink: false
+
+extra_tags:
+  site: "{site_slug}"
+  role: "{role}"
+
+inventory:
+  enabled: true
+  fields:
+    serialno_a: "{serial}"
+    asset_tag: "{asset_tag}"
+    vendor: "{manufacturer}"
+    model: "{model}"
+    location: "{site}"
+
+description: "Синхронизировано из NetBox: {url}"
+
+maintenance:
+  mode: propose                 # propose | auto | off
+  duration_hours: 72
+  collect_data: true
+  name_prefix: "NetBox decommissioning: "
+  remove_on_active: true
+
+safety:
+  max_disable_count: 20
+  max_disable_ratio: 0.3
+
+webhook:
+  listen: 127.0.0.1             # за reverse proxy с TLS; 0.0.0.0 — только в доверенной сети
+  port: 8085
+  path: /netbox/webhook
+  full_sync_interval: 3600
+  debounce: 2
+
+logging:
+  level: INFO
+  file: null                    # /var/log/netbox-zabbix-sync/sync.log
+
+lock_file: /run/netbox-zabbix-sync/sync.lock
+summary_file: /var/lib/netbox-zabbix-sync/last_run.json

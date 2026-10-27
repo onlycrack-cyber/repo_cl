@@ -148,6 +148,13 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 (датасторы, CPU и память, питание) с изменениями за год и прогнозом исчерпания ресурсов:
 [vmware/](vmware/README.md).
 
+## NetBox → Zabbix: синхронизация устройств
+
+Скрипт `netbox/netbox_zabbix_sync.py` создаёт и обновляет хосты Zabbix по активным
+устройствам NetBox (IP, группы по сайту и роли, шаблоны по модели), деактивирует хосты
+выведенных и удалённых устройств и предлагает режим обслуживания для устройств в статусе
+decommissioning: [netbox/](netbox/README.md).
+
 ## Скрипт
 
 ```
@@ -183,6 +190,8 @@ python3 -m unittest discover -s tests -v
 - `tests/test_template.py`: структура шаблона (UUID v4, ссылки триггеров, зависимости, макросы,
   теги, сохранность legacy-ключей) и прогон вывода `--test` через все шаги препроцессинга
   (JSONPath и JavaScript через node).
+- `tests/test_netbox_sync.py`: синхронизация NetBox → Zabbix на поддельных NetBox и Zabbix API
+  (создание, идемпотентность, обновление, деактивация, MM, защита от массовой деактивации).
 
 ## Отчёт аудита (версия 2.0)
 
