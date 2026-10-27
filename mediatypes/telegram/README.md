@@ -3,7 +3,20 @@
 Один общий Media Type для всех пользователей: chat_id берётся из поля **Send to**
 медиа пользователя через макрос `{ALERT.SENDTO}`.
 
-## Установка
+## Установка через импорт (рекомендуется)
+
+1. *Alerts → Media types → Import*, файл [`zbx_mediatype_telegram.yaml`](zbx_mediatype_telegram.yaml)
+   (формат Zabbix 7.0).
+2. Откройте Media type `Telegram` и вставьте токен бота в параметр `Token`.
+3. Настройте медиа пользователей (п. 4 ниже).
+
+В экспорт уже включены шаблоны сообщений (Message templates) для проблем,
+восстановления, обновления проблем, discovery, авторегистрации и internal-событий.
+
+Скрипт в YAML должен совпадать с `telegram_webhook.js` — это проверяет
+`tests/test_mediatype_telegram.py`. При правке `.js` обновите поле `script` в YAML.
+
+## Ручная установка
 
 1. *Alerts → Media types → Create media type*, Type: **Webhook**, Name: `Telegram`.
 2. Параметры:
