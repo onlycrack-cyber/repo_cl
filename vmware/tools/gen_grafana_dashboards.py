@@ -19,6 +19,7 @@ DS = {'type': 'alexanderzobnin-zabbix-datasource', 'uid': '${datasource}'}
 REFS = 'ABCDEFGHIJKLMNOP'
 OK, WARN, HIGH, CRIT, GREY, BLUE = 'green', 'orange', 'red', 'dark-red', 'text', 'blue'
 LAST_YEAR = 'год назад'
+NOW_NAME = 'за период'
 
 # Hosts holding the data.
 VC = ('$vcgroup', '$vcenter')                               # vCenter host: stock datastores + capacity template
@@ -223,28 +224,27 @@ def timeseries(title, targets, desc='', unit='none', decimals=None, thresh=None,
                  overrides, transformations, **extra)
 
 
-def last_year_style(ref='B', name=LAST_YEAR):
-    """Override: the timeShift(1y) query drawn as a grey dashed line named 'год назад'."""
-    return {'matcher': {'id': 'byFrameRefID', 'options': ref},
-            'properties': [{'id': 'displayName', 'value': name},
-                           {'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': 'text'}},
-                           {'id': 'custom.lineStyle', 'value': {'fill': 'dash', 'dash': [6, 4]}},
-                           {'id': 'custom.fillOpacity', 'value': 0}]}
+def year_pair(where, item, functions=()):
+    """The selected period ('за период') and the same period a year ago, named by setAlias.
+
+    Overrides match these names, not refIds: with history (short ranges) the plugin's
+    frontend drops the frames' refId, so byFrameRefID overrides would not apply.
+    """
+    return [named_q('A', where, item, NOW_NAME, functions),
+            named_q('B', where, item, LAST_YEAR, list(functions) + [fn('timeShift', '1y')])]
 
 
-def last_year_by_name(name=LAST_YEAR):
-    """Same as last_year_style() for a field produced by a transformation."""
+def last_year_by_name(name=LAST_YEAR, *extra):
+    """Override: the year-ago series drawn as a grey dashed line."""
     return {'matcher': {'id': 'byName', 'options': name},
             'properties': [{'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': 'text'}},
                            {'id': 'custom.lineStyle', 'value': {'fill': 'dash', 'dash': [6, 4]}},
-                           {'id': 'custom.fillOpacity', 'value': 0}]}
+                           {'id': 'custom.fillOpacity', 'value': 0}] + list(extra)}
 
 
-def named(ref, name, color=None):
-    props = [{'id': 'displayName', 'value': name}]
-    if color:
-        props.append({'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': color}})
-    return {'matcher': {'id': 'byFrameRefID', 'options': ref}, 'properties': props}
+def now_by_name(color=None):
+    props = [{'id': 'color', 'value': {'mode': 'fixed', 'fixedColor': color}}] if color else []
+    return {'matcher': {'id': 'byName', 'options': NOW_NAME}, 'properties': props}
 
 
 def bargauge(title, targets, desc='', unit='percent', thresh=None, transformations=None, mappings=None,
@@ -414,16 +414,15 @@ def datastores():
                    'Линейный прогноз на {$VMW.FORECAST.HORIZON} по тренду за {$VMW.FORECAST.PERIOD}.',
                    transformations=[rename('^Datastore \\[(.*)\\]: .*$')], max_=100), 12, 8, now=True)
 
-    b.row('Утилизация за год')
+    b.row('Утилизация за период')
     b.add(timeseries('Заполненность датасторов', [zq('A', VC, FREE, used_pct_from_free())],
-                     'Занято = 100 − «Free space on datastore (percentage)» из стандартного шаблона: вся история, '
-                     'которая есть в Zabbix. Пунктир — 80 и 90 %.', 'percent', 1, PCT, 'dashed',
+                     'Занято = 100 − «Free space on datastore (percentage)» из стандартного шаблона за выбранный '
+                     'период. Пунктир — 80 и 90 %.', 'percent', 1, PCT, 'dashed',
                      [rename('^Free space on datastore \\[(.*)\\] \\(percentage\\)$')], min_=0, max_=100, fill=0,
-                     legend_calcs=('lastNotNull', 'max'), timeFrom='1y'), 24, 9)
+                     legend_calcs=('lastNotNull', 'max')), 24, 9)
     b.add(timeseries('Ёмкость датасторов', [zq('A', VC, TOTAL)],
                      'Размер каждого датастора: видно, когда добавляли или убирали ёмкость.', 'bytes', 1,
-                     transformations=[rename('^Total size of datastore \\[(.*)\\]$')], stack=True, fill=30,
-                     timeFrom='1y'), 24, 7)
+                     transformations=[rename('^Total size of datastore \\[(.*)\\]$')], stack=True, fill=30), 24, 7)
 
     b.row('Год к году')
     b.add(bargauge('Изменение заполненности за год, п.п.', [zq('A', VC, DSI('used change over 1 year, p.p.'))],
@@ -434,12 +433,10 @@ def datastores():
                    'Сколько данных добавилось (или удалено) за год.', 'bytes',
                    thresholds((BLUE, None)), [rename('^Datastore \\[(.*)\\]: .*$')],
                    min_=None, decimals=1), 12, 8, now=True)
-    p = timeseries('$datastore: этот год и прошлый', [
-        zq('A', VC, rx('Free space on datastore [$datastore] (percentage)'), used_pct_from_free()),
-        zq('B', VC, rx('Free space on datastore [$datastore] (percentage)'),
-           used_pct_from_free() + [fn('timeShift', '1y')])],
+    p = timeseries('$datastore за период', [
+        *year_pair(VC, rx('Free space on datastore [$datastore] (percentage)'), used_pct_from_free())],
         'Заполненность за выбранный период и за тот же период год назад (пунктир).', 'percent', 1, PCT, 'dashed',
-        overrides=[named('A', 'сейчас'), last_year_style()], min_=0, max_=100, fill=10,
+        overrides=[now_by_name(), last_year_by_name()], min_=0, max_=100, fill=10,
         repeat='datastore', repeatDirection='h', maxPerRow=3)
     b.add(p, 8, 8)
     return dashboard('vmware-datastores', 'VMware — датасторы',
@@ -500,21 +497,20 @@ def cpu_memory():
                      'Пунктир — порог 80 %.', 'percent', 1, thresholds((OK, None), (HIGH, 80)), 'dashed',
                      [rename('^(.*): CPU usage in percent$')], min_=0, max_=100, fill=0,
                      legend_calcs=('mean', 'max')), 12, 8)
-    b.add(timeseries('Память кластера: этот год и прошлый', [
+    b.add(timeseries('Память кластера за период', [
         named_q('A', HV_ONE, 'Used memory', 'used', [fn('sumSeries')]),
         named_q('B', HV_ONE, 'Total memory', 'total', [fn('sumSeries')]),
         named_q('C', HV_ONE, 'Used memory', 'used_1y', [fn('sumSeries'), fn('timeShift', '1y')]),
         named_q('D', HV_ONE, 'Total memory', 'total_1y', [fn('sumSeries'), fn('timeShift', '1y')])],
         'Занятая память / вся память хостов кластера, сейчас и за тот же период год назад (пунктир).',
         'percentunit', 1, thresholds((OK, None), (HIGH, 0.85)), 'dashed',
-        [JOIN, calc('сейчас', 'used', '/', 'total'), calc(LAST_YEAR, 'used_1y', '/', 'total_1y'),
-         keep('Time', 'сейчас', LAST_YEAR)],
+        [JOIN, calc(NOW_NAME, 'used', '/', 'total'), calc(LAST_YEAR, 'used_1y', '/', 'total_1y'),
+         keep('Time', NOW_NAME, LAST_YEAR)],
         overrides=[last_year_by_name()], min_=0, max_=1), 12, 8)
-    b.add(timeseries('CPU кластера, частота: этот год и прошлый', [
-        zq('A', HV_ONE, 'CPU usage', [fn('sumSeries')]),
-        zq('B', HV_ONE, 'CPU usage', [fn('sumSeries'), fn('timeShift', '1y')])],
+    b.add(timeseries('CPU кластера, частота за период', [
+        *year_pair(HV_ONE, 'CPU usage', [fn('sumSeries')])],
         'Суммарная потребляемая частота CPU всех хостов кластера.', 'hertz', 1,
-        overrides=[named('A', 'сейчас'), last_year_style()]), 12, 8)
+        overrides=[now_by_name(), last_year_by_name()]), 12, 8)
     b.add(stat('Изменение к прошлому году', [
         named_q('A', HV_ONE, 'CPU usage', 'cpu', [fn('sumSeries')]),
         named_q('B', HV_ONE, 'CPU usage', 'cpu_1y', [fn('sumSeries'), fn('timeShift', '1y')]),
@@ -574,18 +570,17 @@ def power():
         transformations=MEAN_EACH + change('power', 'power_1y', 'YOY') + [keep('YOY')]), 5, 5)
 
     b.row('Динамика')
-    b.add(timeseries('Потребление: этот год и прошлый', [
-        zq('A', HV_ALL, 'Power usage', KW), zq('B', HV_ALL, 'Power usage', KW + [fn('timeShift', '1y')])],
+    b.add(timeseries('Потребление за период', [
+        *year_pair(HV_ALL, 'Power usage', KW)],
         'Суммарная мощность выбранных кластеров и тот же период год назад (пунктир).', 'kwatt', 2,
-        overrides=[named('A', 'сейчас'), last_year_style()], legend_calcs=('mean', 'max')), 24, 8)
-    b.add(timeseries('Энергия по дням: этот год и прошлый', [
-        zq('A', HV_ALL, 'Power usage', KWH_DAY), zq('B', HV_ALL, 'Power usage', KWH_DAY + [fn('timeShift', '1y')])],
-        'кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — этот год, пунктир — тот же день год назад.',
+        overrides=[now_by_name(), last_year_by_name()], legend_calcs=('mean', 'max')), 24, 8)
+    b.add(timeseries('Энергия по дням за период', [
+        *year_pair(HV_ALL, 'Power usage', KWH_DAY)],
+        'кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — выбранный период, пунктир — тот же день год назад.',
         'kwatth', 1, bars=True,
-        overrides=[named('A', 'сейчас', 'blue'), last_year_style(),
-                   {'matcher': {'id': 'byFrameRefID', 'options': 'B'},
-                    'properties': [{'id': 'custom.drawStyle', 'value': 'line'},
-                                   {'id': 'custom.lineWidth', 'value': 2}]}],
+        overrides=[now_by_name('blue'),
+                   last_year_by_name(LAST_YEAR, {'id': 'custom.drawStyle', 'value': 'line'},
+                                     {'id': 'custom.lineWidth', 'value': 2})],
         legend_calcs=('sum', 'mean')),
           24, 8)
 
@@ -593,9 +588,9 @@ def power():
     b.add(timeseries('Потребление по хостам', [zq('A', HV_ONE, 'Power usage', [fn('scale', '0.001')])],
                      'Мощность каждого гипервизора кластера, накопительно.', 'kwatt', 2,
                      transformations=[rename('^(.*): Power usage$')], stack=True, fill=40), 12, 8)
-    b.add(timeseries('Кластер: этот год и прошлый', [
-        zq('A', HV_ONE, 'Power usage', KW), zq('B', HV_ONE, 'Power usage', KW + [fn('timeShift', '1y')])],
-        '', 'kwatt', 2, overrides=[named('A', 'сейчас'), last_year_style()], legend_calcs=('mean',)), 12, 8)
+    b.add(timeseries('Кластер за период', [
+        *year_pair(HV_ONE, 'Power usage', KW)],
+        '', 'kwatt', 2, overrides=[now_by_name(), last_year_by_name()], legend_calcs=('mean',)), 12, 8)
 
     b.row('Хосты')
     b.add(pivot('Гипервизоры', [zq('A', HV_ALL, '/^Power usage( maximum allowed)?$/')],

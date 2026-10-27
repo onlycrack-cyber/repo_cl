@@ -1891,7 +1891,7 @@
     {
       "id": 12,
       "type": "row",
-      "title": "Утилизация за год",
+      "title": "Утилизация за период",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -2049,7 +2049,7 @@
           "sort": "desc"
         }
       },
-      "description": "Занято = 100 − «Free space on datastore (percentage)» из стандартного шаблона: вся история, которая есть в Zabbix. Пунктир — 80 и 90 %.",
+      "description": "Занято = 100 − «Free space on datastore (percentage)» из стандартного шаблона за выбранный период. Пунктир — 80 и 90 %.",
       "transformations": [
         {
           "id": "renameByRegex",
@@ -2059,7 +2059,6 @@
           }
         }
       ],
-      "timeFrom": "1y",
       "id": 13,
       "gridPos": {
         "x": 0,
@@ -2178,7 +2177,6 @@
           }
         }
       ],
-      "timeFrom": "1y",
       "id": 14,
       "gridPos": {
         "x": 0,
@@ -2437,7 +2435,7 @@
     },
     {
       "type": "timeseries",
-      "title": "$datastore: этот год и прошлый",
+      "title": "$datastore за период",
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",
         "uid": "${datasource}"
@@ -2497,6 +2495,23 @@
               },
               "params": [
                 "100"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "за период"
               ],
               "added": false
             }
@@ -2581,6 +2596,23 @@
                 "1y"
               ],
               "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "год назад"
+              ],
+              "added": false
             }
           ],
           "options": {
@@ -2650,26 +2682,17 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
+              "id": "byName",
+              "options": "за период"
             },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "сейчас"
-              }
-            ]
+            "properties": []
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
+              "id": "byName",
+              "options": "год назад"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "год назад"
-              },
               {
                 "id": "color",
                 "value": {

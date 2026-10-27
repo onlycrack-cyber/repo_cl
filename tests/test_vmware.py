@@ -183,6 +183,19 @@ class DashboardTests(unittest.TestCase):
         for fname, d in self.dashes.items():
             self.assertNotIn('__expr__', json.dumps(d), fname)
 
+    def test_no_refid_overrides(self):
+        # The plugin's frontend drops refId of history frames (short ranges): match by name instead.
+        for fname, d in self.dashes.items():
+            self.assertNotIn('byFrameRefID', json.dumps(d), fname)
+
+    def test_panels_follow_the_time_picker(self):
+        # Only "current value" panels read a fixed last 24 h; history follows the selected period.
+        for fname, d in self.dashes.items():
+            for p in panels(d):
+                with self.subTest(dashboard=fname, panel=p['title']):
+                    self.assertIn(p.get('timeFrom'), (None, '24h'))
+                    self.assertNotIn('этот год', p['title'].lower())
+
     def test_unique_uids_and_ids(self):
         uids = [d['uid'] for d in self.dashes.values()]
         self.assertEqual(len(uids), len(set(uids)))

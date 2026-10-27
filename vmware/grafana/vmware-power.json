@@ -1073,7 +1073,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Потребление: этот год и прошлый",
+      "title": "Потребление за период",
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",
         "uid": "${datasource}"
@@ -1126,6 +1126,23 @@
               },
               "params": [
                 "0.001"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "за период"
               ],
               "added": false
             }
@@ -1201,6 +1218,23 @@
               },
               "params": [
                 "1y"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "год назад"
               ],
               "added": false
             }
@@ -1262,26 +1296,17 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
+              "id": "byName",
+              "options": "за период"
             },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "сейчас"
-              }
-            ]
+            "properties": []
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
+              "id": "byName",
+              "options": "год назад"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "год назад"
-              },
               {
                 "id": "color",
                 "value": {
@@ -1333,7 +1358,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Энергия по дням: этот год и прошлый",
+      "title": "Энергия по дням за период",
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",
         "uid": "${datasource}"
@@ -1408,6 +1433,23 @@
               },
               "params": [
                 "0.024"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "за период"
               ],
               "added": false
             }
@@ -1507,6 +1549,23 @@
                 "1y"
               ],
               "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "год назад"
+              ],
+              "added": false
             }
           ],
           "options": {
@@ -1566,14 +1625,10 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
+              "id": "byName",
+              "options": "за период"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "сейчас"
-              },
               {
                 "id": "color",
                 "value": {
@@ -1585,14 +1640,10 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
+              "id": "byName",
+              "options": "год назад"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "год назад"
-              },
               {
                 "id": "color",
                 "value": {
@@ -1613,15 +1664,7 @@
               {
                 "id": "custom.fillOpacity",
                 "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
+              },
               {
                 "id": "custom.drawStyle",
                 "value": "line"
@@ -1649,7 +1692,7 @@
           "sort": "desc"
         }
       },
-      "description": "кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — этот год, пунктир — тот же день год назад.",
+      "description": "кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — выбранный период, пунктир — тот же день год назад.",
       "id": 9,
       "gridPos": {
         "x": 0,
@@ -1810,7 +1853,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Кластер: этот год и прошлый",
+      "title": "Кластер за период",
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",
         "uid": "${datasource}"
@@ -1863,6 +1906,23 @@
               },
               "params": [
                 "0.001"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "за период"
               ],
               "added": false
             }
@@ -1940,6 +2000,23 @@
                 "1y"
               ],
               "added": false
+            },
+            {
+              "def": {
+                "name": "setAlias",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "год назад"
+              ],
+              "added": false
             }
           ],
           "options": {
@@ -1999,26 +2076,17 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
+              "id": "byName",
+              "options": "за период"
             },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "сейчас"
-              }
-            ]
+            "properties": []
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
+              "id": "byName",
+              "options": "год назад"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "год назад"
-              },
               {
                 "id": "color",
                 "value": {
