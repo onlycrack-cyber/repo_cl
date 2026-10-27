@@ -12,6 +12,7 @@ Sections (--section, comma separated):
   batteries  showbattery                 -> "batteries"
   nodes      shownode                    -> "nodes"
   alerts     showalert                   -> "alerts", "alert_summary"
+             (each alert gets a "resolution" hint, see BUILTIN_ALERT_RESOLUTIONS)
   certs      showcert + TLS probes       -> "certificates"
   net        ICMP/TCP reachability of the array and its nodes (no SSH) -> "net"
 
@@ -56,7 +57,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-VERSION = '2.1.0'
+VERSION = '2.2.0'
 
 EXIT_OK = 0
 EXIT_PARTIAL = 1
@@ -77,6 +78,7 @@ ALL_SECTIONS = ('system', 'disks', 'volumes', 'batteries', 'nodes', 'alerts', 'c
 KNOWN_SECTIONS = set(ALL_SECTIONS) | {'all', 'net'}
 
 DEFAULT_CONFIG = '/etc/zabbix/ssmc_collect.conf'
+DEFAULT_RESOLUTIONS = '/etc/zabbix/ssmc_alert_resolutions.json'
 DEFAULT_KNOWN_HOSTS = '~/.ssh/ssmc_known_hosts'
 
 # Generic component state codes shared by disks, volumes, nodes and batteries.
@@ -99,6 +101,21 @@ ALERT_SEVERITIES = {
 }
 ALERT_CRITICAL = 5
 ALERT_MAJOR = 4
+
+# showalert prints no resolution; SSMC shows one from its own knowledge base.
+# These hints (texts as SSMC shows them) are attached to matching alerts as "resolution".
+# Rules from DEFAULT_RESOLUTIONS (or $SSMC_ALERT_RESOLUTIONS) are checked first:
+#   [{"match": "<regex on Message>", "code": "<MessageCode, optional>", "resolution": "..."}]
+BUILTIN_ALERT_RESOLUTIONS = [
+    {'match': r'Node-Failure-Analysis file received',
+     'resolution': 'There was a node failure analysis file on the NEMOE that has been saved. '
+                   'Contact your authorized support provider for technical support and services.'},
+    {'match': r'No power detected on link \d+ from node \d+ to node \d+',
+     'resolution': 'The HPE OS could not establish communication between the specified nodes. '
+                   'Confirm that both nodes are running HPE OS software. If both nodes are running '
+                   'HPE OS software, power cycle the node that is not a part of the cluster. '
+                   'If the problem persists, replace the node.'},
+]
 
 CERT_DATE_RE = re.compile(
     r'([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})(?:\s+(GMT|UTC))?')
@@ -349,6 +366,40 @@ def parse_showalert(text):
         a['severity_code'] = ALERT_SEVERITIES.get(a['severity'].lower(), 0)
         result.append(a)
     return result
+
+
+def compile_resolutions(rules):
+    compiled = []
+    for r in rules:
+        if not isinstance(r, dict) or not isinstance(r.get('resolution'), str) \
+                or not (r.get('match') or r.get('code')):
+            raise ValueError('each rule needs "resolution" and "match" or "code": %r' % (r,))
+        compiled.append((re.compile(r['match'], re.I) if r.get('match') else None,
+                         str(r.get('code', '')).lower(), r['resolution']))
+    return compiled
+
+
+def load_alert_resolutions(warnings, path=None):
+    """Site rules from the JSON file (if any) followed by the built-in ones."""
+    path = path or os.environ.get('SSMC_ALERT_RESOLUTIONS') or DEFAULT_RESOLUTIONS
+    site = []
+    if os.path.exists(path):
+        try:
+            with open(path) as fh:
+                site = compile_resolutions(json.load(fh))
+        except (OSError, ValueError, re.error) as ex:
+            warnings.append('alert resolutions %s ignored: %s' % (path, ex))
+    return site + compile_resolutions(BUILTIN_ALERT_RESOLUTIONS)
+
+
+def alert_resolution(alert, rules):
+    for rx, code, text in rules:
+        if code and code != alert.get('code', '').lower():
+            continue
+        if rx is not None and not rx.search(alert.get('message', '')):
+            continue
+        return text
+    return ''
 
 
 def summarize_alerts(alerts):
@@ -729,7 +780,7 @@ def parse_tls_endpoints(host, spec):
 # Collection
 # --------------------------------------------------------------------------
 
-def build_sections(runner_outputs, sections, now):
+def build_sections(runner_outputs, sections, now, resolutions=None):
     """Turn raw command output into the JSON sections. Missing output -> section omitted."""
     out = runner_outputs
     data = {}
@@ -750,6 +801,9 @@ def build_sections(runner_outputs, sections, now):
             n['model'] = model
     if 'alerts' in sections and 'showalert' in out:
         data['alerts'] = parse_showalert(out['showalert'])
+        rules = compile_resolutions(BUILTIN_ALERT_RESOLUTIONS) if resolutions is None else resolutions
+        for a in data['alerts']:
+            a['resolution'] = alert_resolution(a, rules)
         data['alert_summary'] = summarize_alerts(data['alerts'])
     if 'certs' in sections and 'showcert' in out:
         data['certificates'] = parse_showcert(out['showcert'], now)
@@ -802,7 +856,8 @@ def collect(host, sections, creds, opts, runner=None):
                     runner.close()
             except CollectorError as ex:
                 fatal = str(ex)
-            result.update(build_sections(outputs, ssh_sections, now))
+            resolutions = load_alert_resolutions(warnings) if 'alerts' in ssh_sections else None
+            result.update(build_sections(outputs, ssh_sections, now, resolutions))
 
         if tls_futures:
             certs = result.setdefault('certificates', [])
@@ -848,7 +903,8 @@ SCHEMA = {
                        'utilPct': float, 'state': int}),
     'batteries': (list, {'id': str, 'position': str, 'status': int, 'expired': int}),
     'nodes': (list, {'id': int, 'name': str, 'status': int}),
-    'alerts': (list, {'id': int, 'severity': str, 'severity_code': int, 'message': str}),
+    'alerts': (list, {'id': int, 'severity': str, 'severity_code': int, 'message': str,
+                      'code': str, 'type': str, 'time': str, 'state': str, 'resolution': str}),
     'alert_summary': (dict, {'total': int, 'critical': int, 'major': int, 'last_critical': str}),
     'certificates': (list, {'id': str, 'service': str, 'notAfter': int, 'daysLeft': float}),
     'net': (list, {'addr': str, 'label': str, 'up': int, 'ssh': int}),

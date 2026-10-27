@@ -37,3 +37,19 @@ Time        : 2026-09-01 10:00:00 MSK
 Severity    : Critical
 Type        : Component state change
 Message     : Node 0, Power Supply 1 Failed (resolved)
+
+Id          : 106
+State       : New
+MessageCode : 0x0950001
+Time        : 2026-07-31 14:13:32 MSK
+Severity    : Major
+Type        : Node Failure Analysis
+Message     : Node-Failure-Analysis file received from Node 3.
+
+Id          : 107
+State       : New
+MessageCode : 0x01e0011
+Time        : 2025-08-05 10:22:15 MSK
+Severity    : Degraded
+Type        : Node link failure
+Message     : No power detected on link 1 from node 2 to node 0 posted by node 2 Link 1 config reg [0x00000001] [RT_COMPLEX].

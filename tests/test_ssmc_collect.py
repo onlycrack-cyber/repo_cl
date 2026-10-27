@@ -90,11 +90,43 @@ class ParserTests(unittest.TestCase):
 
     def test_showalert_block_format_case_insensitive_severity(self):
         alerts = sc.parse_showalert(fixture('showalert'))
-        self.assertEqual([a['id'] for a in alerts], [101, 102, 103, 104])  # 105 is Fixed
-        self.assertEqual([a['severity_code'] for a in alerts], [5, 4, 3, 2])
+        self.assertEqual([a['id'] for a in alerts], [101, 102, 103, 104, 106, 107])  # 105 is Fixed
+        self.assertEqual([a['severity_code'] for a in alerts], [5, 4, 3, 2, 4, 3])
+        self.assertEqual((alerts[2]['code'], alerts[2]['type'], alerts[2]['state']),
+                         ('0x0060007', 'Port state change', 'Acknowledged'))
         summary = sc.summarize_alerts(alerts)
-        self.assertEqual((summary['critical'], summary['major']), (1, 1))
+        self.assertEqual((summary['critical'], summary['major']), (1, 2))
         self.assertIn('Battery 0 Failed', summary['last_critical'])
+
+    def test_alert_resolutions_builtin(self):
+        data = sc.build_sections({'showalert': fixture('showalert')}, {'alerts'}, int(time.time()))
+        res = {a['id']: a['resolution'] for a in data['alerts']}
+        self.assertIn('node failure analysis file', res[106])
+        self.assertIn('power cycle the node', res[107])
+        self.assertEqual(res[101], '')
+
+    def test_alert_resolutions_file_first_and_by_code(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fh:
+            json.dump([{'code': '0x0270001', 'resolution': 'Replace the battery.'},
+                       {'match': 'no power detected', 'resolution': 'Call the duty engineer.'}], fh)
+        self.addCleanup(os.unlink, fh.name)
+        warnings = []
+        rules = sc.load_alert_resolutions(warnings, fh.name)
+        data = sc.build_sections({'showalert': fixture('showalert')}, {'alerts'}, int(time.time()), rules)
+        res = {a['id']: a['resolution'] for a in data['alerts']}
+        self.assertEqual((res[101], res[107]), ('Replace the battery.', 'Call the duty engineer.'))
+        self.assertIn('node failure analysis file', res[106])  # built-in rules still apply
+        self.assertEqual(warnings, [])
+
+    def test_alert_resolutions_bad_file_is_a_warning(self):
+        for content in ('{not json', '[{"match": "(", "resolution": "x"}]', '[{"resolution": "x"}]'):
+            with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fh:
+                fh.write(content)
+            self.addCleanup(os.unlink, fh.name)
+            warnings = []
+            rules = sc.load_alert_resolutions(warnings, fh.name)
+            self.assertEqual(len(rules), len(sc.BUILTIN_ALERT_RESOLUTIONS), content)
+            self.assertEqual(len(warnings), 1, content)
 
     def test_showalert_fatal_counts_as_critical(self):
         alerts = sc.parse_showalert('Id : 7\nState : New\nSeverity : Fatal\nMessage : boom\n')

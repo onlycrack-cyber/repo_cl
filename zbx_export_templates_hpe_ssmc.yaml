@@ -17,7 +17,7 @@ zabbix_export:
         Optional: {$SSMC_NODE_ADDRS}, {$SSMC_TLS_ENDPOINTS}.
       vendor:
         name: Custom
-        version: 7.0-2.1.0
+        version: 7.0-2.2.0
       groups:
         - name: Templates/Storage
       items:
@@ -597,7 +597,7 @@ zabbix_export:
                 formulaid: A
           lifetime: 1d
           description: |-
-            One entity per active (not Fixed) array alert with severity >= Major by default.
+            One entity per active (not Fixed) array alert with severity >= Minor by default.
             Severity codes: 1=Info, 2=Minor, 3=Degraded, 4=Major, 5=Critical, 6=Fatal.
             Alerts disappear from showalert when fixed; their items return severity 0, the triggers resolve and the entities are deleted after 1 day.
           item_prototypes:
@@ -666,12 +666,26 @@ zabbix_export:
                   recovery_mode: RECOVERY_EXPRESSION
                   recovery_expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])<5
                   name: 'CRITICAL alert [{#ALERT_ID}]: {#ALERT_MSG}'
+                  opdata: 'Code {#ALERT_CODE}, raised {#ALERT_TIME}'
                   priority: DISASTER
-                  description: The array raised an alert with severity Critical or Fatal. One Zabbix problem per 3PAR alert; it resolves when the alert is fixed or removed.
+                  description: |-
+                    The array raised an alert with severity Critical or Fatal. One Zabbix problem per 3PAR alert; it resolves when the alert is fixed or removed.
+
+                    Message: {#ALERT_TEXT}
+                    Message code: {#ALERT_CODE}
+                    Type: {#ALERT_TYPE}
+                    Raised on the array: {#ALERT_TIME}
+                    State on the array: {#ALERT_STATE}
+
+                    Resolution: {#ALERT_RESOLUTION}
                   manual_close: 'YES'
                   tags:
                     - tag: alert
                       value: '{#ALERT_ID}'
+                    - tag: alert_code
+                      value: '{#ALERT_CODE}'
+                    - tag: alert_type
+                      value: '{#ALERT_TYPE}'
                     - tag: component
                       value: alert
                     - tag: scope
@@ -685,12 +699,92 @@ zabbix_export:
                   recovery_mode: RECOVERY_EXPRESSION
                   recovery_expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])<>4
                   name: 'Major alert [{#ALERT_ID}]: {#ALERT_MSG}'
+                  opdata: 'Code {#ALERT_CODE}, raised {#ALERT_TIME}'
                   priority: HIGH
-                  description: Major alert on the storage array. Resolves when the alert is fixed or removed on the array (showalert no longer lists it).
+                  description: |-
+                    Major alert on the storage array. Resolves when the alert is fixed or removed on the array (showalert no longer lists it).
+
+                    Message: {#ALERT_TEXT}
+                    Message code: {#ALERT_CODE}
+                    Type: {#ALERT_TYPE}
+                    Raised on the array: {#ALERT_TIME}
+                    State on the array: {#ALERT_STATE}
+
+                    Resolution: {#ALERT_RESOLUTION}
                   manual_close: 'YES'
                   tags:
                     - tag: alert
                       value: '{#ALERT_ID}'
+                    - tag: alert_code
+                      value: '{#ALERT_CODE}'
+                    - tag: alert_type
+                      value: '{#ALERT_TYPE}'
+                    - tag: component
+                      value: alert
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+                - uuid: 2037b1c538ea435d9c84fc7418fbba79
+                  expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])=3
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])<>3
+                  name: 'Degraded alert [{#ALERT_ID}]: {#ALERT_MSG}'
+                  opdata: 'Code {#ALERT_CODE}, raised {#ALERT_TIME}'
+                  priority: AVERAGE
+                  description: |-
+                    Degraded alert on the storage array (e.g. lost link between nodes or a port out of sync). Resolves when the alert is fixed or removed on the array.
+
+                    Message: {#ALERT_TEXT}
+                    Message code: {#ALERT_CODE}
+                    Type: {#ALERT_TYPE}
+                    Raised on the array: {#ALERT_TIME}
+                    State on the array: {#ALERT_STATE}
+
+                    Resolution: {#ALERT_RESOLUTION}
+                  manual_close: 'YES'
+                  tags:
+                    - tag: alert
+                      value: '{#ALERT_ID}'
+                    - tag: alert_code
+                      value: '{#ALERT_CODE}'
+                    - tag: alert_type
+                      value: '{#ALERT_TYPE}'
+                    - tag: component
+                      value: alert
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+                - uuid: 1c5dabc3d6694564ae72c961f7aefd79
+                  expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])=2
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: last(/HPE SSMC StorageArray/alert.severity[{#ALERT_ID}])<>2
+                  name: 'Minor alert [{#ALERT_ID}]: {#ALERT_MSG}'
+                  opdata: 'Code {#ALERT_CODE}, raised {#ALERT_TIME}'
+                  priority: WARNING
+                  description: |-
+                    Minor alert on the storage array (e.g. a degraded host path). Resolves when the alert is fixed or removed on the array.
+
+                    Message: {#ALERT_TEXT}
+                    Message code: {#ALERT_CODE}
+                    Type: {#ALERT_TYPE}
+                    Raised on the array: {#ALERT_TIME}
+                    State on the array: {#ALERT_STATE}
+
+                    Resolution: {#ALERT_RESOLUTION}
+                  manual_close: 'YES'
+                  tags:
+                    - tag: alert
+                      value: '{#ALERT_ID}'
+                    - tag: alert_code
+                      value: '{#ALERT_CODE}'
+                    - tag: alert_type
+                      value: '{#ALERT_TYPE}'
                     - tag: component
                       value: alert
                     - tag: scope
@@ -718,8 +812,15 @@ zabbix_export:
                     lld.push({
                       '{#ALERT_ID}': String(a.id),
                       '{#ALERT_MSG}': msg.length > 180 ? msg.substring(0, 177) + '...' : msg,
+                      '{#ALERT_TEXT}': msg,
                       '{#ALERT_SEVERITY}': String(a.severity_code),
-                      '{#ALERT_STATE}': a.state || ''
+                      '{#ALERT_STATE}': a.state || '',
+                      '{#ALERT_CODE}': a.code || '-',
+                      '{#ALERT_TYPE}': (a.type || '-').substring(0, 200),
+                      '{#ALERT_TIME}': a.time || '-',
+                      '{#ALERT_RESOLUTION}': a.resolution ||
+                        'No built-in hint for this alert: see the alert details in SSMC (Alerts), ' +
+                        'or add a rule to /etc/zabbix/ssmc_alert_resolutions.json on the Zabbix server.'
                     });
                   }
                   return JSON.stringify(lld);
@@ -1791,8 +1892,8 @@ zabbix_export:
           value: '2'
           description: Disk state code that raises the Degraded trigger (2=Degraded).
         - macro: '{$SSMC_ALERT_SEVERITY_MATCHES}'
-          value: ^[456]$
-          description: Alert severity codes to discover (4=Major, 5=Critical, 6=Fatal).
+          value: ^[23456]$
+          description: 'Alert severity codes to discover: 2=Minor (Warning), 3=Degraded (Average), 4=Major (High), 5=Critical and 6=Fatal (Disaster). Set ^[3456]$ to skip Minor alerts.'
         - macro: '{$SSMC_CAPACITY_PUSED_CRIT}'
           value: '90'
           description: Array capacity used, % - critical threshold.

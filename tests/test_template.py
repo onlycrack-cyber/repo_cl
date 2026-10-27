@@ -309,7 +309,14 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(len(found['disks.discovery']), 5)
         self.assertEqual([e['{#PORT_POS}'] for e in found['ports.discovery']].count('0:1:2'), 0,
                          'free port must be filtered out')
-        self.assertEqual({e['{#ALERT_ID}'] for e in found['alerts.discovery']}, {'101', '102'})
+        alerts = {e['{#ALERT_ID}']: e for e in found['alerts.discovery']}
+        self.assertEqual(set(alerts), {'101', '102', '103', '104', '106', '107'})  # Minor and up
+        self.assertEqual((alerts['107']['{#ALERT_CODE}'], alerts['107']['{#ALERT_TIME}']),
+                         ('0x01e0011', '2025-08-05 10:22:15 MSK'))
+        self.assertIn('power cycle the node', alerts['107']['{#ALERT_RESOLUTION}'])
+        self.assertIn('No built-in hint', alerts['101']['{#ALERT_RESOLUTION}'])
+        self.assertEqual(values['alert.severity[103]'], '3')
+        self.assertEqual(values['alert.severity[104]'], '2')
         self.assertEqual(len(found['certs.discovery']), 5)
         self.assertEqual({e['{#NET_ADDR}'] for e in found['net.discovery']}, {'127.0.0.1', '127.0.0.2'})
         self.assertEqual(values['alert.severity[101]'], '5')
@@ -319,6 +326,21 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(values['port.linkstate[1:1:2]'], '5')
         self.assertEqual(values['volume.util[vol_app01]'], '95.0')
         self.assertLess(float(values['cert.days_left[syslog-sec-client]']), 0)
+
+    def test_alert_trigger_per_severity(self):
+        sev = self.rules['alerts.discovery']['item_prototypes'][1]
+        by_prio = {t['priority']: t for t in sev['trigger_prototypes']}
+        self.assertEqual(set(by_prio), {'DISASTER', 'HIGH', 'AVERAGE', 'WARNING'})
+        for prio, code in (('HIGH', 4), ('AVERAGE', 3), ('WARNING', 2)):
+            self.assertTrue(by_prio[prio]['expression'].endswith('])=%d' % code), prio)
+        for t in sev['trigger_prototypes']:
+            for macro in ('{#ALERT_TEXT}', '{#ALERT_CODE}', '{#ALERT_TYPE}', '{#ALERT_TIME}',
+                          '{#ALERT_RESOLUTION}'):
+                self.assertIn(macro, t['description'], t['name'])
+            self.assertIn('{#ALERT_CODE}', t['opdata'])
+            self.assertIn('alert_code', [tag['tag'] for tag in t['tags']])
+        macro = {m['macro']: m.get('value', '') for m in self.tpl['macros']}['{$SSMC_ALERT_SEVERITY_MATCHES}']
+        self.assertEqual([c for c in '0123456' if re.match(macro, c)], ['2', '3', '4', '5', '6'])
 
     def test_missing_entities(self):
         if not shutil.which('node'):
