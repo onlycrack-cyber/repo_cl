@@ -103,6 +103,41 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 Старый вызов `ssmc_collect.py HOST USER PASS SECTION` по-прежнему работает: всегда exit 0,
 формат ответа прежний, в ответе есть поле `deprecated`.
 
+## Алерты массива в уведомлениях
+
+Каждый активный алерт `showalert` с важностью Minor и выше становится отдельной проблемой Zabbix:
+
+| Severity в CLI | Важность проблемы |
+|---|---|
+| Fatal, Critical | Disaster |
+| Major | High |
+| Degraded | Average |
+| Minor | Warning |
+
+Набор задаёт макрос `{$SSMC_ALERT_SEVERITY_MATCHES}` (по умолчанию `^[23456]$`; `^[3456]$` без Minor,
+`^[456]$` как до версии 2.2). Проблема закрывается, когда алерт на массиве переведён в Fixed или удалён.
+
+Что есть в проблеме и, значит, в уведомлении:
+
+| Макрос в сообщении действия | Что в нём |
+|---|---|
+| `{EVENT.NAME}` | `Degraded alert [107]: No power detected on link 1 from node 2 to node 0 ...` |
+| `{EVENT.OPDATA}` | `Code 0x01e0011, raised 2025-08-05 10:22:15 MSK` |
+| `{TRIGGER.DESCRIPTION}` | полный текст, код, тип, время и состояние алерта на массиве, **Resolution** |
+| `{EVENT.TAGS}` | `alert`, `alert_code`, `alert_type`, `component`, `service`, `target` |
+
+`showalert` не отдаёт Resolution: SSMC берёт его из своей базы. Скрипт подставляет резолюцию из
+справочника: встроенные правила (тексты HPE для Node-Failure-Analysis и «No power detected on link»)
+плюс ваши из `/etc/zabbix/ssmc_alert_resolutions.json` на сервере Zabbix (или путь из
+`SSMC_ALERT_RESOLUTIONS`). Ваши правила проверяются первыми; правило срабатывает по коду
+(`MessageCode`), по регулярному выражению на текст или по обоим. Пример:
+`deploy/ssmc_alert_resolutions.json.example`. Ошибка в файле не ломает сбор: файл пропускается,
+причина видна в поле `warnings`. Для алерта без правила в Resolution пишется подсказка открыть его в SSMC.
+
+**При обновлении на 2.2.** Старые незакрытые Degraded и Minor алерты на массиве (в том числе годичной
+давности) сразу станут проблемами. Закройте неактуальные на массиве (`setalert fixed <id>` или
+`removealert <id>`) или временно сузьте макрос до `^[3456]$` / `^[456]$`.
+
 ## Дашборд Grafana
 
 Готовый дашборд для этого шаблона (через плагин Zabbix для Grafana): [grafana/](grafana/README.md).
@@ -195,6 +230,8 @@ python3 -m unittest discover -s tests -v
 | Collector is slow (>`{$SSMC_COLLECT_TIME_WARN}`s, 3 опроса подряд) | Warning | max(#3) ниже порога |
 | **CRITICAL alert [{#ALERT_ID}]: {#ALERT_MSG}** (Critical/Fatal) | **Disaster** | алерт Fixed или удалён на массиве; manual close |
 | Major alert [{#ALERT_ID}] (ранее срабатывал на >=4) | High | severity≠4 |
+| Degraded alert [{#ALERT_ID}] (например, пропал линк между нодами) | Average | severity≠3 |
+| Minor alert [{#ALERT_ID}] (например, деградировал путь хоста) | Warning | severity≠2 |
 | Certificate expired / < `{$SSMC_CERT_EXPIRY_CRIT}`d / < `{$SSMC_CERT_EXPIRY_WARN}`d | High / High / Warning, с цепочкой зависимостей | через `now()`, без флапа |
 | {#NET_LABEL} unreachable (3 проверки подряд) | High | 2 успешные подряд |
 | SSH port not reachable / ICMP loss / ICMP RTT | Warning, зависят от unreachable | гистерезис |

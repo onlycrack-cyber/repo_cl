@@ -1,0 +1,10 @@
+[
+  {
+    "code": "0x0270001",
+    "resolution": "Battery failed: open a case with HPE support and plan the battery replacement."
+  },
+  {
+    "match": "Host .* path .* degraded",
+    "resolution": "Check the host multipath and the SAN zoning for this path; notify the host owner."
+  }
+]
