@@ -20,6 +20,7 @@ REFS = 'ABCDEFGHIJKLMNOP'
 OK, WARN, HIGH, CRIT, GREY, BLUE = 'green', 'orange', 'red', 'dark-red', 'text', 'blue'
 LAST_YEAR = 'год назад'
 NOW_NAME = 'за период'
+VCGROUP_RX = '/^(?!.*\\((?:hypervisor|vm)\\)$)(?!Templates)(?!Discovered hosts$).+/'
 
 # Hosts holding the data.
 VC = ('$vcgroup', '$vcenter')                               # vCenter host: stock datastores + capacity template
@@ -329,16 +330,20 @@ def var_ds():
             'refresh': 1, 'regex': '', 'hide': 0, 'current': {}, 'options': [], 'includeAll': False, 'multi': False}
 
 
-def var_zbx(name, label, qtype, group='', host='', item='', regex='', multi=False, include_all=False, hide=0):
+def var_zbx(name, label, qtype, group='', host='', item='', regex='', multi=False, include_all=False, hide=0,
+            current=None):
     q = {'queryType': qtype, 'group': group, 'host': host, 'application': '', 'itemTag': '', 'item': item}
     return {'name': name, 'label': label, 'type': 'query', 'datasource': DS, 'query': q, 'definition': '',
-            'refresh': 2, 'sort': 1, 'regex': regex, 'hide': hide, 'current': {}, 'options': [],
+            'refresh': 2, 'sort': 1, 'regex': regex, 'hide': hide, 'options': [],
+            'current': {'selected': True, 'text': current, 'value': current} if current else {},
             'includeAll': include_all, 'multi': multi}
 
 
 def common_vars():
     return [var_ds(),
-            var_zbx('vcgroup', 'Группа vCenter', 'group', group='/.*/'),
+            # Groups the VMware templates create for discovered hosts never hold the vCenter host.
+            # Grafana keeps "vCenter" when such a group exists, otherwise takes the first one left.
+            var_zbx('vcgroup', 'Группа vCenter', 'group', group='/.*/', regex=VCGROUP_RX, current='vCenter'),
             var_zbx('vcenter', 'vCenter', 'host', group='$vcgroup', host='/.*/')]
 
 

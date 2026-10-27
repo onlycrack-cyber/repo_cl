@@ -89,10 +89,14 @@
         "definition": "",
         "refresh": 2,
         "sort": 1,
-        "regex": "",
+        "regex": "/^(?!.*\\((?:hypervisor|vm)\\)$)(?!Templates)(?!Discovered hosts$).+/",
         "hide": 0,
-        "current": {},
         "options": [],
+        "current": {
+          "selected": true,
+          "text": "vCenter",
+          "value": "vCenter"
+        },
         "includeAll": false,
         "multi": false
       },
@@ -117,8 +121,8 @@
         "sort": 1,
         "regex": "",
         "hide": 0,
-        "current": {},
         "options": [],
+        "current": {},
         "includeAll": false,
         "multi": false
       },
@@ -143,8 +147,8 @@
         "sort": 1,
         "regex": "/^Total size of datastore \\[(.*)\\]$/",
         "hide": 0,
-        "current": {},
         "options": [],
+        "current": {},
         "includeAll": true,
         "multi": true
       }

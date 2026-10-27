@@ -178,6 +178,17 @@ class DashboardTests(unittest.TestCase):
                     self.assertTrue(any(item_matches(item, n) for n in self.names), (fname, v['name']))
                     self.assertEqual(v.get('refresh'), 2, (fname, v['name']))
 
+    def test_vcenter_group_default(self):
+        # Defaults to "vCenter"; the groups VMware creates for discovered hosts are not offered.
+        for fname, d in self.dashes.items():
+            v = next(v for v in d['templating']['list'] if v['name'] == 'vcgroup')
+            self.assertEqual(v['current']['value'], 'vCenter', fname)
+            rx_ = re.compile(v['regex'][1:-1])
+            for group in ('vCenter', 'VMware vCenters', 'Zabbix servers'):
+                self.assertTrue(rx_.match(group), group)
+            for group in ('Cluster-A (hypervisor)', 'Cluster-A (vm)', 'Discovered hosts', 'Templates/Applications'):
+                self.assertFalse(rx_.match(group), group)
+
     def test_no_server_side_expressions(self):
         # Zabbix plugin 4.6 does not substitute dashboard variables in queries sent with expressions.
         for fname, d in self.dashes.items():
