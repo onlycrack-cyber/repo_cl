@@ -58,6 +58,7 @@ VALUEMAPS = [
     ('NSX cluster status', CLUSTER),
     ('NSX BGP state', BGP),
     ('NSX alarm status', ALARM),
+    ('NSX boolean', {'No': 0, 'Yes': 1}),
 ]
 
 
@@ -775,6 +776,96 @@ cert_items = [
          [('details', 'true'), ('page_size', '1000')]),
 ]
 
+# ------------------------------------------------------------------ 6. licenses
+LIC_GET = 'nsx.licenses.get'
+LIC_LIST = 'nsx.licenses.list'
+# Normalizes /api/v1/licenses. The license key never leaves this step: entities are identified by a hash of
+# the key and shown with its last five characters only, so keys do not end up in item names, keys or history.
+LIC_NORMALIZE_JS = r'''function hash(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) {
+        h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+}
+var lic = JSON.parse(value).results || [], out = [];
+for (var i = 0; i < lic.length; i++) {
+    var l = lic[i], key = String(l.license_key || ''), exp = Number(l.expiry || 0);
+    if (exp > 100000000000) {
+        exp = Math.floor(exp / 1000);
+    }
+    out.push({
+        id: hash(key),
+        key: key.length > 5 ? '*****' + key.slice(-5) : key,
+        name: l.description || l.product_name || 'license',
+        product: l.product_name || '',
+        version: l.product_version || '',
+        capacity_type: l.capacity_type || '',
+        quantity: Number(l.quantity || 0),
+        eval: l.is_eval ? 1 : 0,
+        expired: l.is_expired ? 1 : 0,
+        perpetual: exp > 0 ? 0 : 1,
+        expiry: exp
+    });
+}
+return JSON.stringify(out);'''
+lic_entity = {'license': '{#LIC.NAME}'}
+lic_label = 'License [{#LIC.NAME} {#LIC.KEY}]'
+LIC = "$[?(@.id=='{#LIC.ID}')]"
+LIC_TERM = "$[?(@.id=='{#LIC.ID}' && @.perpetual==0)]"
+lic_days = 'nsx.license.days[{#LIC.ID}]'
+lic_desc = ('Product: {#LIC.PRODUCT} {#LIC.VERSION}\nCapacity: {#LIC.QUANTITY} x {#LIC.CAPACITY}\n'
+            'Key: {#LIC.KEY}\n\nAdd the new key under System > Licenses.')
+lic_expired = trigger('%s: has expired' % lic_label, 'last(%s)=1' % ref('nsx.license.expired[{#LIC.ID}]'), 'HIGH',
+                      'license', entity=lic_entity,
+                      desc='is_expired = true. The data plane keeps forwarding, but NSX restricts configuration of the '
+                           'licensed features until a valid key is added.\n\n' + lic_desc)
+lic_crit = trigger('%s: expires in less than {$NSX.LICENSE.EXPIRY.CRIT:"{#LIC.NAME}"} days' % lic_label,
+                   'last(%s)<{$NSX.LICENSE.EXPIRY.CRIT:"{#LIC.NAME}"}' % ref(lic_days), 'AVERAGE', 'license',
+                   opdata='Days left: {ITEM.LASTVALUE1}', deps=[lic_expired], entity=lic_entity, desc=lic_desc)
+lic_warn = trigger('%s: expires in less than {$NSX.LICENSE.EXPIRY.WARN:"{#LIC.NAME}"} days' % lic_label,
+                   'last(%s)<{$NSX.LICENSE.EXPIRY.WARN:"{#LIC.NAME}"}' % ref(lic_days), 'WARNING', 'license',
+                   opdata='Days left: {ITEM.LASTVALUE1}', deps=[lic_crit], entity=lic_entity, desc=lic_desc)
+lic_rule = lld(
+    'NSX: Licenses discovery', 'nsx.license.discovery', LIC_LIST, [heartbeat()],
+    [('{#LIC.ID}', '$.id'), ('{#LIC.KEY}', '$.key'), ('{#LIC.NAME}', '$.name'), ('{#LIC.PRODUCT}', '$.product'),
+     ('{#LIC.VERSION}', '$.version'), ('{#LIC.CAPACITY}', '$.capacity_type'), ('{#LIC.QUANTITY}', '$.quantity')],
+    [
+        dep('%s: expires on' % lic_label, 'nsx.license.expiry[{#LIC.ID}]', LIC_LIST,
+            [jsonpath(LIC_TERM + '.expiry.first()', 'discard'), heartbeat('1d')], 'license', units='unixtime',
+            history='31d', entity=lic_entity, desc='No data for a perpetual license (no expiry date).'),
+        dep('%s: days until expiry' % lic_label, lic_days, LIC_LIST,
+            [jsonpath(LIC_TERM + '.expiry.first()', 'discard'),
+             js('return Math.floor((Number(value) - Date.now() / 1000) / 86400);')],
+            'license', value_type='FLOAT', units='d', history='31d', entity=lic_entity, proto=True,
+            desc='Whole days until the license expires; negative once expired. No data for a perpetual license.',
+            triggers=[lic_crit, lic_warn]),
+        dep('%s: expired' % lic_label, 'nsx.license.expired[{#LIC.ID}]', LIC_LIST,
+            [jsonpath(LIC + '.expired.first()', 'discard'), heartbeat()], 'license', valuemap='NSX boolean',
+            entity=lic_entity, proto=True, triggers=[lic_expired]),
+        dep('%s: evaluation' % lic_label, 'nsx.license.eval[{#LIC.ID}]', LIC_LIST,
+            [jsonpath(LIC + '.eval.first()', 'discard'), heartbeat()], 'license', valuemap='NSX boolean',
+            entity=lic_entity, proto=True,
+            triggers=[trigger('%s: evaluation license in use' % lic_label,
+                              'last(%s)=1' % ref('nsx.license.eval[{#LIC.ID}]'), 'INFO', 'license', entity=lic_entity,
+                              scope='notice', desc='An evaluation key is installed. ' + lic_desc)]),
+        dep('%s: licensed quantity' % lic_label, 'nsx.license.quantity[{#LIC.ID}]', LIC_LIST,
+            [jsonpath(LIC + '.quantity.first()', 'discard'), heartbeat('1d')], 'license', history='31d',
+            entity=lic_entity, desc='Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...).'),
+    ],
+    'Licenses from /api/v1/licenses. Identified by a hash of the license key; only its last five characters '
+    'are shown.', filters=name_filters('{#LIC.NAME}', 'LICENSE'))
+lic_items = [
+    http('NSX: Get licenses', LIC_GET, '/api/v1/licenses', '{$NSX.INTERVAL.LICENSE}', 'raw',
+         'Installed license keys. The raw response holds full keys: history is not stored.'),
+    dep('NSX: Licenses (normalized)', LIC_LIST, LIC_GET, [js(LIC_NORMALIZE_JS)], 'license', value_type='TEXT',
+        history='0', desc='Licenses without the full keys; master of the license discovery and items.'),
+    dep('NSX: Licenses installed', 'nsx.licenses.count', LIC_LIST, [jsonpath('$.length()')], 'license',
+        history='31d'),
+    dep('NSX: Licenses expired', 'nsx.licenses.expired', LIC_LIST, [jsonpath('$[?(@.expired==1)].length()', '0')],
+        'license', history='31d'),
+]
+
 # ------------------------------------------------------------------ template
 macros = [
     ('{$NSX.MANAGER.URL}', 'https://nsx-manager.local', 'TEXT',
@@ -802,11 +893,15 @@ macros = [
     ('{$NSX.INTERVAL.CERT}', '1h', 'TEXT', 'Polling interval of certificates.'),
     ('{$NSX.CERT.EXPIRY.WARN}', '30', 'TEXT', 'Warning when a certificate expires in fewer days. Context: name.'),
     ('{$NSX.CERT.EXPIRY.CRIT}', '7', 'TEXT', 'High when a certificate expires in fewer days. Context: name.'),
+    ('{$NSX.INTERVAL.LICENSE}', '1h', 'TEXT', 'Polling interval of licenses.'),
+    ('{$NSX.LICENSE.EXPIRY.WARN}', '60', 'TEXT', 'Warning when a license expires in fewer days. Context: name.'),
+    ('{$NSX.LICENSE.EXPIRY.CRIT}', '14', 'TEXT', 'Average when a license expires in fewer days. Context: name.'),
     ('{$NSX.CERT.USED_BY.MATCHES}', '.*', 'TEXT',
      'Discover a certificate if its service types match; ".+" skips certificates that nothing uses.'),
 ]
 for prefix, what in (('TN', 'host transport node'), ('EDGE', 'edge node'), ('EC', 'edge cluster'),
-                     ('T0', 'Tier-0 gateway'), ('T1', 'Tier-1 gateway'), ('CERT', 'certificate')):
+                     ('T0', 'Tier-0 gateway'), ('T1', 'Tier-1 gateway'), ('CERT', 'certificate'),
+                     ('LICENSE', 'license')):
     macros.append(('{$NSX.%s.NAME.MATCHES}' % prefix, '.*', 'TEXT', 'Discover a %s if its name matches.' % what))
     macros.append(('{$NSX.%s.NAME.NOT_MATCHES}' % prefix, 'CHANGE_IF_NEEDED', 'TEXT',
                    'Skip a %s if its name matches.' % what))
@@ -829,16 +924,16 @@ template = {
     'description': (
         'Monitoring of VMware NSX (NSX-T 3.x, NSX 4.x) through the NSX Manager REST API: management cluster, '
         'host transport nodes, edge clusters and edge nodes (status, tunnels, CPU, memory), Tier-0/Tier-1 HA, '
-        'Tier-0 BGP neighbours, NSX alarms and certificate expiry.\n\n'
+        'Tier-0 BGP neighbours, NSX alarms, certificate and license expiry.\n\n'
         'Create a host for the NSX Manager cluster (no interface needed), link this template and set '
         '{$NSX.MANAGER.URL}, {$NSX.USER}, {$NSX.PASSWORD}. A read-only NSX user (role Auditor) is enough.\n\n'
         'Generated by vmware/tools/gen_nsx_template.py.'),
     'vendor': {'name': 'Custom', 'version': '7.0-1.0.0'},
     'groups': [{'name': 'Templates/Applications'}],
     'items': cluster_items + transport_items + edge_cluster_items + [t0_master, t1_master] + bgp_items + alarm_items +
-             cert_items,
+             cert_items + lic_items,
     'discovery_rules': [group_rule, host_rule, ec_rule, edge_rule, t0_rule, t1_rule, bgp_rule, alarm_rule,
-                        cert_rule],
+                        cert_rule, lic_rule],
     'tags': [{'tag': 'class', 'value': 'software'}, {'tag': 'target', 'value': 'nsx'}],
     'macros': [macro(*m) for m in sorted(macros)],
     'valuemaps': [{'uuid': uid('valuemap:' + n), 'name': n,

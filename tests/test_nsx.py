@@ -41,7 +41,15 @@ class NoValue(Exception):
 
 # ---- JSONPath: the subset the template uses
 SEGMENT = re.compile(r"\.(\w+)\(\)|\.(\w+)|\[\?\((.*?)\)\]")
-COND = re.compile(r"^@\.(\w+)=='([^']*)'$")
+COND = re.compile(r"^@\.(\w+)==(?:'([^']*)'|(-?\d+))$")
+
+
+def cond_ok(row, field, quoted, number):
+    if not isinstance(row, dict) or field not in row:
+        return False
+    if number is not None:  # unquoted: numeric comparison, like Zabbix
+        return not isinstance(row[field], str) and row[field] == int(number)
+    return str(row[field]) == quoted
 
 
 def jsonpath(doc, path):
@@ -71,7 +79,7 @@ def jsonpath(doc, path):
                 raise NoValue(path)
         else:
             conds = [COND.match(c.strip()).groups() for c in cond.split('&&')]
-            cur = [c for c in (cur or []) if all(str(c.get(f)) == v for f, v in conds)]
+            cur = [c for c in (cur or []) if all(cond_ok(c, *cnd) for cnd in conds)]
             many = True
             if not cur:
                 raise NoValue(path)  # Zabbix fails on an empty match; the template must handle it
@@ -221,9 +229,10 @@ class Collected:
         self.values, self.triggers, self.discovered, self.errors = {}, [], {}, {}
         user = template_macros()
         masters = {i['key']: master_value(i, user) for i in TPL['items'] if i['type'] != 'DEPENDENT'}
-        for it in TPL['items']:
+        for it in TPL['items']:  # a dependent master is listed before its own dependents
             if it['type'] == 'DEPENDENT':
-                self.values[it['key']] = preprocess(it['preprocessing'], masters[it['master_item']['key']], user)
+                value = preprocess(it['preprocessing'], masters[it['master_item']['key']], user)
+                self.values[it['key']] = masters[it['key']] = value
             for t in it.get('triggers', []):
                 self.triggers.append((t, {}))
         for rule in TPL['discovery_rules']:
@@ -335,8 +344,12 @@ class StaticTests(unittest.TestCase):
     def test_dependents_resolve(self):
         top = {i['key']: i for i in TPL['items']}
         for it in TPL['items']:
+            depth, cur = 0, it
+            while cur['type'] == 'DEPENDENT':  # Zabbix allows up to 3 levels of dependent items
+                cur, depth = top[cur['master_item']['key']], depth + 1
+                self.assertLessEqual(depth, 3, it['key'])
             if it['type'] == 'DEPENDENT':
-                self.assertNotEqual(top[it['master_item']['key']]['type'], 'DEPENDENT')
+                self.assertLess(TPL['items'].index(top[it['master_item']['key']]), TPL['items'].index(it))
         for r in TPL['discovery_rules']:
             self.assertIn(r['master_item']['key'], top)
             local = {p['key'] for p in r['item_prototypes']}
@@ -506,11 +519,52 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': ''}, macros))
         self.assertTrue(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': 'API'}, macros))
 
+    def test_licenses(self):
+        found = {r['{#LIC.NAME}']: r for r in self.c.discovered['nsx.license.discovery']}
+        self.assertEqual(sorted(found), ['NSX Advanced (perpetual)', 'NSX Enterprise Plus', 'NSX Evaluation'])
+        ent, ev, perp = (found[n]['{#LIC.ID}'] for n in
+                         ('NSX Enterprise Plus', 'NSX Evaluation', 'NSX Advanced (perpetual)'))
+        self.assertEqual(len({ent, ev, perp}), 3)
+        self.assertEqual(found['NSX Enterprise Plus']['{#LIC.KEY}'], '*****E1234')
+        self.assertEqual(found['NSX Enterprise Plus']['{#LIC.QUANTITY}'], '32')
+        self.assertEqual(self.v('nsx.license.expiry[%s]' % ent), '4102444800')
+        self.assertGreater(float(self.v('nsx.license.days[%s]' % ent)), 20000)
+        self.assertLess(float(self.v('nsx.license.days[%s]' % ev)), 0)
+        self.assertIsNone(self.v('nsx.license.days[%s]' % perp))  # perpetual: no expiry, no data
+        self.assertIsNone(self.v('nsx.license.expiry[%s]' % perp))
+        self.assertEqual(self.v('nsx.license.expired[%s]' % ev), '1')
+        self.assertEqual(self.v('nsx.license.eval[%s]' % ent), '0')
+        self.assertEqual(self.v('nsx.license.quantity[%s]' % perp), '128')
+        self.assertEqual(self.v('nsx.licenses.count'), '3')
+        self.assertEqual(self.v('nsx.licenses.expired'), '1')
+
+    def test_license_keys_never_leave_the_raw_item(self):
+        stored = json.dumps([self.c.values, self.c.discovered])
+        for lic in API['/api/v1/licenses']['results']:
+            self.assertNotIn(lic['license_key'], stored)
+            self.assertNotIn(lic['license_key'][:-5], stored)
+        raw = next(i for i in TPL['items'] if i['key'] == 'nsx.licenses.get')
+        self.assertEqual(raw['history'], '0')
+        self.assertEqual(next(i for i in TPL['items'] if i['key'] == 'nsx.licenses.list')['history'], '0')
+
+    def test_license_days(self):
+        rule = next(r for r in TPL['discovery_rules'] if r['key'] == 'nsx.license.discovery')
+        days = next(p for p in rule['item_prototypes'] if p['key'] == 'nsx.license.days[{#LIC.ID}]')
+        now = int(time.time())
+        for left in (10, 45, 365):
+            doc = [{'id': 'x', 'perpetual': 0, 'expiry': now + left * 86400 + 3600}]
+            self.assertEqual(float(preprocess(days['preprocessing'], json.dumps(doc), {'{#LIC.ID}': 'x'})), left)
+        # A removed license stops getting values instead of failing.
+        self.assertIsNone(preprocess(days['preprocessing'], '[]', {'{#LIC.ID}': 'x'}))
+
     def test_expected_problems(self):
         firing = self.c.firing()
         expected = [
             ('BGP [T0-GW] 10.0.1.2 -> 10.0.1.1 (AS 65001, edge-02): session is not ESTABLISHED', 'HIGH'),
             ('Certificate [old-ldap-ca]: has expired', 'DISASTER'),
+            ('License [NSX Evaluation *****EVAL1]: has expired', 'HIGH'),
+            ('License [NSX Evaluation *****EVAL1]: evaluation license in use', 'INFO'),
+            ('License [NSX Evaluation *****EVAL1]: expires in less than 14 days', 'AVERAGE'),
             ('Certificate [old-ldap-ca]: expires in less than 7 days', 'HIGH'),
             ('Certificate [old-ldap-ca]: expires in less than 30 days', 'WARNING'),
             ('Edge [e-2]: all overlay tunnels are down', 'HIGH'),
@@ -533,6 +587,8 @@ class EndToEndTests(unittest.TestCase):
             self.assertNotIn('esx-01', name)
             self.assertNotIn('T1-DR', name)
             self.assertNotIn('mgr-cluster-api', name)
+            self.assertNotIn('Enterprise Plus', name)
+            self.assertNotIn('perpetual', name)
 
 
 if __name__ == '__main__':

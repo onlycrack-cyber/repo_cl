@@ -162,6 +162,42 @@
    }
   ]
  },
+ "/api/v1/licenses": {
+  "result_count": 3,
+  "results": [
+   {
+    "capacity_type": "CPU",
+    "description": "NSX Enterprise Plus",
+    "expiry": 4102444800000,
+    "is_eval": false,
+    "is_expired": false,
+    "license_key": "AAAAA-BBBBB-CCCCC-DDDDD-E1234",
+    "product_name": "NSX Data Center",
+    "product_version": "4.2",
+    "quantity": 32
+   },
+   {
+    "capacity_type": "CPU",
+    "description": "NSX Evaluation",
+    "expiry": 1609459200000,
+    "is_eval": true,
+    "is_expired": true,
+    "license_key": "EVAL0-EVAL0-EVAL0-EVAL0-EVAL1",
+    "product_name": "NSX Data Center",
+    "quantity": 0
+   },
+   {
+    "capacity_type": "CORE",
+    "description": "NSX Advanced (perpetual)",
+    "expiry": 0,
+    "is_eval": false,
+    "is_expired": false,
+    "license_key": "PERP0-PERP0-PERP0-PERP0-P9999",
+    "product_name": "NSX Data Center",
+    "quantity": 128
+   }
+  ]
+ },
  "/api/v1/transport-nodes": {
   "result_count": 3,
   "results": [
