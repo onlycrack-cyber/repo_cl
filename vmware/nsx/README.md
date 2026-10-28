@@ -38,6 +38,9 @@ NSX: Get alarms           GET /api/v1/alarms?status=OPEN                     1m
  └─ LLD: один элемент + один триггер на каждый открытый аларм NSX
 NSX: Get certificates     GET /api/v1/trust-management/certificates?details=true   1h
  └─ LLD: сертификаты ─ дата окончания, дней до истечения
+NSX: Get licenses         GET /api/v1/licenses                               1h
+ └─ NSX: Licenses (normalized): JS убирает ключи лицензий
+     └─ LLD: лицензии ─ дата окончания, дней до истечения, expired, evaluation, количество
 ```
 
 **Почему BGP собирается Script-элементом.** Статус соседей лежит на два уровня глубже
@@ -59,8 +62,8 @@ Zabbix 7.0 нет (он появился в 7.4). Script-элемент обхо
 3. Срок жизни пароля у локальных пользователей по умолчанию 90 дней. Чтобы мониторинг
    не отвалился внезапно, на NSX Manager:
    `set user zabbix-ro password-expiration 9999` (CLI под admin).
-4. Auditor видит алармы, статусы транспортных узлов, Edge, шлюзов, BGP и список
-   сертификатов (без закрытых ключей): этого хватает для всех запросов шаблона.
+4. Auditor видит алармы, статусы транспортных узлов, Edge, шлюзов, BGP, список
+   сертификатов (без закрытых ключей) и лицензии: этого хватает для всех запросов шаблона.
 
 **Аутентификация.** Используется HTTP Basic (каждый запрос самодостаточен, что
 удобно для HTTP agent). Если в NSX выключена basic-аутентификация
@@ -123,7 +126,9 @@ Script-элемент. При сертификате от доверенного
 | `{$NSX.INTERVAL.CERT}` | `1h` | интервал опроса сертификатов |
 | `{$NSX.CERT.EXPIRY.WARN}` / `.CRIT` | `30` / `7` | дней до истечения для Warning / High; можно с контекстом: `{$NSX.CERT.EXPIRY.WARN:"mgr-cluster-api"}` |
 | `{$NSX.CERT.USED_BY.MATCHES}` | `.*` | фильтр по сервисам, использующим сертификат; `.+` пропускает неиспользуемые |
-| `{$NSX.<TN\|EDGE\|EC\|T0\|T1\|CERT>.NAME.MATCHES}` / `.NOT_MATCHES` | `.*` / `CHANGE_IF_NEEDED` | фильтры LLD по имени хоста, Edge, Edge-кластера, шлюзов, сертификата |
+| `{$NSX.INTERVAL.LICENSE}` | `1h` | интервал опроса лицензий |
+| `{$NSX.LICENSE.EXPIRY.WARN}` / `.CRIT` | `60` / `14` | дней до окончания лицензии для Warning / Average; можно с контекстом по имени лицензии |
+| `{$NSX.<TN\|EDGE\|EC\|T0\|T1\|CERT\|LICENSE>.NAME.MATCHES}` / `.NOT_MATCHES` | `.*` / `CHANGE_IF_NEEDED` | фильтры LLD по имени хоста, Edge, Edge-кластера, шлюзов, сертификата, лицензии |
 
 ## Триггеры
 
@@ -152,6 +157,10 @@ Script-элемент. При сертификате от доверенного
 | Сертификат | истёк | Disaster |
 | Сертификат | истекает через < `{$NSX.CERT.EXPIRY.CRIT}` дней | High (зависит от «истёк») |
 | Сертификат | истекает через < `{$NSX.CERT.EXPIRY.WARN}` дней | Warning (зависит от High) |
+| Лицензия | истекла (`is_expired`) | High |
+| Лицензия | истекает через < `{$NSX.LICENSE.EXPIRY.CRIT}` дней | Average (зависит от «истекла») |
+| Лицензия | истекает через < `{$NSX.LICENSE.EXPIRY.WARN}` дней | Warning (зависит от Average) |
+| Лицензия | установлен evaluation-ключ | Information |
 
 Триггеры зависят друг от друга: при падении Edge не приходит отдельная проблема на каждый
 туннель и каждый сервис.
@@ -215,6 +224,33 @@ VPN, DHCP. Пороги у них разные.
 алармов. Если два вида проблем для одного сертификата мешают, исключите feature алармов:
 `{$NSX.ALARM.FEATURE.NOT_MATCHES}` = `(?i)^certificates$` (сравнивается отображаемое имя feature,
 а если его нет, системное).
+
+## Лицензии
+
+`/api/v1/licenses` (*System → Licenses*). На каждый установленный ключ:
+
+- **expires on** и **days until expiry**: дата окончания и целые дни до неё (после окончания
+  значение отрицательное). У бессрочной лицензии (`expiry` = 0 или нет поля) этих данных нет,
+  и триггеры по срокам к ней не срабатывают;
+- **expired**, **evaluation**: флаги `is_expired` и `is_eval` (Yes/No);
+- **licensed quantity**: сколько единиц `capacity_type` (CPU, CORE, VM, USER…) покрывает ключ.
+
+Пороги по умолчанию больше, чем у сертификатов (60 и 14 дней): продление лицензии обычно
+требует закупки. Истёкшая лицензия NSX не останавливает передачу трафика, но ограничивает
+настройку лицензируемых функций, поэтому её триггер High, а не Disaster.
+
+**Ключи лицензий не попадают в Zabbix.** Сырой ответ API хранится только в памяти
+(`history: 0`). JavaScript в элементе `NSX: Licenses (normalized)` заменяет ключ хешем (он
+используется как `{#LIC.ID}`) и маской из последних пяти символов (`*****E1234`): только эта
+маска видна в именах элементов и триггеров. Тест `test_license_keys_never_leave_the_raw_item`
+проверяет, что полный ключ нигде не сохраняется.
+
+Использование лицензий (сколько CPU/VM занято, `/api/v1/licenses/licenses-usage`) шаблон
+пока не собирает: формат этого ответа надо сначала сверить на живом NSX.
+
+В инсталляциях VMware Cloud Foundation лицензии могут управляться централизованно
+(vCenter, VCF Operations). Тогда список в NSX может быть пустым: правило ничего не
+обнаружит, а `NSX: Licenses installed` покажет 0.
 
 ## Пример: мастер-элемент и LLD-правило (фрагмент YAML)
 
@@ -285,6 +321,7 @@ VPN, DHCP. Пороги у них разные.
 | `time_since_established` | uptime BGP | секунды в 4.x, миллисекунды в 2.x/3.x → `{$NSX.BGP.UPTIME.MULTIPLIER}` |
 | `node_status.system_status.cpu_usage.*`, `edge_mem_usage.system_mem_usage` | CPU/RAM Edge | без `edge_mem_usage` память считается как `mem_used / mem_total` |
 | `?source=cached` | статус транспортных узлов | кешированный статус дешевле для Manager; убрать, если нужен realtime |
+| `license_key`, `description`, `expiry`, `is_eval`, `is_expired`, `capacity_type`, `quantity` | лицензии | `GET /api/v1/licenses`; `expiry` ожидается в миллисекундах epoch, 0 = бессрочная |
 | `details[0].not_after`, `details[0].subject_cn`, `used_by[].service_types` | сертификаты | `GET /api/v1/trust-management/certificates?details=true`; `not_after` ожидается в миллисекундах epoch (секунды тоже распознаются) |
 
 В NSX 4.x Manager API `/api/v1/transport-nodes` помечен как deprecated в пользу
