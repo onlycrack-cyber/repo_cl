@@ -10,6 +10,7 @@
 | `grafana/vmware-cpu-memory.json` | дашборд «VMware — CPU и память» |
 | `grafana/vmware-power.json` | дашборд «VMware — питание» (кВт, кВт·ч) |
 | `tools/gen_capacity_template.py`, `tools/gen_grafana_dashboards.py` | генераторы; файлы выше не правятся руками |
+| `nsx/` | отдельный шаблон **VMware NSX by HTTP** (NSX-T / NSX 4.x через REST API), см. [nsx/README.md](nsx/README.md) |
 
 ## Что показывают дашборды
 
