@@ -1,0 +1,455 @@
+{
+ "/api/v1/alarms": {
+  "result_count": 5,
+  "results": [
+   {
+    "description": "The Edge node e-2 is down.",
+    "entity_id": "e-2",
+    "event_type": "edge_node_down",
+    "event_type_display_name": "Edge Node Down",
+    "feature_display_name": "Edge Health",
+    "feature_name": "edge_health",
+    "id": "al-1",
+    "node_display_name": "edge-02",
+    "recommended_action": "Check the Edge VM.",
+    "severity": "CRITICAL",
+    "status": "OPEN",
+    "summary": "Edge node is down."
+   },
+   {
+    "entity_id": "t0-gw",
+    "event_type": "bgp_down",
+    "feature_name": "routing",
+    "id": "al-2",
+    "node_id": "e-2",
+    "severity": "HIGH",
+    "status": "OPEN",
+    "summary": "BGP neighbor down."
+   },
+   {
+    "entity_id": "cert-1",
+    "event_type": "certificate_expiration_approaching",
+    "feature_name": "certificates",
+    "id": "al-3",
+    "severity": "MEDIUM",
+    "status": "OPEN",
+    "summary": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "entity_id": "svc-1",
+    "event_type": "service_status_unknown",
+    "feature_name": "infrastructure_service",
+    "id": "al-4",
+    "severity": "LOW",
+    "status": "OPEN",
+    "summary": "Low."
+   },
+   {
+    "entity_id": "e-9",
+    "event_type": "edge_node_down",
+    "feature_name": "edge_health",
+    "id": "al-5",
+    "severity": "CRITICAL",
+    "status": "RESOLVED",
+    "summary": "Old."
+   }
+  ]
+ },
+ "/api/v1/cluster/status": {
+  "cluster_id": "5bd2b8a4-0e8b-4c8e-9d2d-3c0a8b0f6c11",
+  "control_cluster_status": {
+   "status": "STABLE"
+  },
+  "detailed_cluster_status": {
+   "groups": [
+    {
+     "group_id": "g1",
+     "group_status": "STABLE",
+     "group_type": "MANAGER",
+     "members": [
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "UP"
+      }
+     ]
+    },
+    {
+     "group_id": "g2",
+     "group_status": "DEGRADED",
+     "group_type": "POLICY",
+     "members": [
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "DOWN"
+      }
+     ]
+    },
+    {
+     "group_id": "g3",
+     "group_status": "STABLE",
+     "group_type": "DATASTORE",
+     "members": [
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "UP"
+      },
+      {
+       "member_status": "UP"
+      }
+     ]
+    }
+   ],
+   "overall_status": "DEGRADED"
+  },
+  "mgmt_cluster_status": {
+   "online_nodes": [
+    {
+     "uuid": "m1"
+    },
+    {
+     "uuid": "m2"
+    },
+    {
+     "uuid": "m3"
+    }
+   ],
+   "status": "STABLE"
+  }
+ },
+ "/api/v1/edge-clusters": {
+  "result_count": 1,
+  "results": [
+   {
+    "display_name": "edge-cluster-01",
+    "id": "ec-1",
+    "members": [
+     {
+      "display_name": "edge-01",
+      "member_index": 0,
+      "transport_node_id": "e-1"
+     },
+     {
+      "member_index": 1,
+      "transport_node_id": "e-2"
+     }
+    ]
+   }
+  ]
+ },
+ "/api/v1/edge-clusters/ec-1/status": {
+  "edge_cluster_id": "ec-1",
+  "edge_cluster_status": "DEGRADED",
+  "member_status": [
+   {
+    "status": "UP",
+    "transport_node_id": "e-1"
+   },
+   {
+    "status": "DOWN",
+    "transport_node_id": "e-2"
+   }
+  ]
+ },
+ "/api/v1/transport-nodes": {
+  "result_count": 3,
+  "results": [
+   {
+    "display_name": "esx-01",
+    "id": "h-1",
+    "node_deployment_info": {
+     "resource_type": "HostNode"
+    }
+   },
+   {
+    "display_name": "esx-02",
+    "id": "h-2",
+    "node_deployment_info": {
+     "resource_type": "HostNode"
+    }
+   },
+   {
+    "display_name": "edge-01",
+    "id": "e-1",
+    "node_deployment_info": {
+     "resource_type": "EdgeNode"
+    }
+   }
+  ]
+ },
+ "/api/v1/transport-nodes/e-1/status": {
+  "control_connection_status": {
+   "status": "UP"
+  },
+  "mgmt_connection_status": "UP",
+  "node_status": {
+   "system_status": {
+    "cpu_usage": {
+     "avg_cpu_core_usage_dpdk": 12.5,
+     "avg_cpu_core_usage_non_dpdk": 95.0,
+     "highest_cpu_core_usage_dpdk": 30.0
+    },
+    "edge_mem_usage": {
+     "system_mem_usage": 41.2
+    },
+    "uptime": 86400000
+   }
+  },
+  "pnic_status": {
+   "status": "UP"
+  },
+  "status": "UP",
+  "tunnel_status": {
+   "degraded_count": 0,
+   "down_count": 0,
+   "status": "UP",
+   "up_count": 4
+  }
+ },
+ "/api/v1/transport-nodes/e-2/status": {
+  "control_connection_status": {
+   "status": "DOWN"
+  },
+  "mgmt_connection_status": "DOWN",
+  "node_status": {
+   "system_status": {
+    "cpu_usage": {
+     "avg_cpu_core_usage_dpdk": 0,
+     "avg_cpu_core_usage_non_dpdk": 0,
+     "highest_cpu_core_usage_dpdk": 0
+    },
+    "mem_total": 32000000,
+    "mem_used": 8000000,
+    "uptime": 300000
+   }
+  },
+  "pnic_status": {
+   "status": "UP"
+  },
+  "status": "DOWN",
+  "tunnel_status": {
+   "degraded_count": 0,
+   "down_count": 4,
+   "status": "DOWN",
+   "up_count": 0
+  }
+ },
+ "/api/v1/transport-nodes/h-1/status": {
+  "control_connection_status": {
+   "status": "UP"
+  },
+  "mgmt_connection_status": "UP",
+  "pnic_status": {
+   "status": "UP"
+  },
+  "status": "UP",
+  "tunnel_status": {
+   "degraded_count": 0,
+   "down_count": 0,
+   "status": "UP",
+   "up_count": 8
+  }
+ },
+ "/api/v1/transport-nodes/h-2/status": {
+  "control_connection_status": {
+   "status": "UP"
+  },
+  "mgmt_connection_status": "UP",
+  "pnic_status": {
+   "status": "DEGRADED"
+  },
+  "status": "DEGRADED",
+  "tunnel_status": {
+   "degraded_count": 0,
+   "down_count": 2,
+   "status": "DEGRADED",
+   "up_count": 6
+  }
+ },
+ "/api/v1/trust-management/certificates": {
+  "result_count": 3,
+  "results": [
+   {
+    "details": [
+     {
+      "issuer_cn": "Corp Issuing CA",
+      "not_after": 4102444800000,
+      "not_before": 1700000000000,
+      "subject_cn": "nsx.example.local"
+     },
+     {
+      "not_after": 4102444800000,
+      "subject_cn": "Corp Issuing CA"
+     }
+    ],
+    "display_name": "mgr-cluster-api",
+    "id": "cert-api",
+    "resource_type": "certificate_signed",
+    "used_by": [
+     {
+      "node_id": [
+       "m1",
+       "m2",
+       "m3"
+      ],
+      "service_types": [
+       "API",
+       "MGMT_CLUSTER"
+      ]
+     },
+     {
+      "node_id": [
+       "m1"
+      ],
+      "service_types": [
+       "API"
+      ]
+     }
+    ]
+   },
+   {
+    "details": [
+     {
+      "issuer_cn": "Old LDAP CA",
+      "not_after": 1609459200,
+      "subject_cn": "Old LDAP CA"
+     }
+    ],
+    "display_name": "old-ldap-ca",
+    "id": "cert-ldap",
+    "resource_type": "certificate_ca",
+    "used_by": []
+   },
+   {
+    "display_name": "no-details",
+    "id": "cert-nodetails"
+   }
+  ]
+ },
+ "/policy/api/v1/infra/tier-0s": {
+  "result_count": 2,
+  "results": [
+   {
+    "display_name": "T0-GW",
+    "ha_mode": "ACTIVE_STANDBY",
+    "id": "t0-gw"
+   },
+   {
+    "display_name": "T0-AA",
+    "ha_mode": "ACTIVE_ACTIVE",
+    "id": "t0-aa"
+   }
+  ]
+ },
+ "/policy/api/v1/infra/tier-0s/t0-aa/state": {
+  "tier0_status": {
+   "per_node_status": [
+    {
+     "high_availability_status": "ACTIVE",
+     "transport_node_id": "e-1"
+    },
+    {
+     "high_availability_status": "ACTIVE",
+     "transport_node_id": "e-2"
+    }
+   ]
+  }
+ },
+ "/policy/api/v1/infra/tier-0s/t0-gw/locale-services": {
+  "results": [
+   {
+    "id": "default"
+   }
+  ]
+ },
+ "/policy/api/v1/infra/tier-0s/t0-gw/locale-services/default/bgp/neighbors/status": {
+  "results": [
+   {
+    "connection_state": "ESTABLISHED",
+    "neighbor_address": "10.0.0.1",
+    "remote_as_number": "65001",
+    "source_address": "10.0.0.2",
+    "time_since_established": 3600,
+    "total_in_prefix_count": 12,
+    "total_out_prefix_count": 3,
+    "transport_node": {
+     "target_display_name": "edge-01",
+     "target_id": "e-1"
+    }
+   },
+   {
+    "connection_state": "IDLE",
+    "neighbor_address": "10.0.1.1",
+    "remote_as_number": "65001",
+    "source_address": "10.0.1.2",
+    "time_since_established": 0,
+    "total_in_prefix_count": 0,
+    "total_out_prefix_count": 0,
+    "transport_node": {
+     "target_display_name": "edge-02",
+     "target_id": "e-2"
+    }
+   }
+  ]
+ },
+ "/policy/api/v1/infra/tier-0s/t0-gw/state": {
+  "tier0_state": {
+   "state": "in_sync"
+  },
+  "tier0_status": {
+   "per_node_status": [
+    {
+     "high_availability_status": "ACTIVE",
+     "transport_node_id": "e-1"
+    },
+    {
+     "high_availability_status": "DOWN",
+     "transport_node_id": "e-2"
+    }
+   ]
+  }
+ },
+ "/policy/api/v1/infra/tier-1s": {
+  "result_count": 2,
+  "results": [
+   {
+    "display_name": "T1-APP",
+    "id": "t1-app"
+   },
+   {
+    "display_name": "T1-DR",
+    "id": "t1-dr"
+   }
+  ]
+ },
+ "/policy/api/v1/infra/tier-1s/t1-app/state": {
+  "tier1_status": {
+   "per_node_status": [
+    {
+     "high_availability_status": "STANDBY",
+     "transport_node_id": "e-2"
+    },
+    {
+     "high_availability_status": "ACTIVE",
+     "transport_node_id": "e-1"
+    }
+   ]
+  }
+ },
+ "/policy/api/v1/infra/tier-1s/t1-dr/state": {
+  "tier1_state": {
+   "state": "in_sync"
+  }
+ }
+}

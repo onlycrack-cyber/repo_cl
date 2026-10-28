@@ -148,6 +148,13 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 (датасторы, CPU и память, питание) с изменениями за год и прогнозом исчерпания ресурсов:
 [vmware/](vmware/README.md).
 
+## VMware NSX: мониторинг через REST API
+
+Шаблон **VMware NSX by HTTP** (HTTP agent + зависимые элементы и LLD): кластер NSX Manager,
+ESXi transport nodes и GENEVE-туннели, Edge-кластеры и Edge-ноды (CPU, память), HA шлюзов
+Tier-0/Tier-1, BGP-соседи Tier-0, сроки действия сертификатов и проброс алармов NSX в проблемы Zabbix:
+[vmware/nsx/](vmware/nsx/README.md).
+
 ## Скрипт
 
 ```
@@ -183,6 +190,9 @@ python3 -m unittest discover -s tests -v
 - `tests/test_template.py`: структура шаблона (UUID v4, ссылки триггеров, зависимости, макросы,
   теги, сохранность legacy-ключей) и прогон вывода `--test` через все шаги препроцессинга
   (JSONPath и JavaScript через node).
+- `tests/test_nsx.py`: шаблон NSX (структура, макросы, ссылки триггеров, ES5-совместимость JS)
+  и прогон ответов NSX API из `tests/fixtures/nsx/api.json` через все LLD, препроцессинг,
+  overrides и триггеры, включая BGP Script-элемент со stub-ом `HttpRequest`.
 
 ## Отчёт аудита (версия 2.0)
 
