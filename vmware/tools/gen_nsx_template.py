@@ -709,6 +709,72 @@ alarm_items = [
     for sev, _ in SEVERITIES
 ]
 
+# ------------------------------------------------------------------ 5. certificates
+CERT_GET = 'nsx.certificates.get'
+CERT_LLD_JS = '''var certs = JSON.parse(value).results || [], out = [];
+for (var i = 0; i < certs.length; i++) {
+    var c = certs[i], d = (c.details || [])[0] || {}, ub = c.used_by || [], used = [];
+    for (var j = 0; j < ub.length; j++) {
+        var types = ub[j].service_types || [];
+        for (var k = 0; k < types.length; k++) {
+            if (used.indexOf(String(types[k])) === -1) {
+                used.push(String(types[k]));
+            }
+        }
+    }
+    out.push({
+        '{#CERT.ID}': c.id,
+        '{#CERT.NAME}': c.display_name || c.id,
+        '{#CERT.SUBJECT}': d.subject_cn || '',
+        '{#CERT.ISSUER}': d.issuer_cn || '',
+        '{#CERT.USED_BY}': used.sort().join(',')
+    });
+}
+return JSON.stringify(out);'''
+# details[0] is the leaf certificate of the chain; not_after is epoch milliseconds (seconds are accepted too).
+NOT_AFTER_JS = '''var d = (JSON.parse(value).details || [])[0] || {};
+if (d.not_after === undefined || d.not_after === null) {
+    throw 'details[0].not_after is missing in the certificate';
+}
+var t = Number(d.not_after);
+t = Math.floor(t > 100000000000 ? t / 1000 : t);
+'''
+cert_entity = {'certificate': '{#CERT.NAME}'}
+cert_label = 'Certificate [{#CERT.NAME}]'
+CERT = "$.results[?(@.id=='{#CERT.ID}')].first()"
+cert_days = 'nsx.cert.days[{#CERT.ID}]'
+cert_desc = ('Subject CN: {#CERT.SUBJECT}\nIssuer CN: {#CERT.ISSUER}\nUsed by: {#CERT.USED_BY}\nID: {#CERT.ID}\n\n'
+             'Replace it under System > Certificates (and re-assign it to the service that uses it).')
+cert_expired = trigger('%s: has expired' % cert_label, 'last(%s)<0' % ref(cert_days), 'DISASTER', 'certificate',
+                       opdata='Days left: {ITEM.LASTVALUE1}', entity=cert_entity, desc=cert_desc)
+cert_crit = trigger('%s: expires in less than {$NSX.CERT.EXPIRY.CRIT:"{#CERT.NAME}"} days' % cert_label,
+                    'last(%s)<{$NSX.CERT.EXPIRY.CRIT:"{#CERT.NAME}"}' % ref(cert_days), 'HIGH', 'certificate',
+                    opdata='Days left: {ITEM.LASTVALUE1}', deps=[cert_expired], entity=cert_entity, desc=cert_desc)
+cert_warn = trigger('%s: expires in less than {$NSX.CERT.EXPIRY.WARN:"{#CERT.NAME}"} days' % cert_label,
+                    'last(%s)<{$NSX.CERT.EXPIRY.WARN:"{#CERT.NAME}"}' % ref(cert_days), 'WARNING', 'certificate',
+                    opdata='Days left: {ITEM.LASTVALUE1}', deps=[cert_crit], entity=cert_entity, desc=cert_desc)
+cert_rule = lld(
+    'NSX: Certificates discovery', 'nsx.cert.discovery', CERT_GET, [js(CERT_LLD_JS), heartbeat()], [],
+    [
+        dep('%s: expires on' % cert_label, 'nsx.cert.not_after[{#CERT.ID}]', CERT_GET,
+            [jsonpath(CERT, 'discard'), js(NOT_AFTER_JS + 'return t;'), heartbeat('1d')], 'certificate',
+            units='unixtime', history='31d', entity=cert_entity, desc='details[0].not_after of the certificate.'),
+        dep('%s: days until expiry' % cert_label, cert_days, CERT_GET,
+            [jsonpath(CERT, 'discard'), js(NOT_AFTER_JS + 'return Math.floor((t - Date.now() / 1000) / 86400);')],
+            'certificate', value_type='FLOAT', units='d', history='31d', entity=cert_entity, proto=True,
+            desc='Whole days until not_after; negative once expired.',
+            triggers=[cert_expired, cert_crit, cert_warn]),
+    ],
+    'Certificates from /api/v1/trust-management/certificates (System > Certificates): API/cluster, '
+    'transport node, load balancer, VPN and imported CA certificates. {#CERT.USED_BY} lists the service types '
+    'that use the certificate; empty for unused ones.',
+    filters=name_filters('{#CERT.NAME}', 'CERT') + [('{#CERT.USED_BY}', 'MATCHES_REGEX', '{$NSX.CERT.USED_BY.MATCHES}')])
+cert_items = [
+    http('NSX: Get certificates', CERT_GET, '/api/v1/trust-management/certificates', '{$NSX.INTERVAL.CERT}', 'raw',
+         'Certificates with parsed details (details=true) for discovery and expiry.',
+         [('details', 'true'), ('page_size', '1000')]),
+]
+
 # ------------------------------------------------------------------ template
 macros = [
     ('{$NSX.MANAGER.URL}', 'https://nsx-manager.local', 'TEXT',
@@ -733,9 +799,14 @@ macros = [
     ('{$NSX.ALARM.SEVERITY.MATCHES}', '^(CRITICAL|HIGH|MEDIUM)$', 'TEXT',
      'NSX alarm severities turned into Zabbix problems (LOW is skipped by default).'),
     ('{$NSX.ALARM.FEATURE.NOT_MATCHES}', 'CHANGE_IF_NEEDED', 'TEXT', 'NSX alarm features to ignore (regex).'),
+    ('{$NSX.INTERVAL.CERT}', '1h', 'TEXT', 'Polling interval of certificates.'),
+    ('{$NSX.CERT.EXPIRY.WARN}', '30', 'TEXT', 'Warning when a certificate expires in fewer days. Context: name.'),
+    ('{$NSX.CERT.EXPIRY.CRIT}', '7', 'TEXT', 'High when a certificate expires in fewer days. Context: name.'),
+    ('{$NSX.CERT.USED_BY.MATCHES}', '.*', 'TEXT',
+     'Discover a certificate if its service types match; ".+" skips certificates that nothing uses.'),
 ]
 for prefix, what in (('TN', 'host transport node'), ('EDGE', 'edge node'), ('EC', 'edge cluster'),
-                     ('T0', 'Tier-0 gateway'), ('T1', 'Tier-1 gateway')):
+                     ('T0', 'Tier-0 gateway'), ('T1', 'Tier-1 gateway'), ('CERT', 'certificate')):
     macros.append(('{$NSX.%s.NAME.MATCHES}' % prefix, '.*', 'TEXT', 'Discover a %s if its name matches.' % what))
     macros.append(('{$NSX.%s.NAME.NOT_MATCHES}' % prefix, 'CHANGE_IF_NEEDED', 'TEXT',
                    'Skip a %s if its name matches.' % what))
@@ -758,14 +829,16 @@ template = {
     'description': (
         'Monitoring of VMware NSX (NSX-T 3.x, NSX 4.x) through the NSX Manager REST API: management cluster, '
         'host transport nodes, edge clusters and edge nodes (status, tunnels, CPU, memory), Tier-0/Tier-1 HA, '
-        'Tier-0 BGP neighbours and NSX alarms.\n\n'
+        'Tier-0 BGP neighbours, NSX alarms and certificate expiry.\n\n'
         'Create a host for the NSX Manager cluster (no interface needed), link this template and set '
         '{$NSX.MANAGER.URL}, {$NSX.USER}, {$NSX.PASSWORD}. A read-only NSX user (role Auditor) is enough.\n\n'
         'Generated by vmware/tools/gen_nsx_template.py.'),
     'vendor': {'name': 'Custom', 'version': '7.0-1.0.0'},
     'groups': [{'name': 'Templates/Applications'}],
-    'items': cluster_items + transport_items + edge_cluster_items + [t0_master, t1_master] + bgp_items + alarm_items,
-    'discovery_rules': [group_rule, host_rule, ec_rule, edge_rule, t0_rule, t1_rule, bgp_rule, alarm_rule],
+    'items': cluster_items + transport_items + edge_cluster_items + [t0_master, t1_master] + bgp_items + alarm_items +
+             cert_items,
+    'discovery_rules': [group_rule, host_rule, ec_rule, edge_rule, t0_rule, t1_rule, bgp_rule, alarm_rule,
+                        cert_rule],
     'tags': [{'tag': 'class', 'value': 'software'}, {'tag': 'target', 'value': 'nsx'}],
     'macros': [macro(*m) for m in sorted(macros)],
     'valuemaps': [{'uuid': uid('valuemap:' + n), 'name': n,

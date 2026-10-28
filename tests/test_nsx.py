@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 import yaml
@@ -210,14 +211,14 @@ def filter_ok(rule, row, macros):
     return True
 
 
-TRIGGER = re.compile(r'^last\((/[^/]+/[^)]+?)\)(=|<>|>)(\d+)$')
+TRIGGER = re.compile(r'^last\((/[^/]+/[^)]+?)\)(=|<>|>|<)(-?\d+)$')
 
 
 class Collected:
     """Every resolved item value and every discovered trigger after one polling round."""
 
     def __init__(self):
-        self.values, self.triggers, self.discovered = {}, [], {}
+        self.values, self.triggers, self.discovered, self.errors = {}, [], {}, {}
         user = template_macros()
         masters = {i['key']: master_value(i, user) for i in TPL['items'] if i['type'] != 'DEPENDENT'}
         for it in TPL['items']:
@@ -244,7 +245,10 @@ class Collected:
                         proto_masters[p['key']] = master_value(p, macros)
                         continue
                     master = proto_masters.get(p['master_item']['key']) or masters[p['master_item']['key']]
-                    self.values[key] = preprocess(p['preprocessing'], master, macros)
+                    try:
+                        self.values[key] = preprocess(p['preprocessing'], master, macros)
+                    except NoValue as e:  # the item becomes "not supported" in Zabbix
+                        self.errors[key] = str(e)
                 triggers = [t for p in rule['item_prototypes'] for t in p.get('trigger_prototypes', [])]
                 triggers += rule.get('trigger_prototypes', [])
                 for t in triggers:
@@ -273,9 +277,9 @@ class Collected:
 
     def firing(self):
         """(name, priority) of triggers with a simple last(...) expression that are in PROBLEM."""
-        out = []
+        out, user = [], template_macros()
         for t, macros in self.triggers:
-            m = TRIGGER.match(t['expression'])
+            m = TRIGGER.match(resolve_user_macros(t['expression'], user))
             if not m:
                 continue
             key = subst(m.group(1).split('/', 2)[2], macros)
@@ -283,8 +287,9 @@ class Collected:
             if value is None:
                 continue
             v, n = float(value), float(m.group(3))
-            if {'=': v == n, '<>': v != n, '>': v > n}[m.group(2)]:
-                out.append((subst(t['name'], macros), t.get('priority', 'NOT_CLASSIFIED')))
+            if {'=': v == n, '<>': v != n, '>': v > n, '<': v < n}[m.group(2)]:
+                name = resolve_user_macros(subst(t['name'], macros), user)
+                out.append((name, t.get('priority', 'NOT_CLASSIFIED')))
         return sorted(out)
 
 
@@ -476,10 +481,38 @@ class EndToEndTests(unittest.TestCase):
         value = preprocess(proto['preprocessing'], json.dumps({'results': []}), {'{#ALARM.ID}': 'al-1'})
         self.assertEqual(value, '0')
 
+    def test_certificates(self):
+        found = {r['{#CERT.ID}']: r for r in self.c.discovered['nsx.cert.discovery']}
+        self.assertEqual(sorted(found), ['cert-api', 'cert-ldap', 'cert-nodetails'])
+        self.assertEqual(found['cert-api']['{#CERT.USED_BY}'], 'API,MGMT_CLUSTER')
+        self.assertEqual(found['cert-api']['{#CERT.ISSUER}'], 'Corp Issuing CA')
+        self.assertEqual(found['cert-ldap']['{#CERT.USED_BY}'], '')
+        self.assertEqual(self.v('nsx.cert.not_after[cert-api]'), '4102444800')  # milliseconds -> seconds
+        self.assertEqual(self.v('nsx.cert.not_after[cert-ldap]'), '1609459200')  # already seconds
+        self.assertLess(float(self.v('nsx.cert.days[cert-ldap]')), 0)
+        self.assertGreater(float(self.v('nsx.cert.days[cert-api]')), 20000)
+        self.assertIn('not_after is missing', self.c.errors['nsx.cert.days[cert-nodetails]'])
+
+    def test_certificate_days_and_unused_filter(self):
+        rule = next(r for r in TPL['discovery_rules'] if r['key'] == 'nsx.cert.discovery')
+        days = next(p for p in rule['item_prototypes'] if p['key'] == 'nsx.cert.days[{#CERT.ID}]')
+        now_ms = int(time.time() * 1000)
+        for left in (3, 20, 100):
+            doc = {'results': [{'id': 'c', 'details': [{'not_after': now_ms + left * 86400000 + 3600000}]}]}
+            self.assertEqual(float(preprocess(days['preprocessing'], json.dumps(doc), {'{#CERT.ID}': 'c'})), left)
+        # A removed certificate stops getting values instead of failing.
+        self.assertIsNone(preprocess(days['preprocessing'], json.dumps({'results': []}), {'{#CERT.ID}': 'c'}))
+        macros = dict(template_macros(), **{'{$NSX.CERT.USED_BY.MATCHES}': '.+'})
+        self.assertFalse(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': ''}, macros))
+        self.assertTrue(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': 'API'}, macros))
+
     def test_expected_problems(self):
         firing = self.c.firing()
         expected = [
             ('BGP [T0-GW] 10.0.1.2 -> 10.0.1.1 (AS 65001, edge-02): session is not ESTABLISHED', 'HIGH'),
+            ('Certificate [old-ldap-ca]: has expired', 'DISASTER'),
+            ('Certificate [old-ldap-ca]: expires in less than 7 days', 'HIGH'),
+            ('Certificate [old-ldap-ca]: expires in less than 30 days', 'WARNING'),
             ('Edge [e-2]: all overlay tunnels are down', 'HIGH'),
             ('Edge [e-2]: lost connection to NSX Manager', 'AVERAGE'),
             ('Edge [e-2]: status is DOWN', 'HIGH'),
@@ -499,6 +532,7 @@ class EndToEndTests(unittest.TestCase):
         for name, _ in firing:
             self.assertNotIn('esx-01', name)
             self.assertNotIn('T1-DR', name)
+            self.assertNotIn('mgr-cluster-api', name)
 
 
 if __name__ == '__main__':

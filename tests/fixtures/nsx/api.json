@@ -277,6 +277,66 @@
    "up_count": 6
   }
  },
+ "/api/v1/trust-management/certificates": {
+  "result_count": 3,
+  "results": [
+   {
+    "details": [
+     {
+      "issuer_cn": "Corp Issuing CA",
+      "not_after": 4102444800000,
+      "not_before": 1700000000000,
+      "subject_cn": "nsx.example.local"
+     },
+     {
+      "not_after": 4102444800000,
+      "subject_cn": "Corp Issuing CA"
+     }
+    ],
+    "display_name": "mgr-cluster-api",
+    "id": "cert-api",
+    "resource_type": "certificate_signed",
+    "used_by": [
+     {
+      "node_id": [
+       "m1",
+       "m2",
+       "m3"
+      ],
+      "service_types": [
+       "API",
+       "MGMT_CLUSTER"
+      ]
+     },
+     {
+      "node_id": [
+       "m1"
+      ],
+      "service_types": [
+       "API"
+      ]
+     }
+    ]
+   },
+   {
+    "details": [
+     {
+      "issuer_cn": "Old LDAP CA",
+      "not_after": 1609459200,
+      "subject_cn": "Old LDAP CA"
+     }
+    ],
+    "display_name": "old-ldap-ca",
+    "id": "cert-ldap",
+    "resource_type": "certificate_ca",
+    "used_by": []
+   },
+   {
+    "display_name": "no-details",
+    "id": "cert-nodetails"
+   }
+  ]
+ },
  "/policy/api/v1/infra/tier-0s": {
   "result_count": 2,
   "results": [

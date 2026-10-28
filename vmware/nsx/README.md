@@ -36,6 +36,8 @@ NSX: Get BGP neighbors    Script: tier-0s → locale-services → bgp/neighbors/
 NSX: Get alarms           GET /api/v1/alarms?status=OPEN                     1m
  ├─ счётчики по severity
  └─ LLD: один элемент + один триггер на каждый открытый аларм NSX
+NSX: Get certificates     GET /api/v1/trust-management/certificates?details=true   1h
+ └─ LLD: сертификаты ─ дата окончания, дней до истечения
 ```
 
 **Почему BGP собирается Script-элементом.** Статус соседей лежит на два уровня глубже
@@ -57,8 +59,8 @@ Zabbix 7.0 нет (он появился в 7.4). Script-элемент обхо
 3. Срок жизни пароля у локальных пользователей по умолчанию 90 дней. Чтобы мониторинг
    не отвалился внезапно, на NSX Manager:
    `set user zabbix-ro password-expiration 9999` (CLI под admin).
-4. Auditor видит алармы, статусы транспортных узлов, Edge, шлюзов и BGP: этого хватает
-   для всех запросов шаблона.
+4. Auditor видит алармы, статусы транспортных узлов, Edge, шлюзов, BGP и список
+   сертификатов (без закрытых ключей): этого хватает для всех запросов шаблона.
 
 **Аутентификация.** Используется HTTP Basic (каждый запрос самодостаточен, что
 удобно для HTTP agent). Если в NSX выключена basic-аутентификация
@@ -118,7 +120,10 @@ Script-элемент. При сертификате от доверенного
 | `{$NSX.ALARM.STATUS}` | `OPEN` | фильтр статуса в запросе `/api/v1/alarms` |
 | `{$NSX.ALARM.SEVERITY.MATCHES}` | `^(CRITICAL\|HIGH\|MEDIUM)$` | какие алармы NSX превращать в проблемы (LOW по умолчанию нет) |
 | `{$NSX.ALARM.FEATURE.NOT_MATCHES}` | `CHANGE_IF_NEEDED` | игнорировать алармы этих feature (regex по отображаемому имени) |
-| `{$NSX.<TN\|EDGE\|EC\|T0\|T1>.NAME.MATCHES}` / `.NOT_MATCHES` | `.*` / `CHANGE_IF_NEEDED` | фильтры LLD по имени хоста, Edge, Edge-кластера, шлюзов |
+| `{$NSX.INTERVAL.CERT}` | `1h` | интервал опроса сертификатов |
+| `{$NSX.CERT.EXPIRY.WARN}` / `.CRIT` | `30` / `7` | дней до истечения для Warning / High; можно с контекстом: `{$NSX.CERT.EXPIRY.WARN:"mgr-cluster-api"}` |
+| `{$NSX.CERT.USED_BY.MATCHES}` | `.*` | фильтр по сервисам, использующим сертификат; `.+` пропускает неиспользуемые |
+| `{$NSX.<TN\|EDGE\|EC\|T0\|T1\|CERT>.NAME.MATCHES}` / `.NOT_MATCHES` | `.*` / `CHANGE_IF_NEEDED` | фильтры LLD по имени хоста, Edge, Edge-кластера, шлюзов, сертификата |
 
 ## Триггеры
 
@@ -144,6 +149,9 @@ Script-элемент. При сертификате от доверенного
 | Tier-0 | два ACTIVE SR в ACTIVE_STANDBY (split brain) | High |
 | BGP | сессия не ESTABLISHED (или сосед пропал из вывода) | High |
 | BGP | сессия переустановлена меньше `{$NSX.BGP.FLAP.PERIOD}` назад | Warning, закрывается вручную |
+| Сертификат | истёк | Disaster |
+| Сертификат | истекает через < `{$NSX.CERT.EXPIRY.CRIT}` дней | High (зависит от «истёк») |
+| Сертификат | истекает через < `{$NSX.CERT.EXPIRY.WARN}` дней | Warning (зависит от High) |
 
 Триггеры зависят друг от друга: при падении Edge не приходит отдельная проблема на каждый
 туннель и каждый сервис.
@@ -182,6 +190,31 @@ VPN, DHCP. Пороги у них разные.
 Проблемы алармов помечены тегом `scope: notice` и `nsx-severity`, их легко отделить
 в действиях. Если дубли мешают, отфильтруйте feature в `{$NSX.ALARM.FEATURE.NOT_MATCHES}`
 или выключите правило «NSX: Alarms discovery».
+
+## Сертификаты
+
+Все сертификаты из *System → Certificates*: API и кластер Manager, транспортные узлы,
+балансировщик, VPN, импортированные CA. Для каждого:
+
+- **expires on**: `details[0].not_after` (листовой сертификат цепочки), тип `unixtime`;
+- **days until expiry**: целые дни до окончания; после истечения значение отрицательное.
+  Пересчитывается при каждом опросе (`{$NSX.INTERVAL.CERT}` = 1 ч).
+
+В описании триггера есть Subject CN, Issuer CN и сервисы, которые используют сертификат
+(`{#CERT.USED_BY}` из `used_by[].service_types`). Неиспользуемые сертификаты, например
+старые импортированные CA, тоже обнаруживаются и тоже дадут проблему, когда истекут.
+Чтобы их пропускать, задайте `{$NSX.CERT.USED_BY.MATCHES}` = `.+`, а отдельные сертификаты
+исключайте через `{$NSX.CERT.NAME.NOT_MATCHES}`. Порог для конкретного сертификата задаётся
+макросом с контекстом, например `{$NSX.CERT.EXPIRY.WARN:"mgr-cluster-api"}` = `60`.
+
+Сертификат без `details` в ответе становится в Zabbix «не поддерживается» с текстом ошибки:
+так он не пропадает из мониторинга молча. Удалённый в NSX сертификат перестаёт получать
+значения, а через 7 дней удаляется из Zabbix.
+
+Алармы NSX о сертификатах (feature `certificates`) по-прежнему приходят через passthrough
+алармов. Если два вида проблем для одного сертификата мешают, исключите feature алармов:
+`{$NSX.ALARM.FEATURE.NOT_MATCHES}` = `(?i)^certificates$` (сравнивается отображаемое имя feature,
+а если его нет, системное).
 
 ## Пример: мастер-элемент и LLD-правило (фрагмент YAML)
 
@@ -252,6 +285,7 @@ VPN, DHCP. Пороги у них разные.
 | `time_since_established` | uptime BGP | секунды в 4.x, миллисекунды в 2.x/3.x → `{$NSX.BGP.UPTIME.MULTIPLIER}` |
 | `node_status.system_status.cpu_usage.*`, `edge_mem_usage.system_mem_usage` | CPU/RAM Edge | без `edge_mem_usage` память считается как `mem_used / mem_total` |
 | `?source=cached` | статус транспортных узлов | кешированный статус дешевле для Manager; убрать, если нужен realtime |
+| `details[0].not_after`, `details[0].subject_cn`, `used_by[].service_types` | сертификаты | `GET /api/v1/trust-management/certificates?details=true`; `not_after` ожидается в миллисекундах epoch (секунды тоже распознаются) |
 
 В NSX 4.x Manager API `/api/v1/transport-nodes` помечен как deprecated в пользу
 Policy API (`/policy/api/v1/infra/sites/default/enforcement-points/default/host-transport-nodes`),
