@@ -128,6 +128,39 @@ class ParserTests(unittest.TestCase):
             self.assertEqual(len(rules), len(sc.BUILTIN_ALERT_RESOLUTIONS), content)
             self.assertEqual(len(warnings), 1, content)
 
+    def test_shownode_ps(self):
+        psus = {p['id']: p for p in sc.parse_shownode_ps(fixture('shownode_ps'))}
+        self.assertEqual(set(psus), {'0.0', '0.1', '1.0', '1.1'})
+        self.assertEqual(psus['0.0']['position'], 'Node 0 PS 0')
+        self.assertEqual(psus['0.0']['serial'], 'PCW5A0DHFAG2R3')
+        self.assertEqual((psus['0.0']['status'], psus['0.0']['ac']), (sc.STATE_OK, sc.STATE_OK))
+        # mains lost on 1.0: AC, DC and PS state all Failed
+        self.assertEqual((psus['1.0']['ac'], psus['1.0']['dc'], psus['1.0']['state'], psus['1.0']['fan']),
+                         (sc.STATE_FAILED, sc.STATE_FAILED, sc.STATE_FAILED, sc.STATE_OK))
+        # only the fan failed on 1.1: overall status is still Failed, AC/DC are not
+        self.assertEqual((psus['1.1']['status'], psus['1.1']['ac'], psus['1.1']['fan']),
+                         (sc.STATE_FAILED, sc.STATE_OK, sc.STATE_FAILED))
+
+    def test_shownode_ps_columns_found_by_name(self):
+        text = ('Node PS ACState DCState PSState FanState -Assem_Serial- Extra\n'
+                '   2  1 OK Failed Degraded OK SER123 whatever\n')
+        psu = sc.parse_shownode_ps(text)[0]
+        self.assertEqual((psu['id'], psu['serial'], psu['ac'], psu['dc'], psu['state'], psu['fan']),
+                         ('2.1', 'SER123', sc.STATE_OK, sc.STATE_FAILED, sc.STATE_DEGRADED, sc.STATE_OK))
+        self.assertEqual(psu['status'], sc.STATE_FAILED)
+
+    def test_shownode_ps_unrecognized_output(self):
+        self.assertEqual(sc.parse_shownode_ps(''), [])
+        self.assertEqual(sc.parse_shownode_ps('Node Name State\n0 CZ-0 OK\n'), [])
+        sc_result = sc.build_sections({'shownode -ps': 'nothing useful\n'}, {'power'}, 0)
+        self.assertEqual(sc_result['power_supplies'], [])
+
+    def test_failed_power_supply_degrades_the_array(self):
+        data = sc.build_sections({c: fixture(c) for cmds in sc.SSH_SECTIONS.values() for c in cmds},
+                                 set(sc.ALL_SECTIONS), int(time.time()))
+        self.assertIn('power supply 1.0 AC/DC/STATE failed', data['system']['stateReasons'])
+        self.assertIn('power supply 1.1 FAN failed', data['system']['stateReasons'])
+
     def test_showalert_fatal_counts_as_critical(self):
         alerts = sc.parse_showalert('Id : 7\nState : New\nSeverity : Fatal\nMessage : boom\n')
         self.assertEqual(sc.summarize_alerts(alerts)['critical'], 1)
@@ -246,7 +279,7 @@ class FakeArrayTests(unittest.TestCase):
             fake.close()
         self.assertEqual(status, sc.EXIT_OK, result['errors'])
         self.assertEqual(fake.connections, 1)
-        self.assertEqual(len(fake.commands), 9)
+        self.assertEqual(len(fake.commands), 10)
         self.assertLess(elapsed, 1.9, 'commands were not run in parallel')
         self.assertEqual(sc.validate(result), [])
         self.assertEqual(result['alert_summary']['critical'], 1)

@@ -1,0 +1,5 @@
+Node PS -Assem_Serial- -PSState- FanState ACState DCState -BatState- ChrgLvl(%)
+   0  0 PCW5A0DHFAG2R3 OK        OK       OK      OK      OK          100
+   0  1 PCW5A0DHFAG2R4 OK        OK       OK      OK      OK          100
+   1  0 PCW5A0DHFAG2S1 Failed    OK       Failed  Failed  OK          100
+   1  1 PCW5A0DHFAG2S2 OK        Failed   OK      OK      OK          100

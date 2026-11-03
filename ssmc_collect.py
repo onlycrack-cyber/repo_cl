@@ -11,6 +11,7 @@ Sections (--section, comma separated):
   volumes    showvv                      -> "volumes"
   batteries  showbattery                 -> "batteries"
   nodes      shownode                    -> "nodes"
+  power      shownode -ps                -> "power_supplies" (AC/DC/fan state of every node power supply)
   alerts     showalert                   -> "alerts", "alert_summary"
              (each alert gets a "resolution" hint, see BUILTIN_ALERT_RESOLUTIONS)
   certs      showcert + TLS probes       -> "certificates"
@@ -57,7 +58,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-VERSION = '2.2.0'
+VERSION = '2.3.0'
 
 EXIT_OK = 0
 EXIT_PARTIAL = 1
@@ -71,10 +72,11 @@ SSH_SECTIONS = {
     'volumes': ('showvv',),
     'batteries': ('showbattery',),
     'nodes': ('shownode',),
+    'power': ('shownode -ps',),
     'alerts': ('showalert',),
     'certs': ('showcert',),
 }
-ALL_SECTIONS = ('system', 'disks', 'volumes', 'batteries', 'nodes', 'alerts', 'certs')
+ALL_SECTIONS = ('system', 'disks', 'volumes', 'batteries', 'nodes', 'power', 'alerts', 'certs')
 KNOWN_SECTIONS = set(ALL_SECTIONS) | {'all', 'net'}
 
 DEFAULT_CONFIG = '/etc/zabbix/ssmc_collect.conf'
@@ -301,6 +303,52 @@ def parse_showbattery(text):
     return batteries
 
 
+PSU_COLUMNS = {'acstate': 'ac', 'dcstate': 'dc', 'psstate': 'state', 'fanstate': 'fan',
+               'assem_serial': 'serial', 'serial': 'serial'}
+PSU_FAILED = ('failed', 'fail', 'down', 'missing', 'absent', 'lost', 'off', 'invalid')
+
+
+def parse_shownode_ps(text):
+    """shownode -ps: a header (Node PS ... ACState DCState PSState FanState ...) and one row per supply.
+
+    Columns are found by name, so their order and extra columns do not matter.
+    status is the worst of the state columns present: Failed > Degraded > Unknown > OK.
+    """
+    header = None
+    supplies = []
+    for parts in _rows(text):
+        if header is None:
+            names = [re.sub(r'[^a-z0-9_]', '', p.lower()) for p in parts]
+            if names[0] == 'node' and any(n in PSU_COLUMNS for n in names):
+                header = names
+            continue
+        if len(parts) < 3 or not (parts[0].isdigit() and parts[1].isdigit()):
+            continue
+        cols = {}
+        for name, value in zip(header, parts):
+            if name in PSU_COLUMNS:
+                cols[PSU_COLUMNS[name]] = value
+        node, ps = parts[0], parts[1]
+        states = {k: _state(cols[k], failed=PSU_FAILED) for k in ('state', 'ac', 'dc', 'fan') if k in cols}
+        present = list(states.values())
+        if STATE_FAILED in present:
+            status = STATE_FAILED
+        elif STATE_DEGRADED in present:
+            status = STATE_DEGRADED
+        elif not present or STATE_UNKNOWN in present:
+            status = STATE_UNKNOWN
+        else:
+            status = STATE_OK
+        supplies.append({
+            'id': '%s.%s' % (node, ps), 'node': node, 'ps': ps, 'position': 'Node %s PS %s' % (node, ps),
+            'serial': cols.get('serial', ''), 'status': status,
+            'state': states.get('state', STATE_UNKNOWN), 'ac': states.get('ac', STATE_UNKNOWN),
+            'dc': states.get('dc', STATE_UNKNOWN), 'fan': states.get('fan', STATE_UNKNOWN),
+            'raw': {k: cols[k] for k in ('state', 'ac', 'dc', 'fan') if k in cols},
+        })
+    return supplies
+
+
 def parse_shownode(text):
     """shownode: Node Name State Master InCluster Service_LED LED ..."""
     nodes = []
@@ -483,6 +531,11 @@ def compute_overall_state(data):
     for b in data.get('batteries', []):
         if b['status'] != STATE_OK:
             degraded.append('battery %s %s' % (b['id'], b['status_str']))
+    for psu in data.get('power_supplies', []):
+        if psu['status'] in (STATE_DEGRADED, STATE_FAILED):
+            bad = [k.upper() for k in ('ac', 'dc', 'fan', 'state') if psu[k] in (STATE_DEGRADED, STATE_FAILED)]
+            degraded.append('power supply %s %s %s' % (psu['id'], '/'.join(bad) or 'state',
+                                                       'failed' if psu['status'] == STATE_FAILED else 'degraded'))
     for v in data.get('volumes', []):
         if v['state'] in (STATE_DEGRADED, STATE_FAILED):
             degraded.append('volume %s %s' % (v['name'], v['state_str']))
@@ -617,7 +670,7 @@ class SSHRunner:
 class FixtureRunner:
     """Serves recorded CLI output instead of SSH (used by --test)."""
 
-    FILES = {'showpd -i': 'showpd_i.txt'}
+    FILES = {'showpd -i': 'showpd_i.txt', 'shownode -ps': 'shownode_ps.txt'}
 
     def __init__(self, directory, now=None):
         self.directory = directory
@@ -799,6 +852,8 @@ def build_sections(runner_outputs, sections, now, resolutions=None):
         model = data.get('system', {}).get('model', '')
         for n in data['nodes']:
             n['model'] = model
+    if 'power' in sections and 'shownode -ps' in out:
+        data['power_supplies'] = parse_shownode_ps(out['shownode -ps'])
     if 'alerts' in sections and 'showalert' in out:
         data['alerts'] = parse_showalert(out['showalert'])
         rules = compile_resolutions(BUILTIN_ALERT_RESOLUTIONS) if resolutions is None else resolutions
@@ -858,6 +913,8 @@ def collect(host, sections, creds, opts, runner=None):
                 fatal = str(ex)
             resolutions = load_alert_resolutions(warnings) if 'alerts' in ssh_sections else None
             result.update(build_sections(outputs, ssh_sections, now, resolutions))
+            if 'shownode -ps' in outputs and not result.get('power_supplies'):
+                warnings.append('shownode -ps: no power supplies recognized, check the output format')
 
         if tls_futures:
             certs = result.setdefault('certificates', [])
@@ -903,6 +960,8 @@ SCHEMA = {
                        'utilPct': float, 'state': int}),
     'batteries': (list, {'id': str, 'position': str, 'status': int, 'expired': int}),
     'nodes': (list, {'id': int, 'name': str, 'status': int}),
+    'power_supplies': (list, {'id': str, 'position': str, 'status': int, 'state': int, 'ac': int,
+                              'dc': int, 'fan': int}),
     'alerts': (list, {'id': int, 'severity': str, 'severity_code': int, 'message': str,
                       'code': str, 'type': str, 'time': str, 'state': str, 'resolution': str}),
     'alert_summary': (dict, {'total': int, 'critical': int, 'major': int, 'last_critical': str}),

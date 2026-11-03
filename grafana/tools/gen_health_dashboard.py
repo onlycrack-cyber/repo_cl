@@ -28,6 +28,7 @@ PORT = {0: ('UNKNOWN', GREY), 1: ('CONFIG_WAIT', ORANGE), 2: ('ALPA_WAIT', ORANG
         11: ('OFFLINE', RED)}
 COLLECT = {0: ('OK', GREEN), 1: ('Частично', ORANGE), 2: ('СБОЙ', DARK_RED), 3: ('Ошибка настройки', DARK_RED),
            4: ('Неверный ответ', DARK_RED)}
+AC = {1: ('OK', GREEN), 2: ('Деградация', ORANGE), 4: ('НЕТ ПИТАНИЯ', DARK_RED), 5: ('Неизвестно', GREY)}
 EXPIRED = {0: ('Годна', GREEN), 1: ('ИСТЁК', RED)}
 
 
@@ -116,6 +117,8 @@ def problems_tile(title, item, bad, desc, unit_word='пробл.'):
                 value_size=40, title_size=18)
 
 
+PSU_NAME = '^Power supply \\[Node (\\d+) PS (\\d+)\\] overall state$'
+PSU_AC_NAME = '^Power supply \\[Node (\\d+) PS (\\d+)\\] AC input$'
 BATTERY_NAME = '^Battery \\[Node (\\d+) PS (\\d+) Batt (\\d+)\\] status$'
 
 
@@ -161,8 +164,9 @@ def build():
     tile_defs = [
         problems_tile('Ноды', '/^Node \\[.*\\] status$/', [('notEqual', 1)],
                       'Число нод не в состоянии OK. Отказ ноды = потеря питания, перезагрузка или выход из кластера.'),
-        problems_tile('Питание: батареи', '/^Battery \\[.*\\] status$/', [('notEqual', 1)],
-                      'Число батарей (BBU) не в состоянии OK: без них при обрыве питания теряется кэш записи.'),
+        problems_tile('Питание', '/^(Power supply \\[.*\\] overall state|Battery \\[.*\\] status)$/', [('notEqual', 1)],
+                      'Число блоков питания (AC, DC, вентилятор) и батарей (BBU) не в состоянии OK. '
+                      'Без батарей при обрыве питания теряется кэш записи.'),
         problems_tile('Сеть: недоступно', '/: reachable$/', [('equal', 0)],
                       'Число адресов (массив, ноды), не отвечающих на ping и SSH одновременно. '
                       'Нода пропала из сети — смотрите «Ноды» и «Питание».'),
@@ -215,42 +219,52 @@ def build():
     d.row('Карта оборудования: каждая плитка — отдельный объект', 19)
     d.add(tiles('Ноды', '/^Node \\[.*\\] status$/', NODE, '^Node \\[(.*)\\] status$',
                 'Контроллеры массива. Красная плитка — нода вышла из кластера, потеряла питание или отказала.',
-                value_size=18), 0, 20, 8, 5)
+                value_size=18), 0, 20, 6, 5)
+    d.add(tiles('Питание: блоки питания', '/^Power supply \\[.*\\] overall state$/', NODE, PSU_NAME,
+                'Блоки питания нод (N — нода, PS — номер блока). Общее состояние: худшее из PSState, ACState, '
+                'DCState и FanState.', rename_to='N$1 PS$2', value_size=14), 6, 20, 9, 5)
+    d.add(tiles('Питание: вход 220 В (AC)', '/^Power supply \\[.*\\] AC input$/', AC, PSU_AC_NAME,
+                'Есть ли сетевое питание на входе блока. «НЕТ ПИТАНИЯ» — обрыв питающего кабеля, PDU или '
+                'фидера стойки; если пропало на обоих блоках ноды, нода выключится.',
+                rename_to='N$1 PS$2', value_size=14), 15, 20, 9, 5)
     d.add(tiles('Питание: батареи', '/^Battery \\[.*\\] status$/', NODE, BATTERY_NAME,
                 'Батареи питания кэша (BBU): N — нода, PS — блок питания, B — батарея. Failed — кэш записи '
-                'под угрозой при обрыве питания.', rename_to='N$1 PS$2 B$3', value_size=14), 8, 20, 8, 5)
+                'под угрозой при обрыве питания.', rename_to='N$1 PS$2 B$3', value_size=14), 0, 25, 12, 5)
     d.add(tiles('Питание: срок годности батарей', '/^Battery \\[.*\\] expired$/', EXPIRED,
                 '^Battery \\[Node (\\d+) PS (\\d+) Batt (\\d+)\\] expired$',
-                'Батарея с истёкшим сроком службы подлежит замене.', rename_to='N$1 PS$2 B$3', value_size=14), 16, 20, 8, 5)
+                'Батарея с истёкшим сроком службы подлежит замене.', rename_to='N$1 PS$2 B$3', value_size=14),
+          12, 25, 12, 5)
     d.add(tiles('Сеть: доступность', '/: reachable$/', UPDOWN, '^(.*): reachable$',
                 'Доступность адресов массива и нод по ICMP/SSH с сервера Zabbix. «НЕТ СВЯЗИ» — пропала сеть '
-                'или питание.'), 0, 25, 12, 5)
+                'или питание.'), 0, 30, 12, 5)
     d.add(tiles('Сеть: SSH-порт', '/: SSH port$/', UPDOWN, '^(.*): SSH port$',
                 'Отвечает ли TCP-порт 22: адрес пингуется, но SSH закрыт — проблема ОС ноды или файрвола.'),
-          12, 25, 12, 5)
+          12, 30, 12, 5)
     d.add(tiles('Порты', '/^Port \\[.*\\] link state$/', PORT, '^Port \\[(.*)\\] link state$',
                 'Порты хост-интерфейсов (ячейка:слот:порт). Красный — потеря синхронизации или offline: '
-                'обрыв кабеля, SFP или проблема на коммутаторе.', value_size=14), 0, 30, 12, 7)
+                'обрыв кабеля, SFP или проблема на коммутаторе.', value_size=14), 0, 35, 12, 7)
     d.add(tiles('Диски', '/^Disk \\[.*\\] state$/', DISK, '^Disk \\[(.*)\\] state$',
                 'Каждый квадрат — физический диск (магазин:слот:диск). Красный — отказ, оранжевый — деградация.',
-                value_size=12), 12, 30, 12, 7)
+                value_size=12), 12, 35, 12, 7)
 
     # --- history
-    d.row('История: когда это случилось', 37)
+    d.row('История: когда это случилось', 42)
     d.add(timeline('Ноды', '/^Node \\[.*\\] status$/', NODE, '^Node \\[(.*)\\] status$',
-                   'История состояния нод.'), 0, 38, 8, 6)
+                   'История состояния нод.'), 0, 43, 6, 6)
+    d.add(timeline('Вход 220 В (AC) блоков питания', '/^Power supply \\[.*\\] AC input$/', AC, PSU_AC_NAME,
+                   'История сетевого питания блоков: когда оно пропадало.', 'N$1 PS$2'), 6, 43, 6, 6)
     d.add(timeline('Батареи', '/^Battery \\[.*\\] status$/', NODE, BATTERY_NAME,
-                   'История состояния батарей питания.', 'N$1 PS$2 B$3'), 8, 38, 8, 6)
+                   'История состояния батарей питания.', 'N$1 PS$2 B$3'), 12, 43, 6, 6)
     d.add(timeline('Сеть', '/: reachable$/', UPDOWN, '^(.*): reachable$',
                    'История доступности адресов. Провал одновременно у нескольких нод — общая причина '
-                   '(коммутатор, питание стойки).'), 16, 38, 8, 6)
+                   '(коммутатор, питание стойки).'), 18, 43, 6, 6)
     d.add(timeseries('Заполненность массива', 'Capacity used, in %', 'Динамика заполнения.', 'percent',
                      '^(.*)$', max_=100, thresh_lines=thresholds((GREEN, None), (ORANGE, 80), (RED, 90))),
-          0, 44, 12, 7)
+          0, 49, 12, 7)
     d.add(timeseries('Время отклика по сети', '/: ICMP response time$/',
                      'Задержка ping до массива и нод; рост — перегрузка или проблемы сети.', 'ms',
-                     '^(.*): ICMP response time$'), 12, 44, 12, 7)
-    d.row('Детали', 51)
+                     '^(.*): ICMP response time$'), 12, 49, 12, 7)
+    d.row('Детали', 56)
     d.add({'type': 'bargauge', 'title': 'Утилизация томов', 'targets': [query('A', '/^Volume \\[.*\\] utilization \\(%\\)$/')],
            'description': 'Занятое место от размера тома: оранжевый от 80 %, красный от 90 %. У томов с полным '
                           'выделением (admin, .srdata) всегда 100 %, триггеров на них нет.',
@@ -263,7 +277,7 @@ def build():
                        'namePlacement': 'left', 'showUnfilled': True, 'sizing': 'auto', 'minVizHeight': 16,
                        'maxVizHeight': 24, 'legend': {'showLegend': False}},
            'transformations': [rename('^Volume \\[(.*)\\] utilization \\(%\\)$'), {'id': 'sortBy', 'options': {}}]},
-          0, 52, 12, 7)
+          0, 57, 12, 7)
     reasons = query('A', 'System state reasons')
     reasons.update({'queryType': '2', 'textFilter': '', 'useCaptureGroups': False})
     d.add({'type': 'table', 'title': 'Причина состояния', 'targets': [reasons],
@@ -274,7 +288,7 @@ def build():
                            'overrides': [{'matcher': {'id': 'byName', 'options': 'Field'},
                                           'properties': [{'id': 'custom.hidden', 'value': True}]}]},
            'options': {'showHeader': False, 'cellHeight': 'md', 'footer': {'show': False}},
-           'transformations': [LAST_PER_ROW]}, 12, 52, 12, 7)
+           'transformations': [LAST_PER_ROW]}, 12, 57, 12, 7)
     return d.panels
 
 

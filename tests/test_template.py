@@ -307,6 +307,10 @@ class TemplateTests(unittest.TestCase):
                     values[subst(proto['key'], ent)] = v
 
         self.assertEqual(len(found['disks.discovery']), 5)
+        self.assertEqual({e['{#PSU_ID}'] for e in found['psu.discovery']}, {'0.0', '0.1', '1.0', '1.1'})
+        self.assertEqual((values['psu.ac[0.0]'], values['psu.status[0.0]']), ('1', '1'))
+        self.assertEqual((values['psu.ac[1.0]'], values['psu.dc[1.0]'], values['psu.state[1.0]']), ('4', '4', '4'))
+        self.assertEqual((values['psu.fan[1.1]'], values['psu.ac[1.1]'], values['psu.status[1.1]']), ('4', '1', '4'))
         self.assertEqual([e['{#PORT_POS}'] for e in found['ports.discovery']].count('0:1:2'), 0,
                          'free port must be filtered out')
         alerts = {e['{#ALERT_ID}']: e for e in found['alerts.discovery']}
