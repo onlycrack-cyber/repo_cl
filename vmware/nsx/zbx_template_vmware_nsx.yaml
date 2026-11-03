@@ -639,6 +639,9 @@ zabbix_export:
             - type: JAVASCRIPT
               parameters:
                 - |-
+                  function toSeconds(t) {
+                      return Math.floor(t > 100000000000 ? t / 1000 : t);
+                  }
                   function hash(s) {
                       var h = 5381;
                       for (var i = 0; i < s.length; i++) {
@@ -646,25 +649,46 @@ zabbix_export:
                       }
                       return ('0000000' + h.toString(16)).slice(-8);
                   }
-                  var lic = JSON.parse(value).results || [], out = [];
+                  var lic = JSON.parse(value).results || [], out = [], seen = {}, now = Date.now() / 1000;
                   for (var i = 0; i < lic.length; i++) {
-                      var l = lic[i], key = String(l.license_key || ''), exp = Number(l.expiry || 0);
-                      if (exp > 100000000000) {
-                          exp = Math.floor(exp / 1000);
+                      var l = lic[i], key = String(l.license_key || ''), raw = l.expiry, exp = null, err = '';
+                      if (raw === undefined || raw === null || raw === 0 || raw === '0' || raw === '') {
+                          exp = 0;
                       }
-                      out.push({
-                          id: hash(key),
-                          key: key.length > 5 ? '*****' + key.slice(-5) : key,
+                      else if (isFinite(Number(raw))) {
+                          exp = Number(raw) > 0 ? toSeconds(Number(raw)) : 0;
+                      }
+                      else if (!isNaN(Date.parse(raw))) {
+                          exp = toSeconds(Date.parse(raw));
+                      }
+                      else {
+                          err = 'cannot parse license expiry: ' + String(raw).substring(0, 40);
+                      }
+                      var id = hash([key, l.product_name, l.capacity_type, l.description].join('|'));
+                      seen[id] = (seen[id] || 0) + 1;
+                      if (seen[id] > 1) {
+                          id += '-' + seen[id];
+                      }
+                      var e = {
+                          id: id,
+                          key: key === '' ? 'no key' : (key.length >= 15 ? '*****' + key.slice(-5) : '*****'),
                           name: l.description || l.product_name || 'license',
                           product: l.product_name || '',
                           version: l.product_version || '',
                           capacity_type: l.capacity_type || '',
-                          quantity: Number(l.quantity || 0),
                           eval: l.is_eval ? 1 : 0,
-                          expired: l.is_expired ? 1 : 0,
-                          perpetual: exp > 0 ? 0 : 1,
-                          expiry: exp
-                      });
+                          expired: (l.is_expired || (exp !== null && exp > 0 && exp < now)) ? 1 : 0,
+                          perpetual: exp === 0 ? 1 : 0,
+                          expiry: exp,
+                          expiry_error: err,
+                          quantity_label: 'not reported'
+                      };
+                      var q = Number(l.quantity);
+                      if (l.quantity !== undefined && l.quantity !== null && isFinite(q)) {
+                          e.quantity = q;
+                          e.quantity_label = q < 0 ? 'unlimited' : String(q);
+                      }
+                      out.push(e);
                   }
                   return JSON.stringify(out);
           master_item:
@@ -2804,12 +2828,14 @@ zabbix_export:
                 - type: JAVASCRIPT
                   parameters:
                     - |-
+                      function toSeconds(t) {
+                          return Math.floor(t > 100000000000 ? t / 1000 : t);
+                      }
                       var d = (JSON.parse(value).details || [])[0] || {};
                       if (d.not_after === undefined || d.not_after === null) {
                           throw 'details[0].not_after is missing in the certificate';
                       }
-                      var t = Number(d.not_after);
-                      t = Math.floor(t > 100000000000 ? t / 1000 : t);
+                      var t = toSeconds(Number(d.not_after));
                       return t;
                 - type: DISCARD_UNCHANGED_HEARTBEAT
                   parameters:
@@ -2838,12 +2864,14 @@ zabbix_export:
                 - type: JAVASCRIPT
                   parameters:
                     - |-
+                      function toSeconds(t) {
+                          return Math.floor(t > 100000000000 ? t / 1000 : t);
+                      }
                       var d = (JSON.parse(value).details || [])[0] || {};
                       if (d.not_after === undefined || d.not_after === null) {
                           throw 'details[0].not_after is missing in the certificate';
                       }
-                      var t = Number(d.not_after);
-                      t = Math.floor(t > 100000000000 ? t / 1000 : t);
+                      var t = toSeconds(Number(d.not_after));
                       return Math.floor((t - Date.now() / 1000) / 86400);
               master_item:
                 key: nsx.certificates.get
@@ -2972,12 +3000,20 @@ zabbix_export:
               history: 31d
               value_type: UNSIGNED
               units: unixtime
-              description: No data for a perpetual license (no expiry date).
+              description: No data for a perpetual license (no expiry date). Not supported when the date cannot be parsed.
               preprocessing:
                 - type: JSONPATH
                   parameters:
-                    - $[?(@.id=='{#LIC.ID}' && @.perpetual==0)].expiry.first()
+                    - $[?(@.id=='{#LIC.ID}' && @.perpetual==0)].first()
                   error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |-
+                      var l = JSON.parse(value);
+                      if (l.expiry === null) {
+                          throw l.expiry_error;
+                      }
+                      return l.expiry;
                 - type: DISCARD_UNCHANGED_HEARTBEAT
                   parameters:
                     - 1d
@@ -2996,15 +3032,20 @@ zabbix_export:
               history: 31d
               value_type: FLOAT
               units: d
-              description: Whole days until the license expires; negative once expired. No data for a perpetual license.
+              description: Whole days until the license expires; negative once expired. No data for a perpetual license; not supported when the date cannot be parsed.
               preprocessing:
                 - type: JSONPATH
                   parameters:
-                    - $[?(@.id=='{#LIC.ID}' && @.perpetual==0)].expiry.first()
+                    - $[?(@.id=='{#LIC.ID}' && @.perpetual==0)].first()
                   error_handler: DISCARD_VALUE
                 - type: JAVASCRIPT
                   parameters:
-                    - return Math.floor((Number(value) - Date.now() / 1000) / 86400);
+                    - |-
+                      var l = JSON.parse(value);
+                      if (l.expiry === null) {
+                          throw l.expiry_error;
+                      }
+                      return Math.floor((l.expiry - Date.now() / 1000) / 86400);
               master_item:
                 key: nsx.licenses.list
               tags:
@@ -3085,7 +3126,7 @@ zabbix_export:
                   name: 'License [{#LIC.NAME} {#LIC.KEY}]: has expired'
                   priority: HIGH
                   description: |-
-                    is_expired = true. The data plane keeps forwarding, but NSX restricts configuration of the licensed features until a valid key is added.
+                    NSX reports is_expired = true, or the expiry date has passed. The data plane keeps forwarding, but NSX restricts configuration of the licensed features until a valid key is added.
 
                     Product: {#LIC.PRODUCT} {#LIC.VERSION}
                     Capacity: {#LIC.QUANTITY} x {#LIC.CAPACITY}
@@ -3147,8 +3188,8 @@ zabbix_export:
               key: nsx.license.quantity[{#LIC.ID}]
               delay: '0'
               history: 31d
-              value_type: UNSIGNED
-              description: Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...).
+              value_type: FLOAT
+              description: Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...) as NSX reports them; a negative value usually means unlimited. No data when NSX does not report a number.
               preprocessing:
                 - type: JSONPATH
                   parameters:
@@ -3180,7 +3221,7 @@ zabbix_export:
             - lld_macro: '{#LIC.CAPACITY}'
               path: $.capacity_type
             - lld_macro: '{#LIC.QUANTITY}'
-              path: $.quantity
+              path: $.quantity_label
           preprocessing:
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:

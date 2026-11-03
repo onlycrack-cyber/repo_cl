@@ -710,6 +710,26 @@ alarm_items = [
     for sev, _ in SEVERITIES
 ]
 
+# ------------------------------------------------------------------ expiry helpers (certificates, licenses)
+# NSX reports dates as epoch milliseconds; plain seconds are accepted too (anything below 1e11 s is before 5138).
+TO_SECONDS_JS = '''function toSeconds(t) {
+    return Math.floor(t > 100000000000 ? t / 1000 : t);
+}
+'''
+
+
+def expiry_triggers(label, days_key, prefix, macro_context, crit_priority, component, entity, desc, expired):
+    """'expires in less than CRIT days' (depends on `expired`) and 'less than WARN days' (depends on CRIT)."""
+    out, dep_on = [], expired
+    for level, priority in (('CRIT', crit_priority), ('WARN', 'WARNING')):
+        m = '{$NSX.%s.EXPIRY.%s:"%s"}' % (prefix, level, macro_context)
+        t = trigger('%s: expires in less than %s days' % (label, m), 'last(%s)<%s' % (ref(days_key), m), priority,
+                    component, opdata='Days left: {ITEM.LASTVALUE1}', deps=[dep_on], entity=entity, desc=desc)
+        out.append(t)
+        dep_on = t
+    return out
+
+
 # ------------------------------------------------------------------ 5. certificates
 CERT_GET = 'nsx.certificates.get'
 CERT_LLD_JS = '''var certs = JSON.parse(value).results || [], out = [];
@@ -733,12 +753,11 @@ for (var i = 0; i < certs.length; i++) {
 }
 return JSON.stringify(out);'''
 # details[0] is the leaf certificate of the chain; not_after is epoch milliseconds (seconds are accepted too).
-NOT_AFTER_JS = '''var d = (JSON.parse(value).details || [])[0] || {};
+NOT_AFTER_JS = TO_SECONDS_JS + '''var d = (JSON.parse(value).details || [])[0] || {};
 if (d.not_after === undefined || d.not_after === null) {
     throw 'details[0].not_after is missing in the certificate';
 }
-var t = Number(d.not_after);
-t = Math.floor(t > 100000000000 ? t / 1000 : t);
+var t = toSeconds(Number(d.not_after));
 '''
 cert_entity = {'certificate': '{#CERT.NAME}'}
 cert_label = 'Certificate [{#CERT.NAME}]'
@@ -748,12 +767,8 @@ cert_desc = ('Subject CN: {#CERT.SUBJECT}\nIssuer CN: {#CERT.ISSUER}\nUsed by: {
              'Replace it under System > Certificates (and re-assign it to the service that uses it).')
 cert_expired = trigger('%s: has expired' % cert_label, 'last(%s)<0' % ref(cert_days), 'DISASTER', 'certificate',
                        opdata='Days left: {ITEM.LASTVALUE1}', entity=cert_entity, desc=cert_desc)
-cert_crit = trigger('%s: expires in less than {$NSX.CERT.EXPIRY.CRIT:"{#CERT.NAME}"} days' % cert_label,
-                    'last(%s)<{$NSX.CERT.EXPIRY.CRIT:"{#CERT.NAME}"}' % ref(cert_days), 'HIGH', 'certificate',
-                    opdata='Days left: {ITEM.LASTVALUE1}', deps=[cert_expired], entity=cert_entity, desc=cert_desc)
-cert_warn = trigger('%s: expires in less than {$NSX.CERT.EXPIRY.WARN:"{#CERT.NAME}"} days' % cert_label,
-                    'last(%s)<{$NSX.CERT.EXPIRY.WARN:"{#CERT.NAME}"}' % ref(cert_days), 'WARNING', 'certificate',
-                    opdata='Days left: {ITEM.LASTVALUE1}', deps=[cert_crit], entity=cert_entity, desc=cert_desc)
+cert_crit, cert_warn = expiry_triggers(cert_label, cert_days, 'CERT', '{#CERT.NAME}', 'HIGH', 'certificate',
+                                       cert_entity, cert_desc, cert_expired)
 cert_rule = lld(
     'NSX: Certificates discovery', 'nsx.cert.discovery', CERT_GET, [js(CERT_LLD_JS), heartbeat()], [],
     [
@@ -780,35 +795,67 @@ cert_items = [
 LIC_GET = 'nsx.licenses.get'
 LIC_LIST = 'nsx.licenses.list'
 # Normalizes /api/v1/licenses. The license key never leaves this step: entities are identified by a hash of
-# the key and shown with its last five characters only, so keys do not end up in item names, keys or history.
-LIC_NORMALIZE_JS = r'''function hash(s) {
+# the key (plus product, capacity type and description, since one key can be listed once per capacity type),
+# and shown with its last five characters only when the key is long enough for that to reveal little.
+# Duplicates get a numeric suffix, so LLD never produces two items with the same key.
+# expiry: missing/0 = perpetual; a number = epoch ms or s; a date string is parsed; anything else is kept as
+# an error that the expiry items report (not supported) instead of silently treating it as perpetual.
+# expired = is_expired OR past the expiry date, so a lagging or missing is_expired flag does not hide it.
+LIC_NORMALIZE_JS = TO_SECONDS_JS + r'''function hash(s) {
     var h = 5381;
     for (var i = 0; i < s.length; i++) {
         h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     }
     return ('0000000' + h.toString(16)).slice(-8);
 }
-var lic = JSON.parse(value).results || [], out = [];
+var lic = JSON.parse(value).results || [], out = [], seen = {}, now = Date.now() / 1000;
 for (var i = 0; i < lic.length; i++) {
-    var l = lic[i], key = String(l.license_key || ''), exp = Number(l.expiry || 0);
-    if (exp > 100000000000) {
-        exp = Math.floor(exp / 1000);
+    var l = lic[i], key = String(l.license_key || ''), raw = l.expiry, exp = null, err = '';
+    if (raw === undefined || raw === null || raw === 0 || raw === '0' || raw === '') {
+        exp = 0;
     }
-    out.push({
-        id: hash(key),
-        key: key.length > 5 ? '*****' + key.slice(-5) : key,
+    else if (isFinite(Number(raw))) {
+        exp = Number(raw) > 0 ? toSeconds(Number(raw)) : 0;
+    }
+    else if (!isNaN(Date.parse(raw))) {
+        exp = toSeconds(Date.parse(raw));
+    }
+    else {
+        err = 'cannot parse license expiry: ' + String(raw).substring(0, 40);
+    }
+    var id = hash([key, l.product_name, l.capacity_type, l.description].join('|'));
+    seen[id] = (seen[id] || 0) + 1;
+    if (seen[id] > 1) {
+        id += '-' + seen[id];
+    }
+    var e = {
+        id: id,
+        key: key === '' ? 'no key' : (key.length >= 15 ? '*****' + key.slice(-5) : '*****'),
         name: l.description || l.product_name || 'license',
         product: l.product_name || '',
         version: l.product_version || '',
         capacity_type: l.capacity_type || '',
-        quantity: Number(l.quantity || 0),
         eval: l.is_eval ? 1 : 0,
-        expired: l.is_expired ? 1 : 0,
-        perpetual: exp > 0 ? 0 : 1,
-        expiry: exp
-    });
+        expired: (l.is_expired || (exp !== null && exp > 0 && exp < now)) ? 1 : 0,
+        perpetual: exp === 0 ? 1 : 0,
+        expiry: exp,
+        expiry_error: err,
+        quantity_label: 'not reported'
+    };
+    var q = Number(l.quantity);
+    if (l.quantity !== undefined && l.quantity !== null && isFinite(q)) {
+        e.quantity = q;
+        e.quantity_label = q < 0 ? 'unlimited' : String(q);
+    }
+    out.push(e);
 }
 return JSON.stringify(out);'''
+# Expiry of one license: the error for an unparseable date, else the expiry in seconds.
+LIC_EXPIRY_JS = '''var l = JSON.parse(value);
+if (l.expiry === null) {
+    throw l.expiry_error;
+}
+'''
 lic_entity = {'license': '{#LIC.NAME}'}
 lic_label = 'License [{#LIC.NAME} {#LIC.KEY}]'
 LIC = "$[?(@.id=='{#LIC.ID}')]"
@@ -818,27 +865,26 @@ lic_desc = ('Product: {#LIC.PRODUCT} {#LIC.VERSION}\nCapacity: {#LIC.QUANTITY} x
             'Key: {#LIC.KEY}\n\nAdd the new key under System > Licenses.')
 lic_expired = trigger('%s: has expired' % lic_label, 'last(%s)=1' % ref('nsx.license.expired[{#LIC.ID}]'), 'HIGH',
                       'license', entity=lic_entity,
-                      desc='is_expired = true. The data plane keeps forwarding, but NSX restricts configuration of the '
-                           'licensed features until a valid key is added.\n\n' + lic_desc)
-lic_crit = trigger('%s: expires in less than {$NSX.LICENSE.EXPIRY.CRIT:"{#LIC.NAME}"} days' % lic_label,
-                   'last(%s)<{$NSX.LICENSE.EXPIRY.CRIT:"{#LIC.NAME}"}' % ref(lic_days), 'AVERAGE', 'license',
-                   opdata='Days left: {ITEM.LASTVALUE1}', deps=[lic_expired], entity=lic_entity, desc=lic_desc)
-lic_warn = trigger('%s: expires in less than {$NSX.LICENSE.EXPIRY.WARN:"{#LIC.NAME}"} days' % lic_label,
-                   'last(%s)<{$NSX.LICENSE.EXPIRY.WARN:"{#LIC.NAME}"}' % ref(lic_days), 'WARNING', 'license',
-                   opdata='Days left: {ITEM.LASTVALUE1}', deps=[lic_crit], entity=lic_entity, desc=lic_desc)
+                      desc='NSX reports is_expired = true, or the expiry date has passed. The data plane keeps '
+                           'forwarding, but NSX restricts configuration of the licensed features until a valid key '
+                           'is added.\n\n' + lic_desc)
+lic_crit, lic_warn = expiry_triggers(lic_label, lic_days, 'LICENSE', '{#LIC.NAME}', 'AVERAGE', 'license', lic_entity,
+                                     lic_desc, lic_expired)
 lic_rule = lld(
     'NSX: Licenses discovery', 'nsx.license.discovery', LIC_LIST, [heartbeat()],
     [('{#LIC.ID}', '$.id'), ('{#LIC.KEY}', '$.key'), ('{#LIC.NAME}', '$.name'), ('{#LIC.PRODUCT}', '$.product'),
-     ('{#LIC.VERSION}', '$.version'), ('{#LIC.CAPACITY}', '$.capacity_type'), ('{#LIC.QUANTITY}', '$.quantity')],
+     ('{#LIC.VERSION}', '$.version'), ('{#LIC.CAPACITY}', '$.capacity_type'), ('{#LIC.QUANTITY}', '$.quantity_label')],
     [
         dep('%s: expires on' % lic_label, 'nsx.license.expiry[{#LIC.ID}]', LIC_LIST,
-            [jsonpath(LIC_TERM + '.expiry.first()', 'discard'), heartbeat('1d')], 'license', units='unixtime',
-            history='31d', entity=lic_entity, desc='No data for a perpetual license (no expiry date).'),
+            [jsonpath(LIC_TERM + '.first()', 'discard'), js(LIC_EXPIRY_JS + 'return l.expiry;'), heartbeat('1d')],
+            'license', units='unixtime', history='31d', entity=lic_entity,
+            desc='No data for a perpetual license (no expiry date). Not supported when the date cannot be parsed.'),
         dep('%s: days until expiry' % lic_label, lic_days, LIC_LIST,
-            [jsonpath(LIC_TERM + '.expiry.first()', 'discard'),
-             js('return Math.floor((Number(value) - Date.now() / 1000) / 86400);')],
+            [jsonpath(LIC_TERM + '.first()', 'discard'),
+             js(LIC_EXPIRY_JS + 'return Math.floor((l.expiry - Date.now() / 1000) / 86400);')],
             'license', value_type='FLOAT', units='d', history='31d', entity=lic_entity, proto=True,
-            desc='Whole days until the license expires; negative once expired. No data for a perpetual license.',
+            desc='Whole days until the license expires; negative once expired. No data for a perpetual license; '
+                 'not supported when the date cannot be parsed.',
             triggers=[lic_crit, lic_warn]),
         dep('%s: expired' % lic_label, 'nsx.license.expired[{#LIC.ID}]', LIC_LIST,
             [jsonpath(LIC + '.expired.first()', 'discard'), heartbeat()], 'license', valuemap='NSX boolean',
@@ -850,8 +896,10 @@ lic_rule = lld(
                               'last(%s)=1' % ref('nsx.license.eval[{#LIC.ID}]'), 'INFO', 'license', entity=lic_entity,
                               scope='notice', desc='An evaluation key is installed. ' + lic_desc)]),
         dep('%s: licensed quantity' % lic_label, 'nsx.license.quantity[{#LIC.ID}]', LIC_LIST,
-            [jsonpath(LIC + '.quantity.first()', 'discard'), heartbeat('1d')], 'license', history='31d',
-            entity=lic_entity, desc='Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...).'),
+            [jsonpath(LIC + '.quantity.first()', 'discard'), heartbeat('1d')], 'license', value_type='FLOAT',
+            history='31d', entity=lic_entity,
+            desc='Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...) as NSX reports them; a negative '
+                 'value usually means unlimited. No data when NSX does not report a number.'),
     ],
     'Licenses from /api/v1/licenses. Identified by a hash of the license key; only its last five characters '
     'are shown.', filters=name_filters('{#LIC.NAME}', 'LICENSE'))
