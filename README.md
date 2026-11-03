@@ -11,8 +11,8 @@
 ```
 Zabbix server / proxy (External check)
  ├─ ssmc_collect.py["--host=...","--user=...","--password=...","--section=all",...]
- │     раз в 5m, одна SSH-сессия, 9 команд CLI параллельно
- │     └─ collect.*, system.*, alerts.*  + LLD: диски, тома, порты, ноды, батареи,
+ │     раз в 5m, одна SSH-сессия, 10 команд CLI параллельно
+ │     └─ collect.*, system.*, alerts.*  + LLD: диски, тома, порты, ноды, блоки питания, батареи,
  │                                         алерты, сертификаты
  └─ ssmc_collect.py["--host=...","--section=net","--node-addrs=..."]
        раз в 1m, без SSH и без пароля: ICMP + TCP/22 до массива и нод
@@ -103,6 +103,22 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 Старый вызов `ssmc_collect.py HOST USER PASS SECTION` по-прежнему работает: всегда exit 0,
 формат ответа прежний, в ответе есть поле `deprecated`.
 
+## Блоки питания и обрыв питания
+
+Секция `power` (`shownode -ps`, входит в `--section=all`) собирает по каждому блоку питания каждой ноды
+состояние самого блока (PSState), сетевого входа (ACState), выхода (DCState) и вентилятора (FanState).
+Шаблон создаёт для них LLD `psu.discovery`. «Обрыв питания» блока — это ACState Failed:
+триггер **No AC power on power supply [Node N PS M]** (High). Если пропал вход, DC и PSState тоже
+станут Failed, но их триггеры зависят от AC и не дублируют проблему. Блоки с проблемой попадают в причину
+состояния массива (`system.state.reasons`: `power supply 1.0 AC/DC/STATE failed`).
+
+Колонки в выводе `shownode -ps` ищутся по заголовку (`ACState`, `DCState`, `PSState`, `FanState`,
+`Assem_Serial`), порядок и лишние колонки не важны. Формат проверен по описанию CLI HPE и тестовому
+выводу, но не на живом массиве. Если блоки не обнаружены, в ответе скрипта в `warnings` будет
+`shownode -ps: no power supplies recognized`. Тогда пришлите вывод `shownode -ps` и положите его в
+`tests/fixtures/shownode_ps.txt`. Если на старой версии 3PAR OS команда не поддерживается, сбор помечается
+как Partial (Warning «Data collection is partial»), остальные данные собираются.
+
 ## Алерты массива в уведомлениях
 
 Каждый активный алерт `showalert` с важностью Minor и выше становится отдельной проблемой Zabbix:
@@ -175,7 +191,7 @@ ssmc_collect.py --test [--section ...]    # данные из tests/fixtures + �
 | Exit-коды | 0 OK, 1 частично (часть команд упала), 2 сбор не удался, 3 ошибка конфигурации, 4 не прошла `--validate`. JSON печатается всегда; stderr пуст. Zabbix 7.0 сохраняет вывод External check при любом exit-коде (проверено на 7.0.31), поэтому ошибки доходят до триггеров через поля `error` и `status`. |
 
 Поля JSON: `error` (null / текст), `errors` (по командам), `status`, `duration`, `system`,
-`ports`, `disks`, `volumes`, `batteries`, `nodes`, `alerts`, `alert_summary`, `certificates`,
+`ports`, `disks`, `volumes`, `batteries`, `power_supplies`, `nodes`, `alerts`, `alert_summary`, `certificates`,
 `net`. Если секцию собрать не удалось, её нет в ответе. Зависимые элементы тогда отбрасывают
 значение и не пишут нули, а LLD не удаляет сущности.
 
@@ -229,6 +245,7 @@ python3 -m unittest discover -s tests -v
 | `system.capacity.pused`, `system.model`, `system.serial`, `system.state.reasons` | Заполненность массива, инвентарь, причина Degraded/Failed |
 | `alerts.count.total/critical/major`, `alerts.critical.last` | Сводка алертов массива |
 | `battery.expired[{#BATTERY_ID}]` | Батарея просрочена |
+| LLD `psu.discovery`: `psu.status/state/ac/dc/fan[{#PSU_ID}]` | Блоки питания нод (`shownode -ps`): общее состояние, PSState, ACState (сетевой вход), DCState, FanState; `{#PSU_ID}` = `нода.блок` |
 | LLD `certs.discovery`: `cert.expiry[{#CERT_ID}]`, `cert.days_left[{#CERT_ID}]` | Сроки сертификатов: `showcert` (cim, wsapi, unified-server, syslog, ldap, ekm, ...) и TLS-порты |
 | LLD `net.discovery`: `net.node.up/ssh/icmp.loss/icmp.rtt[{#NET_ADDR}]` | Сетевая доступность management-адреса и нод |
 
@@ -246,6 +263,9 @@ python3 -m unittest discover -s tests -v
 | Minor alert [{#ALERT_ID}] (например, деградировал путь хоста) | Warning | severity≠2 |
 | Certificate expired / < `{$SSMC_CERT_EXPIRY_CRIT}`d / < `{$SSMC_CERT_EXPIRY_WARN}`d | High / High / Warning, с цепочкой зависимостей | через `now()`, без флапа |
 | {#NET_LABEL} unreachable (3 проверки подряд) | High | 2 успешные подряд |
+| **No AC power on power supply [Node N PS M]** (ACState Failed: обрыв питания блока) | High | state<>Failed |
+| No DC output / Power supply failed (PSState Failed) | High, зависят от «No AC power» | state<>Failed |
+| Power supply degraded / Fan of power supply failed | Warning | state<>Degraded / Failed |
 | SSH port not reachable / ICMP loss / ICMP RTT | Warning, зависят от unreachable | гистерезис |
 | Array capacity usage high / critical | Warning / High | порог минус `{$SSMC_UTIL_HYSTERESIS}` |
 | Node failed / left cluster / missing | Disaster | |

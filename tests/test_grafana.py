@@ -25,7 +25,7 @@ NSX_TEMPLATE = os.path.join(ROOT, 'vmware', 'nsx', 'zbx_template_vmware_nsx.yaml
 LLD_SAMPLES = {
     '{#DISK_POS}': '0:3:0', '{#VOLUME_NAME}': 'vol_db01', '{#NODE_NAME}': 'Node 1',
     '{#BATTERY_POS}': 'Node 1 PS 0 Batt 0', '{#PORT_POS}': '1:1:2', '{#ALERT_ID}': '101',
-    '{#CERT_SERVICE}': 'wsapi', '{#NET_LABEL}': 'Node 0', '{#NET_ADDR}': '10.0.0.11',
+    '{#CERT_SERVICE}': 'wsapi', '{#PSU_POS}': 'Node 0 PS 0', '{#NET_LABEL}': 'Node 0', '{#NET_ADDR}': '10.0.0.11',
 }
 NSX_LLD_SAMPLES = {
     '{#GROUP.TYPE}': 'POLICY', '{#NODE.NAME}': 'esx-01', '{#EC.NAME}': 'edge-cluster-01', '{#EDGE.NAME}': 'edge-01',

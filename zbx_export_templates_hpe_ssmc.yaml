@@ -17,7 +17,7 @@ zabbix_export:
         Optional: {$SSMC_NODE_ADDRS}, {$SSMC_TLS_ENDPOINTS}.
       vendor:
         name: Custom
-        version: 7.0-2.2.0
+        version: 7.0-2.3.0
       groups:
         - name: Templates/Storage
       items:
@@ -1669,6 +1669,246 @@ zabbix_export:
                 - $.ports
               error_handler: CUSTOM_ERROR
               error_handler_params: Section "ports" missing in collector output
+        - uuid: fc91dcbb3ca047b299ebd14612df19d4
+          name: Power supply discovery
+          type: DEPENDENT
+          key: psu.discovery
+          delay: '0'
+          description: One entity per node power supply (shownode -ps). {#PSU_ID} is node.ps.
+          item_prototypes:
+            - uuid: 964375ddde1f4614b0c39a672880c6de
+              name: "Power supply [{#PSU_POS}] overall state"
+              type: DEPENDENT
+              key: psu.status[{#PSU_ID}]
+              delay: '0'
+              history: 90d
+              description: "1=OK, 2=Degraded, 4=Failed, 5=Unknown. The worst of PSState, ACState, DCState and FanState."
+              valuemap:
+                name: HPE SSMC PSU State
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.power_supplies[?(@.id == '{#PSU_ID}')].status.first()
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+              tags:
+                - tag: component
+                  value: power
+                - tag: psu
+                  value: '{#PSU_POS}'
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+            - uuid: 8c2e13b513de401ca4a5e8280d6435d5
+              name: "Power supply [{#PSU_POS}] state"
+              type: DEPENDENT
+              key: psu.state[{#PSU_ID}]
+              delay: '0'
+              history: 90d
+              description: "PSState column of shownode -ps."
+              valuemap:
+                name: HPE SSMC PSU State
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.power_supplies[?(@.id == '{#PSU_ID}')].state.first()
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+              tags:
+                - tag: component
+                  value: power
+                - tag: psu
+                  value: '{#PSU_POS}'
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+              trigger_prototypes:
+                - uuid: a02a664816d84bd1a7347b50661ca8bc
+                  expression: "last(/HPE SSMC StorageArray/psu.state[{#PSU_ID}])=4"
+                  name: "Power supply [{#PSU_POS}] failed"
+                  priority: HIGH
+                  description: "The power supply {#PSU_POS} reports Failed. The node runs on the other supply only."
+                  dependencies:
+                    - name: "No AC power on power supply [{#PSU_POS}]"
+                      expression: "last(/HPE SSMC StorageArray/psu.ac[{#PSU_ID}])=4"
+                    - name: "No DC output from power supply [{#PSU_POS}]"
+                      expression: "last(/HPE SSMC StorageArray/psu.dc[{#PSU_ID}])=4"
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: psu
+                      value: '{#PSU_POS}'
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+                - uuid: f2587ddc093b44cb8e07d3046598771f
+                  expression: "last(/HPE SSMC StorageArray/psu.state[{#PSU_ID}])=2"
+                  name: "Power supply [{#PSU_POS}] is degraded"
+                  priority: WARNING
+                  description: "The power supply {#PSU_POS} reports Degraded."
+                  dependencies:
+                    - name: "Power supply [{#PSU_POS}] failed"
+                      expression: "last(/HPE SSMC StorageArray/psu.state[{#PSU_ID}])=4"
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: psu
+                      value: '{#PSU_POS}'
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+            - uuid: 237b67df5f864477a89802a4f46264c3
+              name: "Power supply [{#PSU_POS}] AC input"
+              type: DEPENDENT
+              key: psu.ac[{#PSU_ID}]
+              delay: '0'
+              history: 90d
+              description: "ACState column of shownode -ps. Failed means the mains power is lost on this supply."
+              valuemap:
+                name: HPE SSMC PSU State
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.power_supplies[?(@.id == '{#PSU_ID}')].ac.first()
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+              tags:
+                - tag: component
+                  value: power
+                - tag: psu
+                  value: '{#PSU_POS}'
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+              trigger_prototypes:
+                - uuid: aa71be176a9a4d5285f80084a613fed3
+                  expression: "last(/HPE SSMC StorageArray/psu.ac[{#PSU_ID}])=4"
+                  name: "No AC power on power supply [{#PSU_POS}]"
+                  priority: HIGH
+                  description: "The supply {#PSU_POS} lost its AC (mains) input: cable, PDU or power feed of the rack. If both supplies of a node lose AC, the node goes down."
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: psu
+                      value: '{#PSU_POS}'
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+            - uuid: 0be1159cace844db970b446d066193db
+              name: "Power supply [{#PSU_POS}] DC output"
+              type: DEPENDENT
+              key: psu.dc[{#PSU_ID}]
+              delay: '0'
+              history: 90d
+              description: "DCState column of shownode -ps."
+              valuemap:
+                name: HPE SSMC PSU State
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.power_supplies[?(@.id == '{#PSU_ID}')].dc.first()
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+              tags:
+                - tag: component
+                  value: power
+                - tag: psu
+                  value: '{#PSU_POS}'
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+              trigger_prototypes:
+                - uuid: bc037d0a29b0497aaf8d79381d1a2b20
+                  expression: "last(/HPE SSMC StorageArray/psu.dc[{#PSU_ID}])=4"
+                  name: "No DC output from power supply [{#PSU_POS}]"
+                  priority: HIGH
+                  description: "The supply {#PSU_POS} has no DC output."
+                  dependencies:
+                    - name: "No AC power on power supply [{#PSU_POS}]"
+                      expression: "last(/HPE SSMC StorageArray/psu.ac[{#PSU_ID}])=4"
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: psu
+                      value: '{#PSU_POS}'
+                    - tag: scope
+                      value: availability
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+            - uuid: d6f77ba0c142434dae75a76fbae1123f
+              name: "Power supply [{#PSU_POS}] fan"
+              type: DEPENDENT
+              key: psu.fan[{#PSU_ID}]
+              delay: '0'
+              history: 90d
+              description: "FanState column of shownode -ps."
+              valuemap:
+                name: HPE SSMC PSU State
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.power_supplies[?(@.id == '{#PSU_ID}')].fan.first()
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+              tags:
+                - tag: component
+                  value: power
+                - tag: psu
+                  value: '{#PSU_POS}'
+                - tag: service
+                  value: '{$SSMC_SERVICE}'
+                - tag: target
+                  value: hpe-3par
+              trigger_prototypes:
+                - uuid: 6ba30a05f3074a7e81fd6d50ea0a3d4e
+                  expression: "last(/HPE SSMC StorageArray/psu.fan[{#PSU_ID}])=4"
+                  name: "Fan of power supply [{#PSU_POS}] failed"
+                  priority: WARNING
+                  description: "The fan of the supply {#PSU_POS} failed; the supply may overheat."
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: psu
+                      value: '{#PSU_POS}'
+                    - tag: scope
+                      value: notice
+                    - tag: service
+                      value: '{$SSMC_SERVICE}'
+                    - tag: target
+                      value: hpe-3par
+          master_item:
+            key: "ssmc_collect.py[\"--host={$SSMC_HOST}\",\"--user={$SSMC_SSH_USER}\",\"--password={$SSMC_SSH_PASS}\",\"--section=all\",\"--tls-endpoints={$SSMC_TLS_ENDPOINTS}\"]"
+          lld_macro_paths:
+            - lld_macro: '{#PSU_ID}'
+              path: $.id
+            - lld_macro: '{#PSU_POS}'
+              path: $.position
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.power_supplies
+              error_handler: CUSTOM_ERROR
+              error_handler_params: Section "power_supplies" missing in collector output
         - uuid: 7a12ffb0991646eeb2e3435ae3f0855e
           name: Volume discovery
           type: DEPENDENT
@@ -1999,6 +2239,17 @@ zabbix_export:
               newvalue: Up
         - uuid: 683929b2b3d6452083ad05ea4f2775be
           name: HPE SSMC Battery State
+          mappings:
+            - value: '1'
+              newvalue: OK
+            - value: '2'
+              newvalue: Degraded
+            - value: '4'
+              newvalue: Failed
+            - value: '5'
+              newvalue: Unknown
+        - uuid: 3469479ffbc2497e908e95f381f638e6
+          name: HPE SSMC PSU State
           mappings:
             - value: '1'
               newvalue: OK
