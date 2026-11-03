@@ -13,6 +13,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-zabbix.json')
+HEALTH_DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-health.json')
 TEMPLATE = os.path.join(ROOT, 'zbx_export_templates_hpe_ssmc.yaml')
 
 # Sample values for LLD macros, shaped like what discovery produces.
@@ -37,6 +38,22 @@ def template_item_names():
     return names
 
 
+def template_valuemaps():
+    """Item or prototype name (with sample LLD values) -> {value: text} of its value map."""
+    with open(TEMPLATE) as fh:
+        tpl = yaml.safe_load(fh)['zabbix_export']['templates'][0]
+    maps = {v['name']: {m['value']: m['newvalue'] for m in v['mappings']} for v in tpl['valuemaps']}
+    out = {}
+    protos = [i for i in tpl['items']] + [p for r in tpl['discovery_rules'] for p in r['item_prototypes']]
+    for it in protos:
+        if 'valuemap' in it:
+            name = it['name']
+            for macro, value in LLD_SAMPLES.items():
+                name = name.replace(macro, value)
+            out[name] = maps[it['valuemap']['name']]
+    return out
+
+
 def item_matches(item_filter, name):
     if item_filter.startswith('/') and item_filter.endswith('/'):
         return re.search(item_filter[1:-1], name) is not None
@@ -44,9 +61,11 @@ def item_matches(item_filter, name):
 
 
 class DashboardTests(unittest.TestCase):
+    dashboard_file = DASHBOARD
+
     @classmethod
     def setUpClass(cls):
-        with open(DASHBOARD) as fh:
+        with open(cls.dashboard_file) as fh:
             cls.dash = json.load(fh)
         cls.names = template_item_names()
         cls.panels = [p for p in cls.dash['panels'] if p['type'] != 'row']
@@ -58,6 +77,22 @@ class DashboardTests(unittest.TestCase):
                     flt = t['item']['filter']
                     self.assertTrue(any(item_matches(flt, n) for n in self.names),
                                     '%s: %r matches no template item' % (p['title'], flt))
+
+    def test_value_mappings_cover_the_value_map_of_the_item(self):
+        # A state the template can produce but the panel does not map would show a bare number.
+        maps = template_valuemaps()
+        for p in self.panels:
+            if p.get('options', {}).get('reduceOptions', {}).get('calcs') == ['count']:
+                continue  # "N problems" tile: maps the count, not the state
+            mapped = {k for m in p.get('fieldConfig', {}).get('defaults', {}).get('mappings', [])
+                      if m['type'] == 'value' for k in m['options']}
+            if not mapped or len(p['targets']) != 1 or p['targets'][0]['queryType'] not in ('0', '2'):
+                continue
+            flt = p['targets'][0]['item']['filter']
+            wanted = [maps[n] for n in maps if item_matches(flt, n)]
+            for vm in wanted:
+                self.assertEqual(mapped, set(vm), '%s: panel maps %s, template value map has %s'
+                                 % (p['title'], sorted(mapped), sorted(vm)))
 
     def test_rename_regexes_match_their_items(self):
         # renameByRegex must apply to the names the query returns, or labels stay long.
@@ -97,6 +132,36 @@ class DashboardTests(unittest.TestCase):
             if p['type'] == 'state-timeline':
                 self.assertEqual(p['fieldConfig']['defaults']['color']['mode'], 'fixed', p['title'])
                 self.assertTrue(p['fieldConfig']['defaults']['mappings'], p['title'])
+
+
+class HealthDashboardTests(DashboardTests):
+    dashboard_file = HEALTH_DASHBOARD
+
+    def test_generated_file_is_committed(self):
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'health.json')
+            subprocess.run([sys.executable, os.path.join(ROOT, 'grafana', 'tools', 'gen_health_dashboard.py'), out],
+                           check=True, stdout=subprocess.DEVNULL)
+            with open(out) as fresh, open(HEALTH_DASHBOARD) as committed:
+                self.assertEqual(fresh.read(), committed.read(), 'regenerate grafana/hpe-3par-health.json')
+
+    def test_traffic_lights_count_problems_without_state_codes_drifting(self):
+        # Every "N problems" tile keeps the rows that are NOT in the normal state.
+        tiles = [p for p in self.panels if p['type'] == 'stat' and p['options']['reduceOptions']['calcs'] == ['count']]
+        self.assertGreaterEqual(len(tiles), 6)
+        for p in tiles:
+            self.assertEqual(p['fieldConfig']['defaults']['thresholds']['steps'][0]['color'], 'green', p['title'])
+            conds = {(f['config']['id'], f['config']['options']['value'])
+                     for f in p['transformations'][1]['options']['filters']}
+            self.assertTrue(conds, p['title'])
+
+    def test_links_to_the_detailed_dashboard(self):
+        self.assertEqual(self.dash['links'][0]['tags'], ['hpe-3par'])
+        with open(DASHBOARD) as fh:
+            self.assertIn('hpe-3par', json.load(fh)['tags'])
 
 
 if __name__ == '__main__':
