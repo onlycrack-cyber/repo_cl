@@ -1,4 +1,7 @@
-"""Checks grafana/hpe-3par-zabbix.json against the Zabbix template.
+"""Checks the Grafana dashboards against their Zabbix templates.
+
+grafana/hpe-3par-*.json against the HPE SSMC template, vmware/nsx/grafana/nsx-health.json
+against "VMware NSX by HTTP".
 
 Every item filter in the dashboard must match at least one item or item
 prototype name of the template, so renaming an item in the template cannot
@@ -15,6 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-zabbix.json')
 HEALTH_DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-health.json')
 TEMPLATE = os.path.join(ROOT, 'zbx_export_templates_hpe_ssmc.yaml')
+NSX_DASHBOARD = os.path.join(ROOT, 'vmware', 'nsx', 'grafana', 'nsx-health.json')
+NSX_TEMPLATE = os.path.join(ROOT, 'vmware', 'nsx', 'zbx_template_vmware_nsx.yaml')
 
 # Sample values for LLD macros, shaped like what discovery produces.
 LLD_SAMPLES = {
@@ -22,25 +27,34 @@ LLD_SAMPLES = {
     '{#BATTERY_POS}': 'Node 1 PS 0 Batt 0', '{#PORT_POS}': '1:1:2', '{#ALERT_ID}': '101',
     '{#CERT_SERVICE}': 'wsapi', '{#NET_LABEL}': 'Node 0', '{#NET_ADDR}': '10.0.0.11',
 }
+NSX_LLD_SAMPLES = {
+    '{#GROUP.TYPE}': 'POLICY', '{#NODE.NAME}': 'esx-01', '{#EC.NAME}': 'edge-cluster-01', '{#EDGE.NAME}': 'edge-01',
+    '{#T0.NAME}': 'T0-GW', '{#T1.NAME}': 'T1-APP', '{#BGP.SOURCE}': '10.0.0.2', '{#BGP.NEIGHBOR}': '10.0.0.1',
+    '{#BGP.REMOTE.AS}': '65001', '{#BGP.EDGE}': 'edge-01', '{#ALARM.FEATURE}': 'Edge Health',
+    '{#ALARM.EVENT}': 'Edge Node Down', '{#ALARM.NODE}': 'edge-02', '{#CERT.NAME}': 'mgr-cluster-api',
+    '{#LIC.NAME}': 'NSX Enterprise Plus', '{#LIC.KEY}': '*****E1234',
+}
 
 
-def template_item_names():
-    with open(TEMPLATE) as fh:
+def template_item_names(template=TEMPLATE, samples=None):
+    samples = LLD_SAMPLES if samples is None else samples
+    with open(template) as fh:
         tpl = yaml.safe_load(fh)['zabbix_export']['templates'][0]
     names = [i['name'] for i in tpl['items']]
     for rule in tpl['discovery_rules']:
         for proto in rule['item_prototypes']:
             name = proto['name']
-            for macro, value in LLD_SAMPLES.items():
+            for macro, value in samples.items():
                 name = name.replace(macro, value)
             assert '{#' not in name, 'add a sample for ' + name
             names.append(name)
     return names
 
 
-def template_valuemaps():
+def template_valuemaps(template=TEMPLATE, samples=None):
     """Item or prototype name (with sample LLD values) -> {value: text} of its value map."""
-    with open(TEMPLATE) as fh:
+    samples = LLD_SAMPLES if samples is None else samples
+    with open(template) as fh:
         tpl = yaml.safe_load(fh)['zabbix_export']['templates'][0]
     maps = {v['name']: {m['value']: m['newvalue'] for m in v['mappings']} for v in tpl['valuemaps']}
     out = {}
@@ -48,7 +62,7 @@ def template_valuemaps():
     for it in protos:
         if 'valuemap' in it:
             name = it['name']
-            for macro, value in LLD_SAMPLES.items():
+            for macro, value in samples.items():
                 name = name.replace(macro, value)
             out[name] = maps[it['valuemap']['name']]
     return out
@@ -62,12 +76,14 @@ def item_matches(item_filter, name):
 
 class DashboardTests(unittest.TestCase):
     dashboard_file = DASHBOARD
+    template_file = TEMPLATE
+    lld_samples = LLD_SAMPLES
 
     @classmethod
     def setUpClass(cls):
         with open(cls.dashboard_file) as fh:
             cls.dash = json.load(fh)
-        cls.names = template_item_names()
+        cls.names = template_item_names(cls.template_file, cls.lld_samples)
         cls.panels = [p for p in cls.dash['panels'] if p['type'] != 'row']
 
     def test_every_item_filter_matches_the_template(self):
@@ -80,7 +96,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_value_mappings_cover_the_value_map_of_the_item(self):
         # A state the template can produce but the panel does not map would show a bare number.
-        maps = template_valuemaps()
+        maps = template_valuemaps(self.template_file, self.lld_samples)
         for p in self.panels:
             if p.get('options', {}).get('reduceOptions', {}).get('calcs') == ['count']:
                 continue  # "N problems" tile: maps the count, not the state
@@ -162,6 +178,63 @@ class HealthDashboardTests(DashboardTests):
         self.assertEqual(self.dash['links'][0]['tags'], ['hpe-3par'])
         with open(DASHBOARD) as fh:
             self.assertIn('hpe-3par', json.load(fh)['tags'])
+
+
+
+class NsxHealthDashboardTests(DashboardTests):
+    dashboard_file = NSX_DASHBOARD
+    template_file = NSX_TEMPLATE
+    lld_samples = NSX_LLD_SAMPLES
+
+    def test_generated_file_is_committed(self):
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'nsx.json')
+            subprocess.run([sys.executable, os.path.join(ROOT, 'vmware', 'tools', 'gen_nsx_dashboard.py'), out],
+                           check=True, stdout=subprocess.DEVNULL)
+            with open(out) as fresh, open(NSX_DASHBOARD) as committed:
+                self.assertEqual(fresh.read(), committed.read(), 'regenerate vmware/nsx/grafana/nsx-health.json')
+
+    def test_traffic_lights_cover_every_area(self):
+        titles = [p['title'] for p in self.panels if p['gridPos']['y'] < 11]
+        for area in ('Кластер NSX', 'Алармы NSX', 'Manager: сервисы', 'Manager: ноды offline', 'ESXi-узлы',
+                     'ESXi: туннели', 'Edge-ноды', 'Edge-кластеры', 'Шлюзы: HA', 'BGP-сессии', 'Сертификаты',
+                     'Лицензии'):
+            self.assertIn(area, titles)
+
+    def test_tunnels_without_workloads_are_not_counted_as_problems(self):
+        # Tunnel status UNKNOWN (0) is normal for a host without overlay workloads.
+        tile = next(p for p in self.panels if p['title'] == 'ESXi: туннели')
+        conds = {(f['config']['id'], f['config']['options']['value'])
+                 for f in tile['transformations'][1]['options']['filters']}
+        self.assertEqual(conds, {('notEqual', 1), ('notEqual', 0)})
+
+    def test_thresholds_match_template_defaults(self):
+        with open(NSX_TEMPLATE) as fh:
+            macros = {m['macro']: m.get('value') for m in
+                      yaml.safe_load(fh)['zabbix_export']['templates'][0]['macros']}
+
+        def steps(title):
+            p = next(p for p in self.panels if p['title'] == title)
+            return {s['value'] for s in p['fieldConfig']['defaults']['thresholds']['steps']} - {None}
+
+        self.assertIn(int(macros['{$NSX.CERT.EXPIRY.CRIT}']), steps('Сертификаты'))
+        self.assertIn(int(macros['{$NSX.CERT.EXPIRY.WARN}']), steps('Сертификаты'))
+        self.assertIn(int(macros['{$NSX.LICENSE.EXPIRY.CRIT}']), steps('Лицензии'))
+        self.assertIn(int(macros['{$NSX.LICENSE.EXPIRY.WARN}']), steps('Лицензии'))
+        self.assertIn(int(macros['{$NSX.EDGE.CPU.DP.MAX}']), steps('CPU datapath (DPDK, среднее по ядрам)'))
+        self.assertIn(int(macros['{$NSX.EDGE.CPU.SVC.MAX}']), steps('CPU сервисов (не-DPDK ядра)'))
+        self.assertIn(int(macros['{$NSX.EDGE.MEM.MAX}']), steps('Память'))
+
+    def test_bgp_labels_are_short(self):
+        tile = next(p for p in self.panels if p['title'] == 'BGP-сессии' and p['type'] == 'stat'
+                    and p['gridPos']['y'] > 11)
+        tr = tile['transformations'][0]['options']
+        name = next(n for n in self.names if re.search(tr['regex'], n))
+        label = re.sub(tr['regex'], tr['renamePattern'].replace('$', '\\'), name)
+        self.assertEqual(label, 'T0-GW · edge-01 → 10.0.0.1')
 
 
 if __name__ == '__main__':

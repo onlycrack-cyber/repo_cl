@@ -154,7 +154,7 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 
 Шаблон **VMware NSX by HTTP** (HTTP agent + зависимые элементы и LLD): кластер NSX Manager,
 ESXi transport nodes и GENEVE-туннели, Edge-кластеры и Edge-ноды (CPU, память), HA шлюзов
-Tier-0/Tier-1, BGP-соседи Tier-0, сроки действия сертификатов и лицензий и проброс алармов NSX в проблемы Zabbix:
+Tier-0/Tier-1, BGP-соседи Tier-0, сроки действия сертификатов и лицензий и проброс алармов NSX в проблемы Zabbix, плюс дашборд Grafana «карта здоровья NSX»:
 [vmware/nsx/](vmware/nsx/README.md).
 
 ## Скрипт
