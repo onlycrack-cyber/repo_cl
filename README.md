@@ -140,7 +140,9 @@ ZABBIX_URL=https://zabbix.example.com ZABBIX_API_TOKEN=... \
 
 ## Дашборд Grafana
 
-Готовый дашборд для этого шаблона (через плагин Zabbix для Grafana): [grafana/](grafana/README.md).
+Два готовых дашборда для этого шаблона (через плагин Zabbix для Grafana): [grafana/](grafana/README.md).
+**Карта здоровья** (`hpe-3par-health.json`) — светофор по областям и плитка на каждую ноду, батарею, адрес сети,
+порт и диск, чтобы сразу видеть, что сломалось; подробный дашборд — для разбора.
 
 ## VMware vCenter: ёмкость и прогнозы
 
