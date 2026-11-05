@@ -1,0 +1,794 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 67c7f1e1e2a74876882da91f248911d7
+      name: Templates
+  templates:
+    - uuid: 24fba1f61a1247aca89a5a39298353e8
+      template: 'Template ESXi Health by vCenter'
+      name: 'Template ESXi Health by vCenter'
+      description: |
+        Мониторинг ESXi через vCenter (один сборщик + зависимые айтемы). ДОПОЛНЯЕТ стандартный шаблон VMware
+        (производительность, датасторы, ВМ, состояние/uptime хостов) и SNMP-мониторинг железа HPE; здесь только то,
+        чего в них нет: NTP (настроен/работает + смещение времени), DNS, VMkernel, Storage-адаптеры, Power policy, мультипасинг (dead paths), доступность
+        датасторов хосту, аплинки vSwitch/DVS (link/скорость/живые), HA-агент.
+
+        АРХИТЕКТУРА: привязывается к "мастер"-хосту Zabbix (по одному на vCenter) с макросами
+        {$VMWARE.URL}, {$VMWARE.USERNAME}, {$VMWARE.PASSWORD}. Айтем "ESXi data collection" раз в 5 минут получает JSON
+        по всем хостам; LLD (хосты, физические порты, vSwitch) и все значения - зависимые, JSONPath.
+        Недоступное значение (хост не connected, свойство не прочитано) = unsupported, а не ложный 0.
+        Подавление алертов: флаг "Alerting enabled" (0 при Maintenance Mode или не connected) входит во все триггеры хоста;
+        потерянные из LLD хосты (удалены из vCenter) отключаются сразу, удаляются через 7 дней (история сохраняется при переустановке).
+
+        Зависимости: venv /opt/zabbix-venv с pyVmomi 8.0.3+/9.x; скрипт esxi_ntp_check.py (v3, режим collect)
+        в /usr/lib/zabbix/externalscripts/. Роль vCenter - только чтение.
+        Миграция с "Template ESXi NTP LLD": ключи другие, история старого шаблона не переносится;
+        отвяжите старый шаблон (с удалением) после проверки нового.
+      groups:
+        - name: Templates
+      items:
+        - uuid: 86f9f5eafdbb40c2808e33a756e193d8
+          name: 'ESXi data collection'
+          type: EXTERNAL
+          key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          delay: 5m
+          timeout: 30s
+          value_type: TEXT
+          history: '0'
+          trends: '0'
+          description: |
+            Один опрос vCenter на все ESXi (JSON). Все остальные айтемы и LLD шаблона зависимые.
+            Кэш скрипта для этого режима - ESXI_COLLECT_TTL (240 c).
+          tags:
+            - tag: component
+              value: 'vcenter'
+            - tag: scope
+              value: 'esxi-health'
+          triggers:
+            - uuid: 70ec31b23b2b47959240d1551a07750d
+              expression: 'nodata(/Template ESXi Health by vCenter/esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"],15m)=1'
+              name: 'vCenter data collection is failing'
+              event_name: 'vCenter data collection is failing ({HOST.NAME})'
+              priority: HIGH
+              description: 'Нет данных от vCenter 15 минут: недоступен vCenter, неверная учётка либо сломан скрипт/venv. Все проверки ESXi не обновляются.'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: 'vcenter'
+                - tag: scope
+                  value: 'esxi-health'
+        - uuid: 6d4cd095e89c47b584048816c35f0b3b
+          name: 'ESXi hosts found in vCenter'
+          type: DEPENDENT
+          key: 'esxi.hosts.count'
+          delay: '0'
+          history: 7d
+          description: 'Число ESXi-хостов, которые видит скрипт в vCenter.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cnt'
+          master_item:
+            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          tags:
+            - tag: component
+              value: 'vcenter'
+            - tag: scope
+              value: 'esxi-health'
+          triggers:
+            - uuid: 52c1ee7be56d4484a0d03b09cec60436
+              expression: 'last(/Template ESXi Health by vCenter/esxi.hosts.count)=0'
+              name: 'No ESXi hosts returned by vCenter'
+              event_name: 'No ESXi hosts returned by vCenter ({HOST.NAME})'
+              priority: WARNING
+              description: 'vCenter ответил, но хостов нет: проверьте права учётки (System.Read на корень).'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: 'vcenter'
+                - tag: scope
+                  value: 'esxi-health'
+      discovery_rules:
+        - uuid: 8fec4e4cf4c54907a6397429d35a8757
+          name: 'ESXi hosts discovery'
+          type: DEPENDENT
+          key: 'esxi.hosts.discovery'
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.MATCHES}'
+                formulaid: A
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          description: 'Все ESXi-хосты vCenter ({#ESXINAME}, {#ESXIADDR}).'
+          item_prototypes:
+            - uuid: 9d66dfc46f7e4dd9a012e30f0d061801
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
+            - uuid: 0db3fcf4ea3644f790acb3f71dd44553
+              name: 'NTP configured on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ntp["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - NTP настроен И служба ntpd Running (как в Time Configuration), 0 - не настроен либо служба остановлена.'
+              valuemap:
+                name: 'NTP configured'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ntp'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'ntp'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 066a1f8464674573a71a24fb3a46887f
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.ntp["{#ESXINAME}"],#2)=0)'
+                  name: 'NTP is not configured on {#ESXINAME}'
+                  event_name: 'NTP is not configured on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'На ESXi-хосте {#ESXINAME} NTP не работает (не настроен или служба ntpd не запущена).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ntp'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 944a38702a454dbe8098209d3ac9b3f8
+              name: 'NTP time offset on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ntp.offset["{#ESXINAME}"]'
+              delay: '0'
+              value_type: FLOAT
+              history: 7d
+              units: 's'
+              description: 'Смещение времени ESXi относительно vCenter, секунды (+ = ESXi впереди). Погрешность измерения - десятки мс. Измеряется вызовом QueryDateTime; выключается ESXI_NTP_OFFSET=0.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ntp_off'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'ntp'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 77dc232834aa48c6b3186c5e5e3bf45b
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.WARN} and abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))<={$ESXI.NTP.OFFSET.HIGH})'
+                  name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME}'
+                  event_name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'Время на {#ESXINAME} отличается от vCenter больше чем на {$ESXI.NTP.OFFSET.WARN} с (среднее за 3 измерения).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ntp'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+                - uuid: 246faa9747244a5d86c3af630cfeea6e
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.HIGH})'
+                  name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME}'
+                  event_name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'Время на {#ESXINAME} отличается от vCenter больше чем на {$ESXI.NTP.OFFSET.HIGH} с: риск проблем с Kerberos/сертификатами/кластером.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ntp'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 6413b3d2756e4c7584005b806be5d1ba
+              name: 'DNS configured on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.dns["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - в DNS-конфиге есть оба заданных сервера ({$ESXI.DNS.PREFERRED}, {$ESXI.DNS.ALTERNATE}), при пустых макросах - не менее 2 DNS-серверов.'
+              valuemap:
+                name: 'DNS configured'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].dns'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'dns'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 3e5ced7d50684217a32dbb88820aaf65
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.dns["{#ESXINAME}"],#2)=0)'
+                  name: 'DNS not configured on {#ESXINAME}'
+                  event_name: 'DNS not configured on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'На ESXi-хосте {#ESXINAME} DNS-серверы не настроены (нужно >=2 или заданные {$ESXI.DNS.PREFERRED}/{$ESXI.DNS.ALTERNATE}).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'dns'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 2ef77ce6fbe84322b6e8d4695dd8140a
+              name: 'VMkernel adapters on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.vmk["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - настроен хотя бы один VMkernel adapter с IP (не 0.0.0.0), 0 - иначе.'
+              valuemap:
+                name: 'VMkernel adapters'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].vmk'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'network'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: bf0b7bdc31874140800f9f74d5245272
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.vmk["{#ESXINAME}"],#2)=0)'
+                  name: 'No VMkernel adapters on {#ESXINAME}'
+                  event_name: 'No VMkernel adapters on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'На ESXi-хосте {#ESXINAME} нет настроенных VMkernel-адаптеров с IP.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'network'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 38ee76c577ae450ea966adcef1b58d7d
+              name: 'Storage adapters on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.storage["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - все известные Storage Adapters online (unknown не считается проблемой), 0 - хотя бы один адаптер не online (потеряна избыточность портов).'
+              valuemap:
+                name: 'Storage adapters'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].stor'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'storage'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: b8716b8747e84857b8448deea195ed44
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.storage["{#ESXINAME}"],#2)=0)'
+                  name: 'Storage adapter offline on {#ESXINAME}'
+                  event_name: 'Storage adapter offline on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'На ESXi-хосте {#ESXINAME} есть Storage Adapter не в состоянии online.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'storage'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 49de09824ce245e79d49e50cd1507972
+              name: 'Power policy on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.power["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - активная политика энергосбережения = {$ESXI.POWER.POLICY}, 0 - иначе.'
+              valuemap:
+                name: 'Power policy'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].pwr'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'power'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: f601d2ad313b4cf5b611356c9f05964f
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.power["{#ESXINAME}"],#2)=0)'
+                  name: 'Power policy differs on {#ESXINAME}'
+                  event_name: 'Power policy differs on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'Активная политика энергосбережения на {#ESXINAME} не равна {$ESXI.POWER.POLICY}.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'power'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: aa1a52147c5a4afa8b96a7625ca0be61
+              name: 'Dead storage paths on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.mp.dead["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: 'Число путей к LUN в состоянии dead (мультипасинг). Local-диски с одним путём не затрагиваются.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].mp_dead'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'storage'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 337e9d4584a14aa1913fc2663583a166
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (min(/Template ESXi Health by vCenter/esxi.mp.dead["{#ESXINAME}"],#2)>0)'
+                  name: 'Dead storage paths on {#ESXINAME}'
+                  event_name: 'Dead storage paths on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'У ESXi-хоста {#ESXINAME} есть пути к хранилищу в состоянии dead: потеряна избыточность или LUN.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'storage'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 1f1c27d8be8c444f8708520cf4fca6b6
+              name: 'Inaccessible datastores on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ds.bad["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: 'Число датасторов (томов), недоступных хосту (mountInfo.accessible=false). Имена - в айтеме ниже.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ds_bad'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'storage'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: cf7cf6c192674035956e109764339aa4
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (min(/Template ESXi Health by vCenter/esxi.ds.bad["{#ESXINAME}"],#2)>0)'
+                  name: 'Datastore inaccessible on {#ESXINAME}'
+                  event_name: 'Datastore inaccessible on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'ESXi-хосту {#ESXINAME} недоступен датастор (см. айтем "Inaccessible datastore names").'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'storage'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 2b5409f5134e47c1a1b2b84c626da9e2
+              name: 'Inaccessible datastore names on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ds.names["{#ESXINAME}"]'
+              delay: '0'
+              value_type: TEXT
+              history: 7d
+              trends: '0'
+              description: 'Имена недоступных датасторов (через запятую).'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ds_names'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'storage'
+                - tag: scope
+                  value: 'esxi-health'
+            - uuid: ac525559d69046dfa1eacd61a5f01c2d
+              name: 'vSphere HA agent on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ha.ok["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - HA-агент в порядке либо хост вне HA-кластера; 0 - networkIsolated, networkPartitionedFromMaster, initializationError, uninitializationError, hostDown.'
+              valuemap:
+                name: 'HA agent'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ha_ok'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'ha'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 9213827428f54865bd8314bdcc94dfed
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.ha.ok["{#ESXINAME}"],#2)=0)'
+                  name: 'vSphere HA agent problem on {#ESXINAME}'
+                  event_name: 'vSphere HA agent problem on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'HA-агент на {#ESXINAME} в проблемном состоянии (см. айтем "vSphere HA agent state"): хост не защищён HA.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ha'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: f2d0dac21b464bd98396d0c43b75a5c4
+              name: 'vSphere HA agent state on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ha.state["{#ESXINAME}"]'
+              delay: '0'
+              value_type: TEXT
+              history: 7d
+              trends: '0'
+              description: 'Состояние HA-агента (dasHostState); none - хост вне HA-кластера.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ha'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'ha'
+                - tag: scope
+                  value: 'esxi-health'
+          master_item:
+            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.lld.hosts'
+        - uuid: 621f1afdd9e44879b9014c268df98ba6
+          name: 'ESXi uplink NICs discovery'
+          type: DEPENDENT
+          key: 'esxi.pnic.discovery'
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.MATCHES}'
+                formulaid: A
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          description: 'Физические порты (vmnic), используемые как аплинки vSwitch/DVS: {#ESXINAME}, {#NIC}.'
+          item_prototypes:
+            - uuid: 63f6d8d5de4c4c5b81413b88fe1cadc0
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert.nic["{#ESXINAME}","{#NIC}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
+            - uuid: 54ad92a88e874821a909f40efcb45bfe
+              name: 'Link state of {#NIC} on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.pnic.up["{#ESXINAME}","{#NIC}"]'
+              delay: '0'
+              history: 7d
+              description: '1 - линк up, 0 - down. Берутся только порты, являющиеся аплинками vSwitch/DVS (свободные порты игнорируются).'
+              valuemap:
+                name: 'Link state'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.pnic["{#ESXINAME}"]["{#NIC}"].up'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'network'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 998e92f04bab4ae8a9092994e5316780
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.nic["{#ESXINAME}","{#NIC}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.pnic.up["{#ESXINAME}","{#NIC}"],#2)=0)'
+                  name: 'Uplink {#NIC} is down on {#ESXINAME}'
+                  event_name: 'Uplink {#NIC} is down on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'Физический порт {#NIC} (аплинк vSwitch/DVS) на {#ESXINAME} в состоянии down: избыточность потеряна.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'network'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: f702aca3ec7045168f73888efe1d7bad
+              name: 'Link speed of {#NIC} on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.pnic.speed["{#ESXINAME}","{#NIC}"]'
+              delay: '0'
+              history: 7d
+              units: 'Mbps'
+              description: 'Скорость линка, Мбит/с (0 - линк down).'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.pnic["{#ESXINAME}"]["{#NIC}"].mb'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'network'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 5f462166c9fe426d8040120dc1aff7ef
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.nic["{#ESXINAME}","{#NIC}"],{$ESXI.ALERT.HOLDDOWN})=1 and (last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])>0 and last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])<{$ESXI.NIC.SPEED.MIN:"{#NIC}"})'
+                  name: 'Uplink {#NIC} speed degraded on {#ESXINAME}'
+                  event_name: 'Uplink {#NIC} speed degraded on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'Скорость {#NIC} на {#ESXINAME} ниже {$ESXI.NIC.SPEED.MIN:"{#NIC}"} Мбит/с. Порог 0 = проверка выключена.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'network'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+          master_item:
+            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.lld.pnic'
+        - uuid: 357b5c76a8b447f78057e9b639a0acad
+          name: 'ESXi vSwitch/DVS discovery'
+          type: DEPENDENT
+          key: 'esxi.sw.discovery'
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.MATCHES}'
+                formulaid: A
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          description: 'Стандартные и распределённые свитчи хоста с аплинками: {#ESXINAME}, {#VSWITCH}.'
+          item_prototypes:
+            - uuid: 6a04403948854d0692999a8c253dcf88
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert.sw["{#ESXINAME}","{#VSWITCH}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
+            - uuid: b71480fc6d2f4287855f44fbac5aab3a
+              name: 'Live uplinks of {#VSWITCH} on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.sw.up["{#ESXINAME}","{#VSWITCH}"]'
+              delay: '0'
+              history: 7d
+              description: 'Число аплинков vSwitch/DVS с поднятым линком.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sw["{#ESXINAME}"]["{#VSWITCH}"].up'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'network'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: ac98ff1ad68e42ee81974a90a0f6bcc9
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.sw["{#ESXINAME}","{#VSWITCH}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.sw.up["{#ESXINAME}","{#VSWITCH}"],#2)=0 and last(/Template ESXi Health by vCenter/esxi.sw.total["{#ESXINAME}","{#VSWITCH}"])>0)'
+                  name: 'No live uplinks on {#VSWITCH} ({#ESXINAME})'
+                  event_name: 'No live uplinks on {#VSWITCH} ({#ESXINAME}) ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'У {#VSWITCH} на {#ESXINAME} не осталось живых аплинков: сетевая изоляция.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'network'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 9ca09ba092624d0fa28c09a6448ace15
+              name: 'Configured uplinks of {#VSWITCH} on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.sw.total["{#ESXINAME}","{#VSWITCH}"]'
+              delay: '0'
+              history: 7d
+              description: 'Число аплинков, назначенных vSwitch/DVS.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sw["{#ESXINAME}"]["{#VSWITCH}"].n'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'network'
+                - tag: scope
+                  value: 'esxi-health'
+          master_item:
+            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.lld.sw'
+      macros:
+        - macro: '{$ESXI.ALERT.HOLDDOWN}'
+          value: '10m'
+          description: 'Пауза после выхода хоста из Maintenance Mode / возврата в connected, прежде чем алерты снова включатся.'
+        - macro: '{$ESXI.DNS.ALTERNATE}'
+          description: 'Ожидаемый 2-й DNS (пусто + пустой PREFERRED = достаточно >=2 DNS).'
+        - macro: '{$ESXI.DNS.PREFERRED}'
+          description: 'Ожидаемый 1-й DNS.'
+        - macro: '{$ESXI.LLD.FILTER.MATCHES}'
+          value: '.*'
+          description: 'Regexp: создавать айтемы только для ESXi с подходящим именем.'
+        - macro: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+          value: '^$'
+          description: 'Regexp: исключить ESXi с подходящим именем (тестовые и т. п.).'
+        - macro: '{$ESXI.NIC.SPEED.MIN}'
+          value: '0'
+          description: 'Минимальная скорость аплинка, Мбит/с; 0 = проверка выключена. Контекст: {$ESXI.NIC.SPEED.MIN:"vmnic0"}.'
+        - macro: '{$ESXI.NTP.OFFSET.HIGH}'
+          value: '5'
+          description: 'Смещение времени ESXi относительно vCenter, сек: HIGH.'
+        - macro: '{$ESXI.NTP.OFFSET.WARN}'
+          value: '1'
+          description: 'Смещение времени ESXi относительно vCenter, сек: WARNING.'
+        - macro: '{$ESXI.POWER.POLICY}'
+          value: 'High performance'
+          description: 'Ожидаемая политика энергосбережения.'
+      valuemaps:
+        - uuid: 98f06607e72948809484d24e4746e8f9
+          name: 'DNS configured'
+          mappings:
+            - value: '0'
+              newvalue: 'Not configured'
+            - value: '1'
+              newvalue: 'Configured'
+        - uuid: edc64e4b77bd4507a56b3ed487961f2d
+          name: 'NTP configured'
+          mappings:
+            - value: '0'
+              newvalue: 'Not running'
+            - value: '1'
+              newvalue: 'Running'
+        - uuid: 10aff5fb553c43e0a83ef61a59404264
+          name: 'Power policy'
+          mappings:
+            - value: '0'
+              newvalue: 'Not High performance'
+            - value: '1'
+              newvalue: 'High performance'
+        - uuid: 23ac72a442f94f1eb9f2d37b6cf21879
+          name: 'Storage adapters'
+          mappings:
+            - value: '0'
+              newvalue: 'Not online'
+            - value: '1'
+              newvalue: 'Online'
+        - uuid: 4f412bbd2c4e4343a203b9efc11540f9
+          name: 'VMkernel adapters'
+          mappings:
+            - value: '0'
+              newvalue: 'Not configured'
+            - value: '1'
+              newvalue: 'Configured'
+        - uuid: 6f3146a1cb9c4302805d7ae4bbb7e156
+          name: 'Link state'
+          mappings:
+            - value: '0'
+              newvalue: 'Down'
+            - value: '1'
+              newvalue: 'Up'
+        - uuid: 2a851788a6044df4989e672d33550849
+          name: 'HA agent'
+          mappings:
+            - value: '0'
+              newvalue: 'Problem'
+            - value: '1'
+              newvalue: 'OK'
+        - uuid: 1df44e2a56534bb3b5d29710e0b09606
+          name: 'Alerting'
+          mappings:
+            - value: '0'
+              newvalue: 'Suppressed (maintenance / not connected)'
+            - value: '1'
+              newvalue: 'Enabled'
