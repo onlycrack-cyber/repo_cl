@@ -1,34 +1,51 @@
 #!/opt/zabbix-venv/bin/python3
 """
 Проверки здоровья ESXi-хостов через vCenter (NTP, VMkernel, Storage, DNS,
-License, Power). LLD-режим отдаёт все хосты vCenter.
+Power). LLD-режим отдаёт все хосты vCenter. Режим license отключён.
 
 Режимы (1-м аргументом, вместо хоста — режим, 2-м — имя хоста):
+    esxi_ntp_check.py["{#ESXINAME}",url,user,pwd]            (legacy-форма NTP)
     esxi_ntp_check.py["ntp","{#ESXINAME}",url,user,pwd]
         -> 1 если NTP настроен (протокол NTP + серверы) И служба ntpd Running
     esxi_ntp_check.py["vmk","{#ESXINAME}",url,user,pwd]
         -> 1 если настроен хотя бы один VMkernel adapter с IP
     esxi_ntp_check.py["storage","{#ESXINAME}",url,user,pwd]
-        -> 1 если все Storage Adapters online
+        -> 0 если хоть один известный Storage Adapter не online (деградация:
+           хост живёт на оставшемся порту); adapters со status=unknown не
+           учитываются (1, если известных нет); нет данных -> ошибка
     esxi_ntp_check.py["dns","{#ESXINAME}",url,user,pwd,pref,alt]
         -> 1 если оба указанных DNS есть; без аргументов — наличие >=2 DNS
     esxi_ntp_check.py["power","{#ESXINAME}",url,user,pwd,policy]
         -> 1 если активная политика = заданной (по умолч. High performance)
     esxi_ntp_check.py["discover",url,user,pwd]
         -> {"data":[{"{#ESXINAME}":...,"{#ESXIADDR}":...},...]}
+    esxi_ntp_check.py["hosts",url,user,pwd]
+        -> число хостов в vCenter (самопроверка доступности vCenter)
+
+Хост не в состоянии connected (disconnected/notResponding) -> ошибка
+(unsupported), а не 0: нет ложных срабатываний по всем проверкам сразу.
 
 Требование: /opt/zabbix-venv с pyVmomi 8.0.3+/9.x
 Конфиг: по умолчанию из окружения ESXI_VCENTER/ESXI_USER/ESXI_PWD,
         либо аргументами.
-Кэш: <tmp>/esxi_ntp_cache_<md5(url)>.json, TTL = ESXI_NTP_TTL (по умолч. 600 c).
+Кэш: <tmp>/esxi_ntp_cache_<md5(url)>.json, TTL = ESXI_NTP_TTL (по умолч. 900 c,
+     должен быть больше интервала опроса айтемов). Обновление кэша под flock:
+     параллельные запуски ждут один опрос vCenter, а не делают свой.
      ESXI_NTP_REFRESH=1 — игнорировать кэш (разовый опрос vCenter).
-Хост ищется по полному имени, IP или короткому имени (esx01 == esx01.domain.local).
+ESXI_TIMEOUT — таймаут сокета (15 c); ESXI_DEADLINE — общий лимит работы (25 c,
+     держите меньше таймаута айтема Zabbix).
+ESXI_CA_BUNDLE — путь к CA/корню VMCA: включает проверку TLS-сертификата
+     (по умолчанию проверка выключена, как раньше).
+Хост ищется по точному имени или IP; короткое имя (esx01 == esx01.domain.local)
+допускается только если однозначно.
 """
 
+import fcntl
 import hashlib
 import json
 import os
 import re
+import signal
 import socket
 import ssl
 import sys
@@ -51,8 +68,7 @@ if not hasattr(ssl, "wrap_socket"):
             context.load_cert_chain(certfile, keyfile)
         return context.wrap_socket(sock, server_side=server_side,
                                    do_handshake_on_connect=do_handshake_on_connect,
-                                   suppress_ragged_eofs=suppress_ragged_eofs,
-                                   ciphers=ciphers)
+                                   suppress_ragged_eofs=suppress_ragged_eofs)
     ssl.wrap_socket = _ssl_wrap_socket
 
 try:
@@ -64,7 +80,9 @@ except ImportError:
 
 _DEF = (os.environ.get("ESXI_VCENTER", ""), os.environ.get("ESXI_USER", ""),
         os.environ.get("ESXI_PWD", ""))
-_CACHE_TTL = int(os.environ.get("ESXI_NTP_TTL", "600"))
+_CACHE_TTL = int(os.environ.get("ESXI_NTP_TTL", "900"))
+_DEADLINE = int(os.environ.get("ESXI_DEADLINE", "25"))
+_CA_BUNDLE = os.environ.get("ESXI_CA_BUNDLE", "")
 # Быстрый отказ вместо "Timeout while executing a shell script", если сеть зависла.
 socket.setdefaulttimeout(float(os.environ.get("ESXI_TIMEOUT", "15")))
 
@@ -88,7 +106,7 @@ def _power_label(pp):
 
 
 def _cache_file(vc):
-    h = hashlib.md5(vc.encode()).hexdigest()[:8]
+    h = hashlib.md5(vc.encode(), usedforsecurity=False).hexdigest()[:8]
     return os.path.join(tempfile.gettempdir(), "esxi_ntp_cache_%s.json" % h)
 
 
@@ -130,8 +148,8 @@ _PC, _PCS_obj, _PCS_prop = _pc_attrs()
 def _batch_props(content, obj_specs, type_specs):
     """Один batch-запрос PropertyCollector: {obj_moref: {prop: val}}.
 
-    obj_specs — список (obj, skip) манеджмент-объектов; type_specs — список
-    (type, [paths]). Возвращает словарь keyed по болееф. Если построение
+    obj_specs — список (obj, skip) managed-объектов; type_specs — список
+    (type, [paths]). Возвращает словарь, ключ — moref. Если построение
     запроса невозможно, возвращает {}. Вызывающий код при пустом результате
     безопасно откатывается к похостовому чтению.
     """
@@ -152,6 +170,17 @@ def _batch_props(content, obj_specs, type_specs):
         return {}
 
 
+def _vmk_addrs(vnics):
+    """([все IP vmk кроме 0.0.0.0/::], IP управляющего vmk0 или None)."""
+    pairs = []
+    for v in (vnics or []):
+        ip = getattr(getattr(getattr(v, "spec", None), "ip", None), "ipAddress", "")
+        if ip and ip not in ("0.0.0.0", "::"):
+            pairs.append((getattr(v, "device", ""), ip))
+    mgmt = [a for d, a in pairs if d == "vmk0"]
+    return [a for _, a in pairs], (mgmt[0] if mgmt else None)
+
+
 def _fetch_slow(content, hosts):
     """Похостовое чтение (fallback для старых pyVmomi без batch-PropertyCollector).
 
@@ -162,11 +191,13 @@ def _fetch_slow(content, hosts):
     out = {}
     for host in hosts:
         try:
-            ip = host.summary.config.ipAddress
+            state = str(host.runtime.connectionState)
         except Exception:
-            ip = None
-        rec = {"configured": 0, "ip": ip, "ts": time.time(),
-               "vmk": [], "storage": [], "dns": [], "power": ""}
+            state = "unknown"
+        rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
+               "state": state, "vmk": [], "storage": [], "dns": [], "power": ""}
+        if state != "connected":
+            rec["error"] = "состояние хоста: %s" % state
         try:
             info = host.configManager.dateTimeSystem.dateTimeInfo
             ntp = info.ntpConfig
@@ -185,24 +216,20 @@ def _fetch_slow(content, hosts):
             rec["error"] = str(exc)
         try:
             vmk = host.configManager.networkSystem.networkConfig.vnic
-            ip_addrs = [getattr(getattr(v, "spec", None), "ip", None)
-                        for v in (vmk or [])]
-            configured = [getattr(ip, "ipAddress", "") for ip in ip_addrs
-                          if getattr(ip, "ipAddress", "")]
-            rec["vmk"] = [a for a in configured if a not in ("0.0.0.0", "::")]
+            rec["vmk"], rec["mgmt_ip"] = _vmk_addrs(vmk)
         except Exception:
-            rec["vmk"] = []
+            rec["vmk"] = None
         try:
             hbas = host.configManager.storageSystem.storageDeviceInfo.hostBusAdapter
             rec["storage"] = [getattr(hba, "status", "unknown")
                               for hba in (hbas or [])]
         except Exception:
-            rec["storage"] = []
+            rec["storage"] = None
         try:
             dns_cfg = host.config.network.dnsConfig
             rec["dns"] = list(getattr(dns_cfg, "address", None) or [])
         except Exception:
-            rec["dns"] = []
+            rec["dns"] = None
         # Power Management: активная политика (проверка лицензий отключена —
         # у хостов под vCenter licenseManager отсутствует, чтение лицензий
         # vCenter требует прав Global.Licenses).
@@ -210,15 +237,15 @@ def _fetch_slow(content, hosts):
             pp = host.config.powerSystemInfo.currentPolicy
             rec["power"] = _power_label(pp)
         except Exception:
-            rec["power"] = ""
-        rec["ip"] = ip or (rec["vmk"][0] if rec.get("vmk") else None)
+            rec["power"] = None
+        rec["ip"] = rec["mgmt_ip"] or (rec["vmk"][0] if rec.get("vmk") else None)
         name = getattr(host, "name", None)
         out[name or ("host-%s" % id(host))] = rec
     return out
 
 
 def _fetch(vc, user, pwd):
-    """{<имя>: {'configured','vmk','storage','dns','power','ip','ts'}} — все хосты vЦентра.
+    """{<имя>: {'configured','vmk','storage','dns','power','ip','ts'}} — все хосты vCenter.
 
     Оптимизация: основной объём (name/ip/vmk/storage/dns/power + ссылки на
     dateTimeSystem/serviceSystem) забирается ОДНИМ batch-запросом
@@ -229,9 +256,15 @@ def _fetch(vc, user, pwd):
     чтение).
     """
     vc_host, vc_port = _parse_vc(vc)
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if _CA_BUNDLE:
+        # Проверка цепочки по заданному CA/корню VMCA (имя не сверяем:
+        # к vCenter часто обращаются по IP).
+        ctx = ssl.create_default_context(cafile=_CA_BUNDLE)
+        ctx.check_hostname = False
+    else:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     si = SmartConnect(host=vc_host, port=vc_port, user=user, pwd=pwd, sslContext=ctx)
     try:
         content = si.RetrieveContent()
@@ -247,7 +280,7 @@ def _fetch(vc, user, pwd):
             content,
             [(h, False) for h in hosts],
             [(vim.HostSystem, [
-                "name", "summary.config.name",
+                "name", "summary.config.name", "runtime.connectionState",
                 "config.network.dnsConfig",
                 "config.storageDevice.hostBusAdapter",
                 "config.powerSystemInfo.currentPolicy",
@@ -298,9 +331,12 @@ def _fetch(vc, user, pwd):
         out = {}
         for host in hosts:
             d = props.get(host) or {}
-            ip = d.get("summary.config.ipAddress")
-            rec = {"configured": 0, "ip": ip, "ts": time.time(),
-                   "vmk": [], "storage": [], "dns": [], "power": ""}
+            state = str(d.get("runtime.connectionState") or "unknown")
+            rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
+                   "state": state, "vmk": [], "storage": [], "dns": [], "power": ""}
+            if state != "connected":
+                # Данных config.* нет: проверки вернут ошибку, а не 0.
+                rec["error"] = "состояние хоста: %s" % state
 
             # NTP: protocol NTP + серверы + служба ntpd.
             running = None
@@ -349,37 +385,36 @@ def _fetch(vc, user, pwd):
                     if not vmk:
                         vmk = getattr(getattr(ns, "networkConfig", None),
                                       "vnic", None)
-                if not vmk:
-                    vmk = d.get("config.network.vnic") or []
-                ip_addrs = [getattr(getattr(v, "spec", None), "ip", None)
-                            for v in (vmk or [])]
-                configured = [getattr(ip, "ipAddress", "") for ip in ip_addrs
-                              if getattr(ip, "ipAddress", "")]
-                rec["vmk"] = [a for a in configured if a not in ("0.0.0.0", "::")]
+                if vmk is None:
+                    rec["vmk"] = None
+                else:
+                    rec["vmk"], rec["mgmt_ip"] = _vmk_addrs(vmk)
             except Exception:
-                rec["vmk"] = []
+                rec["vmk"] = None
 
             # Storage adapters: статусы hostBusAdapter (online/offline/unknown)
             try:
-                hbas = (d.get("config.storageDevice.hostBusAdapter")) or []
-                rec["storage"] = [getattr(hba, "status", "unknown") for hba in hbas]
+                hbas = d.get("config.storageDevice.hostBusAdapter")
+                rec["storage"] = (None if hbas is None else
+                                  [getattr(hba, "status", "unknown") for hba in hbas])
             except Exception:
-                rec["storage"] = []
+                rec["storage"] = None
 
             # DNS: список DNS-серверов хоста (порядок: preferred, alternate, ...)
             try:
                 dns_cfg = d.get("config.network.dnsConfig")
-                rec["dns"] = list(getattr(dns_cfg, "address", None) or [])
+                rec["dns"] = (None if dns_cfg is None else
+                              list(getattr(dns_cfg, "address", None) or []))
             except Exception:
-                rec["dns"] = []
+                rec["dns"] = None
 
             # Power Management: активная политика
             try:
                 pp = d.get("config.powerSystemInfo.currentPolicy")
-                rec["power"] = _power_label(pp)
+                rec["power"] = None if pp is None else _power_label(pp)
             except Exception:
-                rec["power"] = ""
-            rec["ip"] = ip or (rec["vmk"][0] if rec.get("vmk") else None)
+                rec["power"] = None
+            rec["ip"] = rec["mgmt_ip"] or (rec["vmk"][0] if rec.get("vmk") else None)
             name = d.get("summary.config.name") or d.get("name") or host.name
             out[name] = rec
         if os.environ.get("ESXI_NTP_DEBUG"):
@@ -399,22 +434,40 @@ def _is_ip(s):
     return s.replace(".", "").isdigit() and s.count(".") == 3
 
 
+def _read_cache(cf):
+    """Свежие записи кэша ({} если кэша нет, он устарел или от старой версии)."""
+    try:
+        with open(cf) as f:
+            now = time.time()
+            fresh = {h: r for h, r in json.load(f).items()
+                     if now - r.get("ts", 0) < _CACHE_TTL}
+    except Exception:
+        return {}
+    # Кэш от старой версии скрипта (без новых полей) считаем невалидным.
+    if not all("vmk" in r and "dns" in r and "state" in r for r in fresh.values()):
+        return {}
+    return fresh
+
+
 def _get_data(vc, user, pwd):
-    """Данные хостов: из кэша, при устаревании — опрос vCenter с записью кэша."""
+    """Данные хостов: из кэша, при устаревании — опрос vCenter с записью кэша.
+
+    Обновление идёт под flock: параллельные запуски ждут первого, затем
+    читают уже свежий кэш (один login в vCenter вместо N).
+    """
     cf = _cache_file(vc)
-    fresh = {}
-    if not os.environ.get("ESXI_NTP_REFRESH"):
-        try:
-            with open(cf) as f:
-                now = time.time()
-                fresh = {h: r for h, r in json.load(f).items()
-                         if now - r.get("ts", 0) < _CACHE_TTL}
-            # Кэш от старой версии скрипта (без новых полей) считаем невалидным.
-            if not all("vmk" in r and "dns" in r for r in fresh.values()):
-                fresh = {}
-        except Exception:
-            pass
-    if not fresh:
+    refresh = bool(os.environ.get("ESXI_NTP_REFRESH"))
+    if not refresh:
+        fresh = _read_cache(cf)
+        if fresh:
+            return fresh
+    lock = open(cf + ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not refresh:
+            fresh = _read_cache(cf)      # кто-то обновил, пока ждали блокировку
+            if fresh:
+                return fresh
         try:
             fresh = _fetch(vc, user, pwd)
         except BaseException:
@@ -423,12 +476,16 @@ def _get_data(vc, user, pwd):
                              % (exc_type.__name__, exc, vc, *_parse_vc(vc)))
             sys.exit(1)
         try:
-            with open(cf + ".tmp", "w") as f:
+            fd, tmp = tempfile.mkstemp(prefix=os.path.basename(cf) + ".",
+                                       dir=os.path.dirname(cf))
+            with os.fdopen(fd, "w") as f:
                 json.dump(fresh, f)
-            os.replace(cf + ".tmp", cf)
+            os.replace(tmp, cf)
         except Exception:
             pass
-    return fresh
+        return fresh
+    finally:
+        lock.close()
 
 
 def _run_discover(vc, user, pwd):
@@ -437,7 +494,7 @@ def _run_discover(vc, user, pwd):
     for name, rec in sorted(_get_data(vc, user, pwd).items()):
         data["data"].append({
             "{#ESXINAME}": name,
-            "{#ESXIADDR}": str(rec.get("ip") or name),
+            "{#ESXIADDR}": str(rec.get("mgmt_ip") or rec.get("ip") or name),
         })
     sys.stdout.write(json.dumps(data))
     return
@@ -462,30 +519,42 @@ def _resolve_mode(argv):
             sys.stderr.write("ERROR: режиму %r нужен ключ хоста 2-м аргументом\n" % a1)
             sys.exit(2)
         return a1, argv[2].strip().lower().rstrip("."), 3
-    if a1 == "discover":
-        return "discover", "", 2
+    if a1 in ("discover", "hosts"):
+        return a1, "", 2
     return "ntp", a1, 2
 
 
 def _check_value(mode, rec, extra):
-    """Вычисляет 1/0 для режима по данным хоста (rec) и доп. аргументам."""
+    """Вычисляет 1/0 для режима по данным хоста (rec) и доп. аргументам.
+
+    None = данные недоступны (хост не connected, свойство не прочитано):
+    вызывающий код отдаёт ошибку (unsupported), а не ложный 0.
+    """
+    if rec.get("state") not in (None, "connected"):
+        return None
     if mode == "ntp":
         return rec.get("configured")
     if mode == "vmk":
-        addrs = rec.get("vmk") or []
+        addrs = rec.get("vmk")
+        if addrs is None:
+            return None
         return 1 if addrs else 0
     if mode == "storage":
-        statuses = rec.get("storage") or []
+        statuses = rec.get("storage")
+        if statuses is None or not statuses:
+            return None      # адаптеры не прочитаны
         # unknown (напр. встроенные/SAS-контроллеры, которые vCenter не
-        # показывает) не считаем проблемой; алерт — только при явном offline.
+        # показывает) не считаем проблемой. Если хоть один известный адаптер
+        # не online (offline/unbound) — 0: хост работает на оставшемся порту,
+        # избыточность потеряна. Нет известных адаптеров — проблемы нет.
         known = [s for s in statuses if s != "unknown"]
-        if not known:
-            return 0 if not statuses else 0
         return 1 if all(s == "online" for s in known) else 0
     if mode == "dns":
+        if rec.get("dns") is None:
+            return None
         expect_pref = (extra[0] if len(extra) > 0 else "").strip().lower()
         expect_alt = (extra[1] if len(extra) > 1 else "").strip().lower()
-        dns = [str(x).strip().lower() for x in (rec.get("dns") or [])]
+        dns = [str(x).strip().lower() for x in rec["dns"]]
         if expect_pref or expect_alt:
             # Режим "конкретные IP": должны присутствовать оба указанных.
             if expect_pref and expect_pref not in dns:
@@ -493,43 +562,52 @@ def _check_value(mode, rec, extra):
             if expect_alt and expect_alt not in dns:
                 return 0
         else:
-            # Режим "наличие": Preferred = 1-й сервер, Alternate = 2-й.
+            # Режим "наличие": нужно не менее 2 серверов.
             if len(dns) < 2:
                 return 0
         return 1
     if mode == "power":
-        expect = (extra[0] if len(extra) > 0 else "High performance").strip().lower()
-        actual = str(rec.get("power") or "").strip().lower()
-        return 1 if actual == expect else 0
+        if rec.get("power") is None:
+            return None      # политика недоступна (напр. управляется BIOS)
+        expect = (extra[0] if len(extra) > 0 and extra[0].strip()
+                  else "High performance").strip().lower()
+        return 1 if str(rec["power"]).strip().lower() == expect else 0
     return None
 
 
 def _find_host(fresh, key):
-    """Ищет хост в fresh по имени/IP/короткому имени. Возвращает (name, rec)."""
+    """Ищет хост в fresh: точное имя или IP; короткое имя — только если
+    однозначно. Подстроки и "единственный хост" не допускаются: иначе
+    удалённый хост получал бы данные соседнего. Возвращает (name, rec)."""
     keyl = key.lower().rstrip(".")
     for name, rec in fresh.items():
         ip = str(rec.get("ip") or "").lower().rstrip(".")
-        n = name.lower().rstrip(".")
-        if (n == keyl or ip == keyl
-                or (not _is_ip(keyl) and _short(n) == _short(keyl))):
+        mip = str(rec.get("mgmt_ip") or "").lower().rstrip(".")
+        if name.lower().rstrip(".") == keyl or keyl in (ip, mip):
             return name, rec
-    # Fallback: если хост один — берём его; иначе по подстроке.
-    if len(fresh) == 1:
-        n, r = next(iter(fresh.items()))
-        return n, r
     if not _is_ip(keyl):
-        sub = [(n, r) for n, r in fresh.items()
-               if keyl in n.lower() or keyl in str(r.get("ip") or "").lower()]
-        if len(sub) == 1:
-            return sub[0]
+        short = [(n, r) for n, r in fresh.items()
+                 if _short(n.lower().rstrip(".")) == _short(keyl)]
+        if len(short) == 1:
+            return short[0]
     return None, None
+
+
+def _on_deadline(signum, frame):
+    sys.stderr.write("ERROR: превышен общий лимит времени %d c (ESXI_DEADLINE)\n"
+                     % _DEADLINE)
+    sys.exit(1)
 
 
 def main():
     if len(sys.argv) < 2:
-        sys.stderr.write("usage: %s <host|discover|ntp|vmk|storage|dns|power> "
+        sys.stderr.write("usage: %s <host|discover|hosts|ntp|vmk|storage|dns|power> "
                          "[<key>] [<url> <user> <pwd>] [extra...]\n" % sys.argv[0])
         sys.exit(2)
+
+    if _DEADLINE > 0 and hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, _on_deadline)
+        signal.alarm(_DEADLINE)
 
     mode, key, off = _resolve_mode(sys.argv)
     url = sys.argv[off] if len(sys.argv) > off else _DEF[0]
@@ -545,6 +623,9 @@ def main():
         return
 
     fresh = _get_data(url, user, pwd)
+    if mode == "hosts":
+        sys.stdout.write("%d\n" % len(fresh))
+        return
     name, rec = _find_host(fresh, key)
     if rec is None:
         sys.stderr.write("ERROR: хост %r не найден в %s. Известные хосты: %s\n"
@@ -553,7 +634,7 @@ def main():
     v = _check_value(mode, rec, extra)
     if v is None:
         sys.stderr.write("ERROR: %s: не удалось прочитать данные (%s)\n"
-                         % (name, rec.get("error") or "нет данных"))
+                         % (name, rec.get("error") or "нет данных (свойство не прочитано)"))
         sys.exit(1)
     sys.stdout.write("%d\n" % v)
 

@@ -32,15 +32,71 @@ zabbix_export:
             у хостов под vCenter licenseManager отсутствует, чтение лицензий
             vCenter требует прав Global.Licenses, которых у мониторинговой учётки нет)
         Если несколько vCenter — создайте мастер-хост для каждого со своими макросами.
+
+        Изменения версии 2: айтемы «нет данных» вместо ложного 0 для хостов не в
+        состоянии connected; триггеры срабатывают после 2 подряд плохих значений
+        (max(..,#2)=0); самопроверка «ESXi hosts found in vCenter» (nodata 30m);
+        фильтр LLD {$ESXI.LLD.FILTER.MATCHES}/{$ESXI.LLD.FILTER.NOT_MATCHES};
+        timeout 30s у внешних проверок (скрипт сам завершается за ESXI_DEADLINE=25с).
+        Скрипт обновлять вместе с шаблоном (старый кэш скрипт сбросит сам).
       groups:
         - name: Templates
+      items:
+        - uuid: 0c5d2a9e7b1f4d3a8e6f1a2b3c4d5e61
+          name: 'ESXi hosts found in vCenter'
+          type: EXTERNAL
+          key: 'esxi_ntp_check.py["hosts","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"]'
+          delay: 5m
+          timeout: 30s
+          history: 7d
+          description: |
+            Число ESXi-хостов, которые видит скрипт в vCenter. Самопроверка:
+            при недоступности vCenter или ошибке учётки айтем становится
+            unsupported, остальные проверки перестают обновляться.
+          tags:
+            - tag: component
+              value: vcenter
+            - tag: scope
+              value: esxi-health
+          triggers:
+            - uuid: 0c5d2a9e7b1f4d3a8e6f1a2b3c4d5e62
+              expression: 'nodata(/Template ESXi NTP LLD/esxi_ntp_check.py["hosts","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"],30m)=1'
+              name: 'vCenter data collection is failing'
+              event_name: 'vCenter data collection is failing ({HOST.NAME})'
+              priority: HIGH
+              description: 'Нет данных от vCenter 30 минут: недоступен vCenter, неверная учётка либо скрипт/venv сломан. Проверки ESXi не обновляются.'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: vcenter
+            - uuid: 0c5d2a9e7b1f4d3a8e6f1a2b3c4d5e63
+              expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["hosts","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"])=0'
+              name: 'No ESXi hosts returned by vCenter'
+              event_name: 'No ESXi hosts returned by vCenter ({HOST.NAME})'
+              priority: WARNING
+              description: 'vCenter ответил, но хостов нет: проверьте права учётки (System.Read на корневой объект).'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: vcenter
       discovery_rules:
         - uuid: 4c06d8bacf924cd0be197565aacafdeb
           name: 'ESXi hosts discovery'
           type: EXTERNAL
           key: 'esxi_ntp_check.py["discover","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"]'
           delay: 1h
-          lifetime: 30d
+          timeout: 30s
+          lifetime: 7d
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.MATCHES}'
+                formulaid: A
+              - macro: '{#ESXINAME}'
+                value: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
           description: |
             Обход всех HostSystem через vCenter SDK.
             Возвращает {#ESXINAME} (имя хоста в vCenter) и {#ESXIADDR} (IP mgmt).
@@ -50,6 +106,7 @@ zabbix_export:
               type: EXTERNAL
               key: 'esxi_ntp_check.py["dns","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}"]'
               delay: 10m
+              timeout: 30s
               history: 7d
               description: |
                 1 - в DNS-конфиге хоста есть оба заданных сервера
@@ -57,36 +114,60 @@ zabbix_export:
                 макросах — настроено не менее 2 DNS-серверов, 0 - иначе.
               valuemap:
                 name: 'DNS configured'
+              tags:
+                - tag: component
+                  value: dns
+                - tag: scope
+                  value: esxi-health
               trigger_prototypes:
                 - uuid: 7fce0a473c414bb3884a783bba385910
-                  expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["dns","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}"])=0'
+                  expression: 'max(/Template ESXi NTP LLD/esxi_ntp_check.py["dns","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}"],#2)=0'
                   name: 'DNS not configured on {#ESXINAME}'
-                  event_name: 'DNS not configured on {#ESXINAME}'
+                  event_name: 'DNS not configured on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
                   description: 'На ESXi-хосте {#ESXINAME} DNS-серверы не настроены (нужно >=2 или заданные {$ESXI.DNS.PREFERRED}/{$ESXI.DNS.ALTERNATE}).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: dns
+                    - tag: scope
+                      value: esxi-health
             - uuid: a17e16c3bab24ae6a771cce06b571d44
               name: 'Power policy on {#ESXINAME}'
               type: EXTERNAL
               key: 'esxi_ntp_check.py["power","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.POWER.POLICY}"]'
               delay: 10m
+              timeout: 30s
               history: 7d
               description: |
                 1 - активная политика энергосбережения = {$ESXI.POWER.POLICY},
                 0 - иначе.
               valuemap:
                 name: 'Power policy'
+              tags:
+                - tag: component
+                  value: power
+                - tag: scope
+                  value: esxi-health
               trigger_prototypes:
                 - uuid: 9de634ca574745cba9ed68b7cd733ec3
-                  expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["power","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.POWER.POLICY}"])=0'
+                  expression: 'max(/Template ESXi NTP LLD/esxi_ntp_check.py["power","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.POWER.POLICY}"],#2)=0'
                   name: 'Power policy differs on {#ESXINAME}'
-                  event_name: 'Power policy differs on {#ESXINAME}'
+                  event_name: 'Power policy differs on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
                   description: 'Активная политика энергосбережения на {#ESXINAME} не равна {$ESXI.POWER.POLICY}.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: power
+                    - tag: scope
+                      value: esxi-health
             - uuid: a17e16c3bab24ae6a771cce06b571d41
               name: 'Storage adapters on {#ESXINAME}'
               type: EXTERNAL
               key: 'esxi_ntp_check.py["storage","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"]'
               delay: 10m
+              timeout: 30s
               history: 7d
               description: |
                 1 - все известные Storage Adapters online (status=unknown,
@@ -95,36 +176,60 @@ zabbix_export:
                 0 - есть адаптер в состоянии offline.
               valuemap:
                 name: 'Storage adapters'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: scope
+                  value: esxi-health
               trigger_prototypes:
                 - uuid: 72e75925362649c992d3cac0900fce9f
-                  expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["storage","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"])=0'
+                  expression: 'max(/Template ESXi NTP LLD/esxi_ntp_check.py["storage","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"],#2)=0'
                   name: 'Storage adapter offline on {#ESXINAME}'
-                  event_name: 'Storage adapter offline on {#ESXINAME}'
+                  event_name: 'Storage adapter offline on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
                   description: 'На ESXi-хосте {#ESXINAME} есть Storage Adapter не в состоянии online.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: storage
+                    - tag: scope
+                      value: esxi-health
             - uuid: a17e16c3bab24ae6a771cce06b571d40
               name: 'VMkernel adapters on {#ESXINAME}'
               type: EXTERNAL
               key: 'esxi_ntp_check.py["vmk","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"]'
               delay: 10m
+              timeout: 30s
               history: 7d
               description: |
                 1 - настроен хотя бы один VMkernel adapter с IP (не 0.0.0.0),
                 0 - иначе.
               valuemap:
                 name: 'VMkernel adapters'
+              tags:
+                - tag: component
+                  value: network
+                - tag: scope
+                  value: esxi-health
               trigger_prototypes:
                 - uuid: 72e75925362649c992d3cac0900fce9e
-                  expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["vmk","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"])=0'
+                  expression: 'max(/Template ESXi NTP LLD/esxi_ntp_check.py["vmk","{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"],#2)=0'
                   name: 'No VMkernel adapters on {#ESXINAME}'
-                  event_name: 'No VMkernel adapters on {#ESXINAME}'
+                  event_name: 'No VMkernel adapters on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
                   description: 'На ESXi-хосте {#ESXINAME} нет настроенных VMkernel-адаптеров с IP.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: network
+                    - tag: scope
+                      value: esxi-health
             - uuid: a17e16c3bab24ae6a771cce06b571d4f
               name: 'NTP configured on {#ESXINAME}'
               type: EXTERNAL
               key: 'esxi_ntp_check.py["{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"]'
               delay: 10m
+              timeout: 30s
               history: 7d
               description: |
                 1 - NTP настроен И служба ntpd Running (как в Time Configuration),
@@ -132,16 +237,33 @@ zabbix_export:
                 Опрос через vCenter, кэш скрипта 10 мин (ESXI_NTP_TTL).
               valuemap:
                 name: 'NTP configured'
+              tags:
+                - tag: component
+                  value: ntp
+                - tag: scope
+                  value: esxi-health
               trigger_prototypes:
                 - uuid: 72e75925362649c992d3cac0900fce9d
-                  expression: 'last(/Template ESXi NTP LLD/esxi_ntp_check.py["{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"])=0'
+                  expression: 'max(/Template ESXi NTP LLD/esxi_ntp_check.py["{#ESXINAME}","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}"],#2)=0'
                   name: 'NTP is not configured on {#ESXINAME}'
-                  event_name: 'NTP is not configured on {#ESXINAME}'
+                  event_name: 'NTP is not configured on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
                   description: 'На ESXi-хосте {#ESXINAME} NTP не работает (не настроен или служба ntpd не запущена).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: ntp
+                    - tag: scope
+                      value: esxi-health
       macros:
         - macro: '{$ESXI.DNS.ALTERNATE}'
         - macro: '{$ESXI.DNS.PREFERRED}'
+        - macro: '{$ESXI.LLD.FILTER.MATCHES}'
+          value: '.*'
+          description: 'Regexp: создавать айтемы только для ESXi с подходящим именем.'
+        - macro: '{$ESXI.LLD.FILTER.NOT_MATCHES}'
+          value: '^$'
+          description: 'Regexp: исключить ESXi с подходящим именем (тестовые и т. п.).'
         - macro: '{$ESXI.POWER.POLICY}'
           value: 'High performance'
       valuemaps:
