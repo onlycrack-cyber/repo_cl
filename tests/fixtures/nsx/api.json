@@ -163,7 +163,7 @@
   ]
  },
  "/api/v1/licenses": {
-  "result_count": 3,
+  "result_count": 8,
   "results": [
    {
     "capacity_type": "CPU",
@@ -195,6 +195,38 @@
     "license_key": "PERP0-PERP0-PERP0-PERP0-P9999",
     "product_name": "NSX Data Center",
     "quantity": 128
+   },
+   {
+    "capacity_type": "VM",
+    "description": "NSX Enterprise Plus",
+    "expiry": 4102444800000,
+    "is_eval": false,
+    "is_expired": false,
+    "license_key": "AAAAA-BBBBB-CCCCC-DDDDD-E1234",
+    "product_name": "NSX Data Center",
+    "product_version": "4.2",
+    "quantity": -1
+   },
+   {
+    "capacity_type": "CPU",
+    "description": "NSX keyless",
+    "quantity": 2.5
+   },
+   {
+    "capacity_type": "CPU",
+    "description": "NSX keyless"
+   },
+   {
+    "description": "NSX short key",
+    "expiry": "2022-01-31T00:00:00Z",
+    "is_expired": false,
+    "license_key": "QZ7X9"
+   },
+   {
+    "description": "NSX bad expiry",
+    "expiry": "soon",
+    "license_key": "GARBA-GARBA-GARBA-GARBA-G0000",
+    "quantity": "many"
    }
   ]
  },

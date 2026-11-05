@@ -883,7 +883,7 @@
                             {
                                 "type": "JAVASCRIPT",
                                 "parameters": [
-                                    "function hash(s) {\n    var h = 5381;\n    for (var i = 0; i < s.length; i++) {\n        h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;\n    }\n    return ('0000000' + h.toString(16)).slice(-8);\n}\nvar lic = JSON.parse(value).results || [], out = [];\nfor (var i = 0; i < lic.length; i++) {\n    var l = lic[i], key = String(l.license_key || ''), exp = Number(l.expiry || 0);\n    if (exp > 100000000000) {\n        exp = Math.floor(exp / 1000);\n    }\n    out.push({\n        id: hash(key),\n        key: key.length > 5 ? '*****' + key.slice(-5) : key,\n        name: l.description || l.product_name || 'license',\n        product: l.product_name || '',\n        version: l.product_version || '',\n        capacity_type: l.capacity_type || '',\n        quantity: Number(l.quantity || 0),\n        eval: l.is_eval ? 1 : 0,\n        expired: l.is_expired ? 1 : 0,\n        perpetual: exp > 0 ? 0 : 1,\n        expiry: exp\n    });\n}\nreturn JSON.stringify(out);"
+                                    "function toSeconds(t) {\n    return Math.floor(t > 100000000000 ? t / 1000 : t);\n}\nfunction hash(s) {\n    var h = 5381;\n    for (var i = 0; i < s.length; i++) {\n        h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;\n    }\n    return ('0000000' + h.toString(16)).slice(-8);\n}\nvar lic = JSON.parse(value).results || [], out = [], seen = {}, now = Date.now() / 1000;\nfor (var i = 0; i < lic.length; i++) {\n    var l = lic[i], key = String(l.license_key || ''), raw = l.expiry, exp = null, err = '';\n    if (raw === undefined || raw === null || raw === 0 || raw === '0' || raw === '') {\n        exp = 0;\n    }\n    else if (isFinite(Number(raw))) {\n        exp = Number(raw) > 0 ? toSeconds(Number(raw)) : 0;\n    }\n    else if (!isNaN(Date.parse(raw))) {\n        exp = toSeconds(Date.parse(raw));\n    }\n    else {\n        err = 'cannot parse license expiry: ' + String(raw).substring(0, 40);\n    }\n    var id = hash([key, l.product_name, l.capacity_type, l.description].join('|'));\n    seen[id] = (seen[id] || 0) + 1;\n    if (seen[id] > 1) {\n        id += '-' + seen[id];\n    }\n    var e = {\n        id: id,\n        key: key === '' ? 'no key' : (key.length >= 15 ? '*****' + key.slice(-5) : '*****'),\n        name: l.description || l.product_name || 'license',\n        product: l.product_name || '',\n        version: l.product_version || '',\n        capacity_type: l.capacity_type || '',\n        eval: l.is_eval ? 1 : 0,\n        expired: (l.is_expired || (exp !== null && exp > 0 && exp < now)) ? 1 : 0,\n        perpetual: exp === 0 ? 1 : 0,\n        expiry: exp,\n        expiry_error: err,\n        quantity_label: 'not reported'\n    };\n    var q = Number(l.quantity);\n    if (l.quantity !== undefined && l.quantity !== null && isFinite(q)) {\n        e.quantity = q;\n        e.quantity_label = q < 0 ? 'unlimited' : String(q);\n    }\n    out.push(e);\n}\nreturn JSON.stringify(out);"
                                 ]
                             }
                         ],
@@ -4210,7 +4210,7 @@
                                     {
                                         "type": "JAVASCRIPT",
                                         "parameters": [
-                                            "var d = (JSON.parse(value).details || [])[0] || {};\nif (d.not_after === undefined || d.not_after === null) {\n    throw 'details[0].not_after is missing in the certificate';\n}\nvar t = Number(d.not_after);\nt = Math.floor(t > 100000000000 ? t / 1000 : t);\nreturn t;"
+                                            "function toSeconds(t) {\n    return Math.floor(t > 100000000000 ? t / 1000 : t);\n}\nvar d = (JSON.parse(value).details || [])[0] || {};\nif (d.not_after === undefined || d.not_after === null) {\n    throw 'details[0].not_after is missing in the certificate';\n}\nvar t = toSeconds(Number(d.not_after));\nreturn t;"
                                         ]
                                     },
                                     {
@@ -4255,7 +4255,7 @@
                                     {
                                         "type": "JAVASCRIPT",
                                         "parameters": [
-                                            "var d = (JSON.parse(value).details || [])[0] || {};\nif (d.not_after === undefined || d.not_after === null) {\n    throw 'details[0].not_after is missing in the certificate';\n}\nvar t = Number(d.not_after);\nt = Math.floor(t > 100000000000 ? t / 1000 : t);\nreturn Math.floor((t - Date.now() / 1000) / 86400);"
+                                            "function toSeconds(t) {\n    return Math.floor(t > 100000000000 ? t / 1000 : t);\n}\nvar d = (JSON.parse(value).details || [])[0] || {};\nif (d.not_after === undefined || d.not_after === null) {\n    throw 'details[0].not_after is missing in the certificate';\n}\nvar t = toSeconds(Number(d.not_after));\nreturn Math.floor((t - Date.now() / 1000) / 86400);"
                                         ]
                                     }
                                 ],
@@ -4407,14 +4407,20 @@
                                 "history": "31d",
                                 "value_type": "UNSIGNED",
                                 "units": "unixtime",
-                                "description": "No data for a perpetual license (no expiry date).",
+                                "description": "No data for a perpetual license (no expiry date). Not supported when the date cannot be parsed.",
                                 "preprocessing": [
                                     {
                                         "type": "JSONPATH",
                                         "parameters": [
-                                            "$[?(@.id=='{#LIC.ID}' && @.perpetual==0)].expiry.first()"
+                                            "$[?(@.id=='{#LIC.ID}' && @.perpetual==0)].first()"
                                         ],
                                         "error_handler": "DISCARD_VALUE"
+                                    },
+                                    {
+                                        "type": "JAVASCRIPT",
+                                        "parameters": [
+                                            "var l = JSON.parse(value);\nif (l.expiry === null) {\n    throw l.expiry_error;\n}\nreturn l.expiry;"
+                                        ]
                                     },
                                     {
                                         "type": "DISCARD_UNCHANGED_HEARTBEAT",
@@ -4446,19 +4452,19 @@
                                 "history": "31d",
                                 "value_type": "FLOAT",
                                 "units": "d",
-                                "description": "Whole days until the license expires; negative once expired. No data for a perpetual license.",
+                                "description": "Whole days until the license expires; negative once expired. No data for a perpetual license; not supported when the date cannot be parsed.",
                                 "preprocessing": [
                                     {
                                         "type": "JSONPATH",
                                         "parameters": [
-                                            "$[?(@.id=='{#LIC.ID}' && @.perpetual==0)].expiry.first()"
+                                            "$[?(@.id=='{#LIC.ID}' && @.perpetual==0)].first()"
                                         ],
                                         "error_handler": "DISCARD_VALUE"
                                     },
                                     {
                                         "type": "JAVASCRIPT",
                                         "parameters": [
-                                            "return Math.floor((Number(value) - Date.now() / 1000) / 86400);"
+                                            "var l = JSON.parse(value);\nif (l.expiry === null) {\n    throw l.expiry_error;\n}\nreturn Math.floor((l.expiry - Date.now() / 1000) / 86400);"
                                         ]
                                     }
                                 ],
@@ -4579,7 +4585,7 @@
                                         "expression": "last(/VMware NSX by HTTP/nsx.license.expired[{#LIC.ID}])=1",
                                         "name": "License [{#LIC.NAME} {#LIC.KEY}]: has expired",
                                         "priority": "HIGH",
-                                        "description": "is_expired = true. The data plane keeps forwarding, but NSX restricts configuration of the licensed features until a valid key is added.\n\nProduct: {#LIC.PRODUCT} {#LIC.VERSION}\nCapacity: {#LIC.QUANTITY} x {#LIC.CAPACITY}\nKey: {#LIC.KEY}\n\nAdd the new key under System > Licenses.",
+                                        "description": "NSX reports is_expired = true, or the expiry date has passed. The data plane keeps forwarding, but NSX restricts configuration of the licensed features until a valid key is added.\n\nProduct: {#LIC.PRODUCT} {#LIC.VERSION}\nCapacity: {#LIC.QUANTITY} x {#LIC.CAPACITY}\nKey: {#LIC.KEY}\n\nAdd the new key under System > Licenses.",
                                         "tags": [
                                             {
                                                 "tag": "component",
@@ -4667,8 +4673,8 @@
                                 "key": "nsx.license.quantity[{#LIC.ID}]",
                                 "delay": "0",
                                 "history": "31d",
-                                "value_type": "UNSIGNED",
-                                "description": "Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...).",
+                                "value_type": "FLOAT",
+                                "description": "Licensed units of {#LIC.CAPACITY} (CPU, core, VM, user, ...) as NSX reports them; a negative value usually means unlimited. No data when NSX does not report a number.",
                                 "preprocessing": [
                                     {
                                         "type": "JSONPATH",
@@ -4729,7 +4735,7 @@
                             },
                             {
                                 "lld_macro": "{#LIC.QUANTITY}",
-                                "path": "$.quantity"
+                                "path": "$.quantity_label"
                             }
                         ],
                         "preprocessing": [

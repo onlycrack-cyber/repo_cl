@@ -231,12 +231,17 @@ class Collected:
         masters = {i['key']: master_value(i, user) for i in TPL['items'] if i['type'] != 'DEPENDENT'}
         for it in TPL['items']:  # a dependent master is listed before its own dependents
             if it['type'] == 'DEPENDENT':
-                value = preprocess(it['preprocessing'], masters[it['master_item']['key']], user)
-                self.values[it['key']] = masters[it['key']] = value
+                # A discarded master value (None) reaches no dependent, as in Zabbix.
+                master = masters.get(it['master_item']['key'])
+                value = None if master is None else self.run(it['key'], it['preprocessing'], master, user)
+                self.values[it['key']] = value
+                if value is not None:
+                    masters[it['key']] = value
             for t in it.get('triggers', []):
                 self.triggers.append((t, {}))
         for rule in TPL['discovery_rules']:
             raw = preprocess(rule['preprocessing'], masters[rule['master_item']['key']], user)
+            assert raw is not None, rule['key']
             rows = []
             for row in json.loads(raw):
                 lld = {k: v for k, v in row.items() if k.startswith('{#')}
@@ -253,17 +258,21 @@ class Collected:
                     if p['type'] == 'HTTP_AGENT':
                         proto_masters[p['key']] = master_value(p, macros)
                         continue
-                    master = proto_masters.get(p['master_item']['key']) or masters[p['master_item']['key']]
-                    try:
-                        self.values[key] = preprocess(p['preprocessing'], master, macros)
-                    except NoValue as e:  # the item becomes "not supported" in Zabbix
-                        self.errors[key] = str(e)
+                    master = proto_masters.get(p['master_item']['key']) or masters.get(p['master_item']['key'])
+                    self.values[key] = None if master is None else self.run(key, p['preprocessing'], master, macros)
                 triggers = [t for p in rule['item_prototypes'] for t in p.get('trigger_prototypes', [])]
                 triggers += rule.get('trigger_prototypes', [])
                 for t in triggers:
                     t = self.apply_overrides(rule, lld, dict(t))
                     if t is not None:
                         self.triggers.append((t, macros))
+
+    def run(self, key, steps, master, macros):
+        try:
+            return preprocess(steps, master, macros)
+        except NoValue as e:  # the item becomes "not supported" in Zabbix
+            self.errors[key] = str(e)
+            return None
 
     @staticmethod
     def apply_overrides(rule, lld, trig):
@@ -519,14 +528,21 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': ''}, macros))
         self.assertTrue(filter_ok(rule, {'{#CERT.NAME}': 'x', '{#CERT.USED_BY}': 'API'}, macros))
 
+    def lic(self, name, capacity=None):
+        rows = [r for r in self.c.discovered['nsx.license.discovery'] if r['{#LIC.NAME}'] == name
+                and (capacity is None or r['{#LIC.CAPACITY}'] == capacity)]
+        return [r['{#LIC.ID}'] for r in rows]
+
     def test_licenses(self):
-        found = {r['{#LIC.NAME}']: r for r in self.c.discovered['nsx.license.discovery']}
-        self.assertEqual(sorted(found), ['NSX Advanced (perpetual)', 'NSX Enterprise Plus', 'NSX Evaluation'])
-        ent, ev, perp = (found[n]['{#LIC.ID}'] for n in
-                         ('NSX Enterprise Plus', 'NSX Evaluation', 'NSX Advanced (perpetual)'))
-        self.assertEqual(len({ent, ev, perp}), 3)
-        self.assertEqual(found['NSX Enterprise Plus']['{#LIC.KEY}'], '*****E1234')
-        self.assertEqual(found['NSX Enterprise Plus']['{#LIC.QUANTITY}'], '32')
+        rows = self.c.discovered['nsx.license.discovery']
+        self.assertEqual(len(rows), 8)
+        ids = [r['{#LIC.ID}'] for r in rows]
+        self.assertEqual(len(ids), len(set(ids)), 'duplicate {#LIC.ID} -> duplicate item keys in LLD')
+        (ent,), (ev,), (perp,) = self.lic('NSX Enterprise Plus', 'CPU'), self.lic('NSX Evaluation'), \
+            self.lic('NSX Advanced (perpetual)')
+        found = {r['{#LIC.ID}']: r for r in rows}
+        self.assertEqual(found[ent]['{#LIC.KEY}'], '*****E1234')
+        self.assertEqual(found[ent]['{#LIC.QUANTITY}'], '32')
         self.assertEqual(self.v('nsx.license.expiry[%s]' % ent), '4102444800')
         self.assertGreater(float(self.v('nsx.license.days[%s]' % ent)), 20000)
         self.assertLess(float(self.v('nsx.license.days[%s]' % ev)), 0)
@@ -534,15 +550,44 @@ class EndToEndTests(unittest.TestCase):
         self.assertIsNone(self.v('nsx.license.expiry[%s]' % perp))
         self.assertEqual(self.v('nsx.license.expired[%s]' % ev), '1')
         self.assertEqual(self.v('nsx.license.eval[%s]' % ent), '0')
-        self.assertEqual(self.v('nsx.license.quantity[%s]' % perp), '128')
-        self.assertEqual(self.v('nsx.licenses.count'), '3')
-        self.assertEqual(self.v('nsx.licenses.expired'), '1')
+        self.assertEqual(float(self.v('nsx.license.quantity[%s]' % perp)), 128)
+        self.assertEqual(self.v('nsx.licenses.count'), '8')
+        self.assertEqual(self.v('nsx.licenses.expired'), '2')  # evaluation + short key past its date
+
+    def test_license_edge_cases(self):
+        # Same key per capacity type: two entities; keyless duplicates: suffixed, not collapsed.
+        (vm,) = self.lic('NSX Enterprise Plus', 'VM')
+        self.assertEqual({r['{#LIC.QUANTITY}'] for r in self.c.discovered['nsx.license.discovery']
+                          if r['{#LIC.ID}'] in (vm,) + tuple(self.lic('NSX bad expiry'))}, {'unlimited', 'not reported'})
+        self.assertEqual(float(self.v('nsx.license.quantity[%s]' % vm)), -1)  # "unlimited" stays a number
+        keyless = self.lic('NSX keyless')
+        self.assertEqual(len(keyless), 2)
+        self.assertTrue(keyless[1].endswith('-2'), keyless)
+        self.assertEqual(float(self.v('nsx.license.quantity[%s]' % keyless[0])), 2.5)
+        self.assertIsNone(self.v('nsx.license.quantity[%s]' % keyless[1]))  # not reported: no data
+        self.assertEqual({r['{#LIC.KEY}'] for r in self.c.discovered['nsx.license.discovery']
+                          if r['{#LIC.NAME}'] == 'NSX keyless'}, {'no key'})
+        # Short key: fully masked. Date-string expiry in the past: expired although is_expired is false.
+        (short,) = self.lic('NSX short key')
+        row = next(r for r in self.c.discovered['nsx.license.discovery'] if r['{#LIC.ID}'] == short)
+        self.assertEqual(row['{#LIC.KEY}'], '*****')
+        self.assertEqual(self.v('nsx.license.expiry[%s]' % short), '1643587200')
+        self.assertEqual(self.v('nsx.license.expired[%s]' % short), '1')
+        # Unparseable expiry: the expiry items are not supported with a reason, not silently perpetual.
+        (bad,) = self.lic('NSX bad expiry')
+        for k in ('nsx.license.days[%s]' % bad, 'nsx.license.expiry[%s]' % bad):
+            self.assertIsNone(self.v(k))
+            self.assertIn('cannot parse license expiry: soon', self.c.errors[k])
+        self.assertIsNone(self.v('nsx.license.quantity[%s]' % bad))
 
     def test_license_keys_never_leave_the_raw_item(self):
         stored = json.dumps([self.c.values, self.c.discovered])
-        for lic in API['/api/v1/licenses']['results']:
-            self.assertNotIn(lic['license_key'], stored)
-            self.assertNotIn(lic['license_key'][:-5], stored)
+        keys = [lic['license_key'] for lic in API['/api/v1/licenses']['results'] if lic.get('license_key')]
+        self.assertIn('QZ7X9', keys)  # a short key must not leak either
+        for key in keys:
+            self.assertNotIn(key, stored)
+            if len(key) > 5:
+                self.assertNotIn(key[:-5], stored)
         raw = next(i for i in TPL['items'] if i['key'] == 'nsx.licenses.get')
         self.assertEqual(raw['history'], '0')
         self.assertEqual(next(i for i in TPL['items'] if i['key'] == 'nsx.licenses.list')['history'], '0')
@@ -552,7 +597,7 @@ class EndToEndTests(unittest.TestCase):
         days = next(p for p in rule['item_prototypes'] if p['key'] == 'nsx.license.days[{#LIC.ID}]')
         now = int(time.time())
         for left in (10, 45, 365):
-            doc = [{'id': 'x', 'perpetual': 0, 'expiry': now + left * 86400 + 3600}]
+            doc = [{'id': 'x', 'perpetual': 0, 'expiry': now + left * 86400 + 3600, 'expiry_error': ''}]
             self.assertEqual(float(preprocess(days['preprocessing'], json.dumps(doc), {'{#LIC.ID}': 'x'})), left)
         # A removed license stops getting values instead of failing.
         self.assertIsNone(preprocess(days['preprocessing'], '[]', {'{#LIC.ID}': 'x'}))
@@ -563,6 +608,7 @@ class EndToEndTests(unittest.TestCase):
             ('BGP [T0-GW] 10.0.1.2 -> 10.0.1.1 (AS 65001, edge-02): session is not ESTABLISHED', 'HIGH'),
             ('Certificate [old-ldap-ca]: has expired', 'DISASTER'),
             ('License [NSX Evaluation *****EVAL1]: has expired', 'HIGH'),
+            ('License [NSX short key *****]: has expired', 'HIGH'),
             ('License [NSX Evaluation *****EVAL1]: evaluation license in use', 'INFO'),
             ('License [NSX Evaluation *****EVAL1]: expires in less than 14 days', 'AVERAGE'),
             ('Certificate [old-ldap-ca]: expires in less than 7 days', 'HIGH'),
