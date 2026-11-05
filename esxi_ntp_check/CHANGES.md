@@ -86,3 +86,11 @@ C. Потерянные хосты
 5. NTP: ссылка `dateTimeSystem` / `dateTimeInfo` не прочитана -> `None` (unsupported), а не ложный 0.
 Тесты: 25 + 20; поломка каждого исправления по очереди ловится (кроме uid в имени кэша: тесты идут под root).
 Не менялось и не проверено на живом vCenter: см. v3.2.
+
+# v3.4 — дашборд Grafana
+- `grafana/esxi-health.json` (генератор `tools/gen_esxi_dashboard.py`, общие хелперы `grafana/tools`).
+- Шаблон: служебные элементы «Alerting enabled for …» в правилах портов и vSwitch получили суффикс
+  `(uplink {#NIC})` / `(vSwitch {#VSWITCH})`, чтобы фильтр по имени (Grafana) не считал их дважды. Ключи и uuid не менялись.
+- Тесты: `EsxiHealthDashboardTests` в `tests/test_grafana.py` (фильтры панелей против имён элементов шаблона, value map,
+  rename-регулярки, раскладка, пороги смещения времени = макросам, актуальность закоммиченного JSON).
+- Не проверено: отрисовка в живой Grafana с плагином Zabbix (снимка нет).

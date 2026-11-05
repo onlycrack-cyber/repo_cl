@@ -552,7 +552,7 @@ zabbix_export:
           description: 'Физические порты (vmnic), используемые как аплинки vSwitch/DVS: {#ESXINAME}, {#NIC}.'
           item_prototypes:
             - uuid: 63f6d8d5de4c4c5b81413b88fe1cadc0
-              name: 'Alerting enabled for {#ESXINAME}'
+              name: 'Alerting enabled for {#ESXINAME} (uplink {#NIC})'
               type: DEPENDENT
               key: 'esxi.alert.nic["{#ESXINAME}","{#NIC}"]'
               delay: '0'
@@ -666,7 +666,7 @@ zabbix_export:
           description: 'Стандартные и распределённые свитчи хоста с аплинками: {#ESXINAME}, {#VSWITCH}.'
           item_prototypes:
             - uuid: 6a04403948854d0692999a8c253dcf88
-              name: 'Alerting enabled for {#ESXINAME}'
+              name: 'Alerting enabled for {#ESXINAME} (vSwitch {#VSWITCH})'
               type: DEPENDENT
               key: 'esxi.alert.sw["{#ESXINAME}","{#VSWITCH}"]'
               delay: '0'
