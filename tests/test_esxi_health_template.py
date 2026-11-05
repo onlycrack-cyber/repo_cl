@@ -81,8 +81,11 @@ class Collect(unittest.TestCase):
     def test_disconnected_host_has_no_values(self):
         self.assertEqual(self.out['hosts']['esx-down.dc.local'],
                          {'state': 'notResponding', 'alert': 0})
+        # строки LLD сохраняются (иначе элементы отключались бы при каждом обрыве), значений нет
         names = [r['{#ESXINAME}'] for r in self.out['lld']['pnic']]
-        self.assertNotIn('esx-down.dc.local', names)
+        self.assertIn('esx-down.dc.local', names)
+        self.assertNotIn('esx-down.dc.local', self.out['pnic'])
+        self.assertNotIn('esx-down.dc.local', self.out['sw'])
         self.assertIn('esx-down.dc.local', [r['{#ESXINAME}'] for r in self.out['lld']['hosts']])
 
     def test_missing_data_is_omitted_not_zero(self):
@@ -98,6 +101,14 @@ class Collect(unittest.TestCase):
                        ('networkPartitionedFromMaster', 0), ('hostDown', 0)):
             h = M._build_collect({'a': rec(1, ha=st)}, [])['hosts']['a']
             self.assertEqual(h['ha_ok'], ok, st)
+
+    def test_warn_is_always_present(self):
+        self.assertEqual(self.out['warn'], '')
+        w = M._build_collect({'a': rec(1, warn='свойство x недоступно')}, [])
+        self.assertEqual(w['warn'], 'свойство x недоступно')
+
+    def test_unreadable_ntp_ref_is_omitted(self):
+        self.assertNotIn('ntp', M._build_collect({'a': rec(1, configured=None)}, [])['hosts']['a'])
 
     def test_size_budget_200_hosts(self):
         size = len(json.dumps(M._build_collect(fleet(200), []), ensure_ascii=False,
@@ -208,7 +219,7 @@ class Template(unittest.TestCase):
                 trig += ip.get('trigger_prototypes', [])
         prefix = '/%s/' % self.t['template']
         for tr in trig:
-            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh]|,\{\$[A-Z.]+\})?\)(?=[=<> )]|$)',
+            for m in re.finditer(r'(?:last|max|min|avg|nodata|length)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh]|,\{\$[A-Z.]+\})?\)(?=[=<> )]|$)',
                                  tr['expression']):
                 self.assertIn(m.group(1), keys, tr['expression'])
             self.assertIn('manual_close', tr)

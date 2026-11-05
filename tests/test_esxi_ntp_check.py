@@ -1,6 +1,8 @@
 """Unit tests for esxi_ntp_check/esxi_ntp_check.py (pyVmomi is stubbed out)."""
 import importlib.util
 import os
+import tempfile
+import time
 import sys
 import types
 import unittest
@@ -116,6 +118,134 @@ class Misc(unittest.TestCase):
         self.assertEqual(M._resolve_mode(['x', 'hosts', 'u', 'a', 'b'])[::2], ('hosts', 2))
         self.assertEqual(M._resolve_mode(['x', 'dns', 'H', 'u', 'a', 'b'])[::2], ('dns', 3))
         self.assertEqual(M._resolve_mode(['x', 'Host.', 'u', 'a', 'b']), ('ntp', 'host', 2))
+
+
+class O:
+    """Hashable stand-in for a managed object."""
+
+
+def full(**kw):
+    return rec(ntp_offset=None, mm=False, pnic=None, sw=None, ts=time.time(), **kw)
+
+
+class NtpConfigured(unittest.TestCase):
+    def mk(self, servers=('pool.ntp.org',), running=True, lazy=False, svc=True):
+        dts, sv = O(), O()
+        info = types.SimpleNamespace(ntpConfig=types.SimpleNamespace(server=list(servers)))
+        d = {'configManager.dateTimeSystem': dts, 'configManager.serviceSystem': sv if svc else None}
+        props = {dts: {} if lazy else {'dateTimeInfo': info},
+                 sv: {'service': [types.SimpleNamespace(key='ntpd', running=running)]}}
+        if lazy:
+            dts.dateTimeInfo = info
+        return d, props
+
+    def test_ok_and_not_running_and_no_servers(self):
+        self.assertEqual(M._ntp_configured(*self.mk()), 1)
+        self.assertEqual(M._ntp_configured(*self.mk(running=False)), 0)
+        self.assertEqual(M._ntp_configured(*self.mk(servers=())), 0)
+        self.assertEqual(M._ntp_configured(*self.mk(lazy=True)), 1)
+
+    def test_unreadable_is_none_not_zero(self):
+        self.assertIsNone(M._ntp_configured({}, {}))                          # no dateTimeSystem ref
+        dts = O()
+        class Bad(O):
+            @property
+            def dateTimeInfo(self):
+                raise RuntimeError('boom')
+        dts = Bad()
+        self.assertIsNone(M._ntp_configured({'configManager.dateTimeSystem': dts}, {}))
+
+
+class BatchOptional(unittest.TestCase):
+    def test_bad_property_is_isolated_and_reported(self):
+        def fake(content, objs, specs, errors=None):
+            paths = specs[0][1]
+            if 'bad' in paths:
+                errors.append('InvalidProperty: bad')
+                return {}
+            return {h: {p: 1 for p in paths} for h, _ in objs}
+        warn = []
+        with mock.patch.object(M, '_batch_props', fake):
+            got = M._batch_optional(None, ['h1'], ['a', 'bad', 'b'], warn, htype='HostSystem')
+        self.assertEqual(got, {'h1': {'a': 1, 'b': 1}})
+        self.assertEqual(len(warn), 1)
+        self.assertIn('bad', warn[0])
+
+    def test_all_good_single_call(self):
+        calls = []
+        def fake(content, objs, specs, errors=None):
+            calls.append(specs)
+            return {'h1': {'a': 1}}
+        warn = []
+        with mock.patch.object(M, '_batch_props', fake):
+            got = M._batch_optional(None, ['h1'], ['a'], warn, htype='HostSystem')
+        self.assertEqual((got, warn, len(calls)), ({'h1': {'a': 1}}, [], 1))
+
+
+class CacheAndDeadline(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.object(M.tempfile, 'gettempdir', return_value=self.tmp.name)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_cache_name_is_per_user(self):
+        self.assertIn('_%s.json' % os.getuid(), M._cache_file('https://vc'))
+
+    def test_lock_failure_is_not_fatal(self):
+        real = os.open
+        def deny(path, *a, **k):
+            if str(path).endswith('.lock'):
+                raise PermissionError(13, 'denied')
+            return real(path, *a, **k)
+        with mock.patch.object(M.os, 'open', deny), \
+                mock.patch.object(M, '_fetch', return_value={'a': full()}) as f:
+            got = M._get_data('https://vc', 'u', 'p')
+        self.assertIn('a', got)
+        self.assertEqual(f.call_count, 1)
+
+    def test_cached_second_call_does_not_fetch(self):
+        with mock.patch.object(M, '_fetch', return_value={'a': full()}) as f:
+            M._get_data('https://vc', 'u', 'p')
+            M._get_data('https://vc', 'u', 'p')
+        self.assertEqual(f.call_count, 1)
+
+    def test_lld_rows_survive_a_disconnect(self):
+        nics = {'vmnic0': {'up': 1, 'mb': 10000}}
+        sws = {'vSwitch0': {'n': 1, 'up': 1}}
+        with mock.patch.dict(os.environ, {'ESXI_NTP_REFRESH': '1'}):
+            with mock.patch.object(M, '_fetch', return_value={'a': full(), 'b': full()}):
+                first = M._get_data('https://vc', 'u', 'p')
+            first['a']['pnic'], first['a']['sw'] = nics, sws
+            with open(M._cache_file('https://vc'), 'w') as f:
+                M.json.dump(first, f)
+            down = full(state='notResponding')
+            with mock.patch.object(M, '_fetch', return_value={'a': down, 'b': full()}):
+                got = M._get_data('https://vc', 'u', 'p')
+        self.assertEqual((got['a']['pnic'], got['a']['sw']), (nics, sws))
+        out = M._build_collect(got, [])
+        self.assertEqual(out['hosts']['a'], {'state': 'notResponding', 'alert': 0})
+        self.assertEqual([r['{#NIC}'] for r in out['lld']['pnic']], ['vmnic0'])
+        self.assertNotIn('a', out['pnic'])                  # значения не отдаём
+
+    def test_deadline_exits_hard(self):
+        with mock.patch.object(M.os, '_exit') as ex, mock.patch.object(M.sys, 'stderr'):
+            M._on_deadline(14, None)
+        ex.assert_called_once_with(1)
+
+    def test_offsets_do_not_wait_for_queued_tasks(self):
+        calls = []
+        class Spy(M.ThreadPoolExecutor):
+            def shutdown(self, wait=True, *, cancel_futures=False):
+                calls.append((wait, cancel_futures))
+                super().shutdown(wait=wait, cancel_futures=cancel_futures)
+        with mock.patch.object(M, 'ThreadPoolExecutor', Spy):
+            M._ntp_offsets(None, [])
+            import datetime as dt
+            now = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+            M._ntp_offsets(now, [('a', types.SimpleNamespace(QueryDateTime=lambda: now))], workers=1)
+        self.assertEqual(calls, [(False, True)])
 
 
 if __name__ == '__main__':
