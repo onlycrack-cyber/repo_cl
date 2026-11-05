@@ -36,6 +36,8 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
      должен быть больше интервала опроса айтемов). Обновление кэша под flock:
      параллельные запуски ждут один опрос vCenter, а не делают свой.
      ESXI_NTP_REFRESH=1 — игнорировать кэш (разовый опрос vCenter).
+ESXI_NTP_OFFSET=0 — не измерять смещение времени ESXi (по умолчанию измеряется:
+     по одному SOAP-вызову QueryDateTime на хост, параллельно, ESXI_NTP_WORKERS=8).
 ESXI_COLLECT_TTL — максимальный возраст кэша для режима collect (240 c).
 ESXI_TIMEOUT — таймаут сокета (15 c); ESXI_DEADLINE — общий лимит работы (25 c,
      держите меньше таймаута айтема Zabbix).
@@ -56,6 +58,8 @@ import ssl
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timezone
 
 # Совместимость с Python 3.12: в нём удалён устаревший ssl.wrap_socket,
 # который по-прежнему использует pyVmomi (SoapAdapter.py).
@@ -86,6 +90,8 @@ except ImportError:
 _DEF = (os.environ.get("ESXI_VCENTER", ""), os.environ.get("ESXI_USER", ""),
         os.environ.get("ESXI_PWD", ""))
 _CACHE_TTL = int(os.environ.get("ESXI_NTP_TTL", "900"))
+_NTP_OFFSET = os.environ.get("ESXI_NTP_OFFSET", "1") != "0"
+_NTP_WORKERS = int(os.environ.get("ESXI_NTP_WORKERS", "8"))
 _COLLECT_TTL = int(os.environ.get("ESXI_COLLECT_TTL", "240"))
 # Состояния HA-агента (vSphere HA), при которых хост не защищён HA.
 _HA_BAD = ("networkisolated", "networkpartitionedfrommaster", "initializationerror",
@@ -231,6 +237,36 @@ def _ds_bad(mounts):
     return sorted(bad)
 
 
+def _utc(dt):
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def _ntp_offsets(vc_now, items, workers=8, clock=time.monotonic):
+    """Смещение времени ESXi относительно vCenter, секунды (+ = ESXi впереди).
+
+    vc_now — время vCenter (datetime), снятое один раз; к нему прибавляется
+    прошедшее по монотонным часам, так что часы машины с Zabbix не важны.
+    items — [(ключ, dateTimeSystem)]. Хост, не ответивший, в результат не попадает.
+    Погрешность ~ половина RTT до хоста (десятки мс) — для порогов в секундах не важно.
+    """
+    if not items:
+        return {}
+    t0 = clock()
+    base = _utc(vc_now)
+
+    def one(item):
+        key, dts = item
+        try:
+            host_dt = _utc(dts.QueryDateTime())
+            expected = base.timestamp() + (clock() - t0)
+            return key, round(host_dt.timestamp() - expected, 3)
+        except Exception:
+            return key, None
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        return {k: v for k, v in ex.map(one, items) if v is not None}
+
+
 def _fetch_slow(content, hosts):
     """Похостовое чтение (fallback для старых pyVmomi без batch-PropertyCollector).
 
@@ -246,7 +282,8 @@ def _fetch_slow(content, hosts):
             state = "unknown"
         rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
                "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
-                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None}
+                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None,
+                   "ntp_offset": None}
         if state != "connected":
             rec["error"] = "состояние хоста: %s" % state
         try:
@@ -384,13 +421,26 @@ def _fetch(vc, user, pwd):
                 [(o, False) for o in net_objs],
                 [(vim.host.NetworkSystem, ["networkConfig"])])
 
+        # Смещение времени: QueryDateTime() - метод, а не свойство, поэтому
+        # по одному вызову на подключённый хост (параллельно).
+        offsets = {}
+        if _NTP_OFFSET:
+            try:
+                items = [(h, props[h]["configManager.dateTimeSystem"]) for h in hosts
+                         if str((props.get(h) or {}).get("runtime.connectionState")) == "connected"
+                         and (props.get(h) or {}).get("configManager.dateTimeSystem") is not None]
+                offsets = _ntp_offsets(si.CurrentTime(), items, _NTP_WORKERS)
+            except Exception:
+                offsets = {}
+
         out = {}
         for host in hosts:
             d = props.get(host) or {}
             state = str(d.get("runtime.connectionState") or "unknown")
             rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
                    "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
-                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None}
+                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None,
+                   "ntp_offset": None}
             if state != "connected":
                 # Данных config.* нет: проверки вернут ошибку, а не 0.
                 rec["error"] = "состояние хоста: %s" % state
@@ -471,6 +521,7 @@ def _fetch(vc, user, pwd):
                 rec["power"] = None if pp is None else _power_label(pp)
             except Exception:
                 rec["power"] = None
+            rec["ntp_offset"] = offsets.get(host)
             # Сеть: аплинки vSwitch/DVS, мультипасинг, датасторы, HA-агент.
             try:
                 if d.get("config.network.pnic") is not None:
@@ -526,7 +577,7 @@ def _read_cache(cf, ttl=None):
         return {}
     # Кэш от старой версии скрипта (без новых полей) считаем невалидным.
     if not all("vmk" in r and "dns" in r and "state" in r and "sw" in r
-               for r in fresh.values()):
+               and "ntp_offset" in r for r in fresh.values()):
         return {}
     return fresh
 
@@ -602,6 +653,8 @@ def _build_collect(fresh, extra):
             v = _check_value(mode, rec, ex)
             if v is not None:
                 h[key] = int(v)
+        if rec.get("ntp_offset") is not None:
+            h["ntp_off"] = rec["ntp_offset"]
         if rec.get("mp_dead") is not None:
             h["mp_dead"] = rec["mp_dead"]
         if rec.get("ds_bad") is not None:

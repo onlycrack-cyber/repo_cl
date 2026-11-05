@@ -44,3 +44,12 @@
 реальные имена свойств pyVmomi (`config.network.pnic/vswitch/proxySwitch`, `multipathInfo`,
 `fileSystemVolume.mountInfo`, `runtime.dasHostState`).
 Размер JSON ~490 байт/хост (200 хостов ≈ 99 КБ) — см. лимит значения типа text в вашей версии.
+
+# v3.1 — смещение времени NTP
+- Скрипт: `QueryDateTime()` на каждый подключённый хост (ThreadPool, `ESXI_NTP_WORKERS`=8),
+  сравнение с временем vCenter (`si.CurrentTime()` + монотонные часы), отключается `ESXI_NTP_OFFSET=0`.
+  Хост не ответил -> значение опускается (unsupported), не 0.
+- Шаблон: `NTP time offset on {#ESXINAME}` (FLOAT, s); WARNING при |avg(3)| > `{$ESXI.NTP.OFFSET.WARN}` (1 c),
+  HIGH при > `{$ESXI.NTP.OFFSET.HIGH}` (5 c). Проверка «NTP настроен и работает» осталась.
+- Не проверено на живом vCenter: потокобезопасность pyVmomi при параллельных QueryDateTime и
+  время опроса на вашем числе хостов (укладывается ли в `ESXI_DEADLINE`=25 c).

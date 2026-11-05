@@ -10,7 +10,7 @@ zabbix_export:
       description: |
         Мониторинг ESXi через vCenter (один сборщик + зависимые айтемы). ДОПОЛНЯЕТ стандартный шаблон VMware
         (производительность, датасторы, ВМ, состояние/uptime хостов) и SNMP-мониторинг железа HPE; здесь только то,
-        чего в них нет: NTP, DNS, VMkernel, Storage-адаптеры, Power policy, мультипасинг (dead paths), доступность
+        чего в них нет: NTP (настроен/работает + смещение времени), DNS, VMkernel, Storage-адаптеры, Power policy, мультипасинг (dead paths), доступность
         датасторов хосту, аплинки vSwitch/DVS (link/скорость/живые), HA-агент.
 
         АРХИТЕКТУРА: привязывается к "мастер"-хосту Zabbix (по одному на vCenter) с макросами
@@ -132,6 +132,55 @@ zabbix_export:
                   event_name: 'NTP is not configured on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
                   description: 'На ESXi-хосте {#ESXINAME} NTP не работает (не настроен или служба ntpd не запущена).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ntp'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+            - uuid: 944a38702a454dbe8098209d3ac9b3f8
+              name: 'NTP time offset on {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.ntp.offset["{#ESXINAME}"]'
+              delay: '0'
+              value_type: FLOAT
+              history: 7d
+              units: 's'
+              description: 'Смещение времени ESXi относительно vCenter, секунды (+ = ESXi впереди). Погрешность измерения - десятки мс. Измеряется вызовом QueryDateTime; выключается ESXI_NTP_OFFSET=0.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].ntp_off'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'ntp'
+                - tag: scope
+                  value: 'esxi-health'
+              trigger_prototypes:
+                - uuid: 77dc232834aa48c6b3186c5e5e3bf45b
+                  expression: 'abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.WARN} and abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))<={$ESXI.NTP.OFFSET.HIGH}'
+                  name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME}'
+                  event_name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME} ({HOST.NAME})'
+                  priority: WARNING
+                  description: 'Время на {#ESXINAME} отличается от vCenter больше чем на {$ESXI.NTP.OFFSET.WARN} с (среднее за 3 измерения).'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'ntp'
+                    - tag: scope
+                      value: 'esxi-health'
+                    - tag: esxi
+                      value: '{#ESXINAME}'
+                - uuid: 246faa9747244a5d86c3af630cfeea6e
+                  expression: 'abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.HIGH}'
+                  name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME}'
+                  event_name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME} ({HOST.NAME})'
+                  priority: HIGH
+                  description: 'Время на {#ESXINAME} отличается от vCenter больше чем на {$ESXI.NTP.OFFSET.HIGH} с: риск проблем с Kerberos/сертификатами/кластером.'
                   manual_close: 'YES'
                   tags:
                     - tag: component
@@ -609,6 +658,12 @@ zabbix_export:
         - macro: '{$ESXI.NIC.SPEED.MIN}'
           value: '0'
           description: 'Минимальная скорость аплинка, Мбит/с; 0 = проверка выключена. Контекст: {$ESXI.NIC.SPEED.MIN:"vmnic0"}.'
+        - macro: '{$ESXI.NTP.OFFSET.HIGH}'
+          value: '5'
+          description: 'Смещение времени ESXi относительно vCenter, сек: HIGH.'
+        - macro: '{$ESXI.NTP.OFFSET.WARN}'
+          value: '1'
+          description: 'Смещение времени ESXi относительно vCenter, сек: WARNING.'
         - macro: '{$ESXI.POWER.POLICY}'
           value: 'High performance'
           description: 'Ожидаемая политика энергосбережения.'

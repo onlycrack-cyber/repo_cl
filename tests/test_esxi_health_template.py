@@ -51,7 +51,7 @@ def rec(i, **kw):
          'ts': 0, 'vmk': ['10.0.0.%d' % i], 'storage': ['online', 'online'],
          'dns': ['10.0.0.53', '10.0.1.53'], 'power': 'High performance',
          'pnic': {'vmnic0': {'up': 1, 'mb': 10000}, 'vmnic1': {'up': 0, 'mb': 0}},
-         'sw': {'vSwitch0': {'n': 2, 'up': 1}}, 'mp_dead': 0, 'ds_bad': [], 'ha': 'connectedToMaster'}
+         'sw': {'vSwitch0': {'n': 2, 'up': 1}}, 'ntp_offset': 0.12, 'mp_dead': 0, 'ds_bad': [], 'ha': 'connectedToMaster'}
     r.update(kw)
     return r
 
@@ -70,6 +70,7 @@ class Collect(unittest.TestCase):
         h = self.out['hosts']['esx01.dc.local']
         self.assertEqual((h['ntp'], h['dns'], h['vmk'], h['stor'], h['pwr']), (1, 1, 1, 1, 1))
         self.assertEqual((h['mp_dead'], h['ds_bad'], h['ha_ok']), (0, 0, 1))
+        self.assertEqual(h['ntp_off'], 0.12)
 
     def test_disconnected_host_has_no_values(self):
         self.assertEqual(self.out['hosts']['esx-down.dc.local'], {'state': 'notResponding'})
@@ -80,6 +81,8 @@ class Collect(unittest.TestCase):
     def test_missing_data_is_omitted_not_zero(self):
         out = M._build_collect({'a': rec(1, storage=None, power=None, mp_dead=None, ds_bad=None)}, [])
         h = out['hosts']['a']
+        out2 = M._build_collect({'a': rec(1, ntp_offset=None)}, [])
+        self.assertNotIn('ntp_off', out2['hosts']['a'])
         for k in ('stor', 'pwr', 'mp_dead', 'ds_bad'):
             self.assertNotIn(k, h)
 
@@ -94,6 +97,36 @@ class Collect(unittest.TestCase):
                               separators=(',', ':')).encode())
         print('collect JSON for 200 hosts: %d bytes' % size)
         self.assertLess(size, 200_000)
+
+
+class NtpOffset(unittest.TestCase):
+    def test_offsets_use_vcenter_time_and_skip_failures(self):
+        import datetime as dt
+        base = dt.datetime(2026, 1, 1, 12, 0, 0, tzinfo=dt.timezone.utc)
+        ticks = iter([100.0] + [100.5] * 10)           # 0.5 s прошло с момента снятия времени vCenter
+
+        class Dts:
+            def __init__(self, delta, fail=False):
+                self.delta, self.fail = delta, fail
+
+            def QueryDateTime(self):
+                if self.fail:
+                    raise RuntimeError('boom')
+                return base + dt.timedelta(seconds=0.5 + self.delta)
+
+        got = M._ntp_offsets(base, [('a', Dts(2.0)), ('b', Dts(-3.25)), ('c', Dts(0, fail=True))],
+                             workers=1, clock=lambda: next(ticks))
+        self.assertEqual(got, {'a': 2.0, 'b': -3.25})
+
+    def test_naive_datetime_is_treated_as_utc(self):
+        import datetime as dt
+        naive = dt.datetime(2026, 1, 1, 12, 0, 0)
+        got = M._ntp_offsets(naive, [('a', types.SimpleNamespace(QueryDateTime=lambda: naive))],
+                             workers=1, clock=lambda: 5.0)
+        self.assertEqual(got, {'a': 0.0})
+
+    def test_empty(self):
+        self.assertEqual(M._ntp_offsets(None, []), {})
 
 
 class Aggregates(unittest.TestCase):
@@ -165,7 +198,7 @@ class Template(unittest.TestCase):
                 trig += ip.get('trigger_prototypes', [])
         prefix = '/%s/' % self.t['template']
         for tr in trig:
-            for m in re.finditer(r'(?:last|max|min|nodata)\(' + re.escape(prefix) + r'(.+?)(?:,#\d+|,\d+[mh])?\)(?=[=<> ]|$)',
+            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh])?\)(?=[=<> ]|$)',
                                  tr['expression']):
                 self.assertIn(m.group(1), keys, tr['expression'])
             self.assertIn('manual_close', tr)
