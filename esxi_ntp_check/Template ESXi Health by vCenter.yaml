@@ -17,6 +17,8 @@ zabbix_export:
         {$VMWARE.URL}, {$VMWARE.USERNAME}, {$VMWARE.PASSWORD}. Айтем "ESXi data collection" раз в 5 минут получает JSON
         по всем хостам; LLD (хосты, физические порты, vSwitch) и все значения - зависимые, JSONPath.
         Недоступное значение (хост не connected, свойство не прочитано) = unsupported, а не ложный 0.
+        Подавление алертов: флаг "Alerting enabled" (0 при Maintenance Mode или не connected) входит во все триггеры хоста;
+        потерянные из LLD хосты (удалены из vCenter) отключаются сразу, удаляются через 7 дней (история сохраняется при переустановке).
 
         Зависимости: venv /opt/zabbix-venv с pyVmomi 8.0.3+/9.x; скрипт esxi_ntp_check.py (v3, режим collect)
         в /usr/lib/zabbix/externalscripts/. Роль vCenter - только чтение.
@@ -93,6 +95,7 @@ zabbix_export:
           key: 'esxi.hosts.discovery'
           delay: '0'
           lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
           filter:
             evaltype: AND
             conditions:
@@ -105,6 +108,26 @@ zabbix_export:
                 formulaid: B
           description: 'Все ESXi-хосты vCenter ({#ESXINAME}, {#ESXIADDR}).'
           item_prototypes:
+            - uuid: 9d66dfc46f7e4dd9a012e30f0d061801
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert["{#ESXINAME}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
             - uuid: 0db3fcf4ea3644f790acb3f71dd44553
               name: 'NTP configured on {#ESXINAME}'
               type: DEPENDENT
@@ -127,7 +150,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 066a1f8464674573a71a24fb3a46887f
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.ntp["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.ntp["{#ESXINAME}"],#2)=0)'
                   name: 'NTP is not configured on {#ESXINAME}'
                   event_name: 'NTP is not configured on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
@@ -162,7 +185,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 77dc232834aa48c6b3186c5e5e3bf45b
-                  expression: 'abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.WARN} and abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))<={$ESXI.NTP.OFFSET.HIGH}'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.WARN} and abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))<={$ESXI.NTP.OFFSET.HIGH})'
                   name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME}'
                   event_name: 'Time offset above {$ESXI.NTP.OFFSET.WARN}s on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -176,7 +199,7 @@ zabbix_export:
                     - tag: esxi
                       value: '{#ESXINAME}'
                 - uuid: 246faa9747244a5d86c3af630cfeea6e
-                  expression: 'abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.HIGH}'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (abs(avg(/Template ESXi Health by vCenter/esxi.ntp.offset["{#ESXINAME}"],#3))>{$ESXI.NTP.OFFSET.HIGH})'
                   name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME}'
                   event_name: 'Time offset above {$ESXI.NTP.OFFSET.HIGH}s on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
@@ -211,7 +234,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 3e5ced7d50684217a32dbb88820aaf65
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.dns["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.dns["{#ESXINAME}"],#2)=0)'
                   name: 'DNS not configured on {#ESXINAME}'
                   event_name: 'DNS not configured on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -246,7 +269,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: bf0b7bdc31874140800f9f74d5245272
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.vmk["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.vmk["{#ESXINAME}"],#2)=0)'
                   name: 'No VMkernel adapters on {#ESXINAME}'
                   event_name: 'No VMkernel adapters on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -281,7 +304,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: b8716b8747e84857b8448deea195ed44
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.storage["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.storage["{#ESXINAME}"],#2)=0)'
                   name: 'Storage adapter offline on {#ESXINAME}'
                   event_name: 'Storage adapter offline on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
@@ -316,7 +339,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: f601d2ad313b4cf5b611356c9f05964f
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.power["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.power["{#ESXINAME}"],#2)=0)'
                   name: 'Power policy differs on {#ESXINAME}'
                   event_name: 'Power policy differs on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -349,7 +372,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 337e9d4584a14aa1913fc2663583a166
-                  expression: 'min(/Template ESXi Health by vCenter/esxi.mp.dead["{#ESXINAME}"],#2)>0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (min(/Template ESXi Health by vCenter/esxi.mp.dead["{#ESXINAME}"],#2)>0)'
                   name: 'Dead storage paths on {#ESXINAME}'
                   event_name: 'Dead storage paths on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
@@ -382,7 +405,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: cf7cf6c192674035956e109764339aa4
-                  expression: 'min(/Template ESXi Health by vCenter/esxi.ds.bad["{#ESXINAME}"],#2)>0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (min(/Template ESXi Health by vCenter/esxi.ds.bad["{#ESXINAME}"],#2)>0)'
                   name: 'Datastore inaccessible on {#ESXINAME}'
                   event_name: 'Datastore inaccessible on {#ESXINAME} ({HOST.NAME})'
                   priority: HIGH
@@ -437,7 +460,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 9213827428f54865bd8314bdcc94dfed
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.ha.ok["{#ESXINAME}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert["{#ESXINAME}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.ha.ok["{#ESXINAME}"],#2)=0)'
                   name: 'vSphere HA agent problem on {#ESXINAME}'
                   event_name: 'vSphere HA agent problem on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -482,6 +505,7 @@ zabbix_export:
           key: 'esxi.pnic.discovery'
           delay: '0'
           lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
           filter:
             evaltype: AND
             conditions:
@@ -494,6 +518,26 @@ zabbix_export:
                 formulaid: B
           description: 'Физические порты (vmnic), используемые как аплинки vSwitch/DVS: {#ESXINAME}, {#NIC}.'
           item_prototypes:
+            - uuid: 63f6d8d5de4c4c5b81413b88fe1cadc0
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert.nic["{#ESXINAME}","{#NIC}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
             - uuid: 54ad92a88e874821a909f40efcb45bfe
               name: 'Link state of {#NIC} on {#ESXINAME}'
               type: DEPENDENT
@@ -516,7 +560,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 998e92f04bab4ae8a9092994e5316780
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.pnic.up["{#ESXINAME}","{#NIC}"],#2)=0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.nic["{#ESXINAME}","{#NIC}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.pnic.up["{#ESXINAME}","{#NIC}"],#2)=0)'
                   name: 'Uplink {#NIC} is down on {#ESXINAME}'
                   event_name: 'Uplink {#NIC} is down on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -550,7 +594,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: 5f462166c9fe426d8040120dc1aff7ef
-                  expression: 'last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])>0 and last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])<{$ESXI.NIC.SPEED.MIN:"{#NIC}"}'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.nic["{#ESXINAME}","{#NIC}"],{$ESXI.ALERT.HOLDDOWN})=1 and (last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])>0 and last(/Template ESXi Health by vCenter/esxi.pnic.speed["{#ESXINAME}","{#NIC}"])<{$ESXI.NIC.SPEED.MIN:"{#NIC}"})'
                   name: 'Uplink {#NIC} speed degraded on {#ESXINAME}'
                   event_name: 'Uplink {#NIC} speed degraded on {#ESXINAME} ({HOST.NAME})'
                   priority: WARNING
@@ -575,6 +619,7 @@ zabbix_export:
           key: 'esxi.sw.discovery'
           delay: '0'
           lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
           filter:
             evaltype: AND
             conditions:
@@ -587,6 +632,26 @@ zabbix_export:
                 formulaid: B
           description: 'Стандартные и распределённые свитчи хоста с аплинками: {#ESXINAME}, {#VSWITCH}.'
           item_prototypes:
+            - uuid: 6a04403948854d0692999a8c253dcf88
+              name: 'Alerting enabled for {#ESXINAME}'
+              type: DEPENDENT
+              key: 'esxi.alert.sw["{#ESXINAME}","{#VSWITCH}"]'
+              delay: '0'
+              history: 7d
+              description: 'Служебный флаг-подавитель: 1 - хост connected и не в Maintenance Mode, алерты включены; 0 - хост в Maintenance Mode или не connected, все триггеры хоста подавлены (и автоматически закрываются). После выхода из MM алерты возвращаются через {$ESXI.ALERT.HOLDDOWN}.'
+              valuemap:
+                name: 'Alerting'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.hosts["{#ESXINAME}"].alert'
+              master_item:
+                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+              tags:
+                - tag: component
+                  value: 'maintenance'
+                - tag: scope
+                  value: 'esxi-health'
             - uuid: b71480fc6d2f4287855f44fbac5aab3a
               name: 'Live uplinks of {#VSWITCH} on {#ESXINAME}'
               type: DEPENDENT
@@ -607,7 +672,7 @@ zabbix_export:
                   value: 'esxi-health'
               trigger_prototypes:
                 - uuid: ac98ff1ad68e42ee81974a90a0f6bcc9
-                  expression: 'max(/Template ESXi Health by vCenter/esxi.sw.up["{#ESXINAME}","{#VSWITCH}"],#2)=0 and last(/Template ESXi Health by vCenter/esxi.sw.total["{#ESXINAME}","{#VSWITCH}"])>0'
+                  expression: 'min(/Template ESXi Health by vCenter/esxi.alert.sw["{#ESXINAME}","{#VSWITCH}"],{$ESXI.ALERT.HOLDDOWN})=1 and (max(/Template ESXi Health by vCenter/esxi.sw.up["{#ESXINAME}","{#VSWITCH}"],#2)=0 and last(/Template ESXi Health by vCenter/esxi.sw.total["{#ESXINAME}","{#VSWITCH}"])>0)'
                   name: 'No live uplinks on {#VSWITCH} ({#ESXINAME})'
                   event_name: 'No live uplinks on {#VSWITCH} ({#ESXINAME}) ({HOST.NAME})'
                   priority: HIGH
@@ -645,6 +710,9 @@ zabbix_export:
               parameters:
                 - '$.lld.sw'
       macros:
+        - macro: '{$ESXI.ALERT.HOLDDOWN}'
+          value: '10m'
+          description: 'Пауза после выхода хоста из Maintenance Mode / возврата в connected, прежде чем алерты снова включатся.'
         - macro: '{$ESXI.DNS.ALTERNATE}'
           description: 'Ожидаемый 2-й DNS (пусто + пустой PREFERRED = достаточно >=2 DNS).'
         - macro: '{$ESXI.DNS.PREFERRED}'
@@ -717,3 +785,10 @@ zabbix_export:
               newvalue: 'Problem'
             - value: '1'
               newvalue: 'OK'
+        - uuid: 1df44e2a56534bb3b5d29710e0b09606
+          name: 'Alerting'
+          mappings:
+            - value: '0'
+              newvalue: 'Suppressed (maintenance / not connected)'
+            - value: '1'
+              newvalue: 'Enabled'

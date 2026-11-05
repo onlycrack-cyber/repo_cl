@@ -25,6 +25,8 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
         -> ОДИН компактный JSON по всем хостам (для шаблона "ESXi Health by
            vCenter": зависимые LLD и айтемы разбирают его JSONPath'ом).
            Недоступные значения в JSON опускаются (айтем -> unsupported).
+           hosts.<имя>.alert = 0, если хост не connected или в Maintenance Mode
+           (шаблон подавляет по нему все триггеры хоста).
 
 Хост не в состоянии connected (disconnected/notResponding) -> ошибка
 (unsupported), а не 0: нет ложных срабатываний по всем проверкам сразу.
@@ -283,7 +285,11 @@ def _fetch_slow(content, hosts):
         rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
                "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
                    "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None,
-                   "ntp_offset": None}
+                   "ntp_offset": None, "mm": None}
+        try:
+            rec["mm"] = bool(host.runtime.inMaintenanceMode)
+        except Exception:
+            rec["mm"] = None
         if state != "connected":
             rec["error"] = "состояние хоста: %s" % state
         try:
@@ -369,6 +375,7 @@ def _fetch(vc, user, pwd):
             [(h, False) for h in hosts],
             [(vim.HostSystem, [
                 "name", "summary.config.name", "runtime.connectionState",
+                "runtime.inMaintenanceMode",
                 "config.network.dnsConfig",
                 "config.storageDevice.hostBusAdapter",
                 "config.powerSystemInfo.currentPolicy",
@@ -440,7 +447,9 @@ def _fetch(vc, user, pwd):
             rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
                    "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
                    "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None,
-                   "ntp_offset": None}
+                   "ntp_offset": None, "mm": None}
+            mm = d.get("runtime.inMaintenanceMode")
+            rec["mm"] = None if mm is None else bool(mm)
             if state != "connected":
                 # Данных config.* нет: проверки вернут ошибку, а не 0.
                 rec["error"] = "состояние хоста: %s" % state
@@ -577,7 +586,7 @@ def _read_cache(cf, ttl=None):
         return {}
     # Кэш от старой версии скрипта (без новых полей) считаем невалидным.
     if not all("vmk" in r and "dns" in r and "state" in r and "sw" in r
-               and "ntp_offset" in r for r in fresh.values()):
+               and "ntp_offset" in r and "mm" in r for r in fresh.values()):
         return {}
     return fresh
 
@@ -643,10 +652,12 @@ def _build_collect(fresh, extra):
         out["lld"]["hosts"].append({
             "{#ESXINAME}": name,
             "{#ESXIADDR}": str(rec.get("mgmt_ip") or rec.get("ip") or name)})
+        # alert: 1 — хосту можно слать алерты; 0 — не connected или Maintenance
+        # Mode (вывод из кластера, обслуживание). Подавитель для всех триггеров.
         if rec.get("state") not in (None, "connected"):
-            out["hosts"][name] = {"state": rec["state"]}
+            out["hosts"][name] = {"state": rec["state"], "alert": 0}
             continue
-        h = {"state": "connected"}
+        h = {"state": "connected", "alert": 0 if rec.get("mm") else 1}
         for key, mode, ex in (("ntp", "ntp", []), ("vmk", "vmk", []),
                               ("stor", "storage", []), ("dns", "dns", dns_x),
                               ("pwr", "power", pwr_x)):

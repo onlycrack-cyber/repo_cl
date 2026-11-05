@@ -72,8 +72,15 @@ class Collect(unittest.TestCase):
         self.assertEqual((h['mp_dead'], h['ds_bad'], h['ha_ok']), (0, 0, 1))
         self.assertEqual(h['ntp_off'], 0.12)
 
+    def test_alert_flag(self):
+        mm = M._build_collect({'a': rec(1, mm=True), 'b': rec(2, mm=False), 'c': rec(3, mm=None),
+                               'd': rec(4, state='disconnected', mm=False)}, [])['hosts']
+        self.assertEqual([mm[k]['alert'] for k in 'abcd'], [0, 1, 1, 0])
+        self.assertEqual(mm['a']['ntp'], 1)             # в MM значения продолжают собираться
+
     def test_disconnected_host_has_no_values(self):
-        self.assertEqual(self.out['hosts']['esx-down.dc.local'], {'state': 'notResponding'})
+        self.assertEqual(self.out['hosts']['esx-down.dc.local'],
+                         {'state': 'notResponding', 'alert': 0})
         names = [r['{#ESXINAME}'] for r in self.out['lld']['pnic']]
         self.assertNotIn('esx-down.dc.local', names)
         self.assertIn('esx-down.dc.local', [r['{#ESXINAME}'] for r in self.out['lld']['hosts']])
@@ -181,8 +188,11 @@ class Template(unittest.TestCase):
                     self.assertNotIn('{#', path)
                     if row['{#ESXINAME}'] == 'esx-down.dc.local':
                         # хост не connected: значений нет -> unsupported, а не ложный 0
-                        with self.assertRaises(KeyError):
-                            jsonpath(self.doc, path)
+                        if path.endswith('.alert'):
+                            self.assertEqual(jsonpath(self.doc, path), 0)   # подавитель доступен всегда
+                        else:
+                            with self.assertRaises(KeyError):
+                                jsonpath(self.doc, path)
                         continue
                     jsonpath(self.doc, path)       # KeyError = typo in the template
                     checked += 1
@@ -198,10 +208,37 @@ class Template(unittest.TestCase):
                 trig += ip.get('trigger_prototypes', [])
         prefix = '/%s/' % self.t['template']
         for tr in trig:
-            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh])?\)(?=[=<> )]|$)',
+            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh]|,\{\$[A-Z.]+\})?\)(?=[=<> )]|$)',
                                  tr['expression']):
                 self.assertIn(m.group(1), keys, tr['expression'])
             self.assertIn('manual_close', tr)
+
+    def test_every_host_trigger_is_guarded_by_alert_flag_of_its_own_rule(self):
+        n = 0
+        for r in self.t['discovery_rules']:
+            own = {ip['key'] for ip in r['item_prototypes']}
+            alert = [k for k in own if k.startswith('esxi.alert')]
+            self.assertEqual(len(alert), 1, r['key'])
+            for ip in r['item_prototypes']:
+                for tr in ip.get('trigger_prototypes', []):
+                    n += 1
+                    e = tr['expression']
+                    self.assertTrue(e.startswith('min(/%s/%s,{$ESXI.ALERT.HOLDDOWN})=1 and (' % (
+                        self.t['template'], alert[0])), e)
+                    # trigger prototype may only use item prototypes of its own LLD rule
+                    for k in re.findall(r'/%s/(esxi[^,)]*?\])' % re.escape(self.t['template']), e):
+                        self.assertIn(k, own, e)
+        self.assertEqual(n, 13)
+
+    def test_collector_triggers_are_not_guarded(self):
+        for i in self.t['items']:
+            for tr in i.get('triggers', []):
+                self.assertNotIn('ALERT.HOLDDOWN', tr['expression'])
+
+    def test_lost_hosts_are_disabled_immediately(self):
+        for r in self.t['discovery_rules']:
+            self.assertEqual(r['enabled_lifetime_type'], 'DISABLE_IMMEDIATELY', r['key'])
+            self.assertEqual(r['lifetime'], '7d')
 
     def test_unique_uuids_and_valuemaps_exist(self):
         with open(TEMPLATE, encoding='utf-8') as f:
