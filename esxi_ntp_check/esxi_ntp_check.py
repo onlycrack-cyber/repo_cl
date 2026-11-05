@@ -21,6 +21,10 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
         -> {"data":[{"{#ESXINAME}":...,"{#ESXIADDR}":...},...]}
     esxi_ntp_check.py["hosts",url,user,pwd]
         -> число хостов в vCenter (самопроверка доступности vCenter)
+    esxi_ntp_check.py["collect",url,user,pwd,dns_pref,dns_alt,power_policy]
+        -> ОДИН компактный JSON по всем хостам (для шаблона "ESXi Health by
+           vCenter": зависимые LLD и айтемы разбирают его JSONPath'ом).
+           Недоступные значения в JSON опускаются (айтем -> unsupported).
 
 Хост не в состоянии connected (disconnected/notResponding) -> ошибка
 (unsupported), а не 0: нет ложных срабатываний по всем проверкам сразу.
@@ -32,6 +36,7 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
      должен быть больше интервала опроса айтемов). Обновление кэша под flock:
      параллельные запуски ждут один опрос vCenter, а не делают свой.
      ESXI_NTP_REFRESH=1 — игнорировать кэш (разовый опрос vCenter).
+ESXI_COLLECT_TTL — максимальный возраст кэша для режима collect (240 c).
 ESXI_TIMEOUT — таймаут сокета (15 c); ESXI_DEADLINE — общий лимит работы (25 c,
      держите меньше таймаута айтема Zabbix).
 ESXI_CA_BUNDLE — путь к CA/корню VMCA: включает проверку TLS-сертификата
@@ -81,6 +86,10 @@ except ImportError:
 _DEF = (os.environ.get("ESXI_VCENTER", ""), os.environ.get("ESXI_USER", ""),
         os.environ.get("ESXI_PWD", ""))
 _CACHE_TTL = int(os.environ.get("ESXI_NTP_TTL", "900"))
+_COLLECT_TTL = int(os.environ.get("ESXI_COLLECT_TTL", "240"))
+# Состояния HA-агента (vSphere HA), при которых хост не защищён HA.
+_HA_BAD = ("networkisolated", "networkpartitionedfrommaster", "initializationerror",
+           "uninitializationerror", "hostdown")
 _DEADLINE = int(os.environ.get("ESXI_DEADLINE", "25"))
 _CA_BUNDLE = os.environ.get("ESXI_CA_BUNDLE", "")
 # Быстрый отказ вместо "Timeout while executing a shell script", если сеть зависла.
@@ -181,6 +190,47 @@ def _vmk_addrs(vnics):
     return [a for _, a in pairs], (mgmt[0] if mgmt else None)
 
 
+def _net_summary(pnics, vswitches, proxies):
+    """Физические порты, используемые как аплинки vSwitch/DVS, и сводка по свитчам.
+
+    Возвращает ({vmnic: {"up": 0/1, "mb": скорость}}, {switch: {"n": всего, "up": живых}}).
+    Порты, не входящие ни в один свитч (свободные), игнорируются — иначе
+    неподключённый порт давал бы вечную тревогу.
+    """
+    info = {}
+    for n in (pnics or []):
+        ls = getattr(n, "linkSpeed", None)
+        mb = int(getattr(ls, "speedMb", 0) or 0) if ls is not None else 0
+        info[getattr(n, "key", None)] = (getattr(n, "device", ""), mb)
+    nics, sws = {}, {}
+    groups = [(getattr(v, "name", ""), getattr(v, "pnic", None)) for v in (vswitches or [])]
+    groups += [(getattr(p, "dvsName", ""), getattr(p, "pnic", None)) for p in (proxies or [])]
+    for name, keys in groups:
+        devs = [info[k] for k in (keys or []) if k in info]
+        if not devs:
+            continue            # внутренний свитч без аплинков
+        for dev, mb in devs:
+            nics[dev] = {"up": 1 if mb > 0 else 0, "mb": mb}
+        sws[name] = {"n": len(devs), "up": sum(1 for _, mb in devs if mb > 0)}
+    return nics, sws
+
+
+def _mp_dead(luns):
+    """Число путей в состоянии dead по всем LUN."""
+    return sum(1 for lun in (luns or []) for p in (getattr(lun, "path", None) or [])
+               if str(getattr(p, "pathState", "")).lower() == "dead")
+
+
+def _ds_bad(mounts):
+    """Имена томов/датасторов, недоступных хосту (accessible=False)."""
+    bad = []
+    for m in (mounts or []):
+        mi = getattr(m, "mountInfo", None)
+        if mi is not None and getattr(mi, "accessible", None) is False:
+            bad.append(str(getattr(getattr(m, "volume", None), "name", "?")))
+    return sorted(bad)
+
+
 def _fetch_slow(content, hosts):
     """Похостовое чтение (fallback для старых pyVmomi без batch-PropertyCollector).
 
@@ -195,7 +245,8 @@ def _fetch_slow(content, hosts):
         except Exception:
             state = "unknown"
         rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
-               "state": state, "vmk": [], "storage": [], "dns": [], "power": ""}
+               "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
+                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None}
         if state != "connected":
             rec["error"] = "состояние хоста: %s" % state
         try:
@@ -285,7 +336,12 @@ def _fetch(vc, user, pwd):
                 "config.storageDevice.hostBusAdapter",
                 "config.powerSystemInfo.currentPolicy",
                 "configManager.dateTimeSystem", "configManager.serviceSystem",
-                "configManager.networkSystem"])])
+                "configManager.networkSystem",
+                "config.network.pnic", "config.network.vswitch",
+                "config.network.proxySwitch",
+                "config.storageDevice.multipathInfo",
+                "config.fileSystemVolume.mountInfo",
+                "runtime.dasHostState"])])
 
         # Fallback: если batch-PropertyCollector недоступен (старая версия
         # pyVmomi) и мы не собрали свойства ни для одного хоста — используем
@@ -333,7 +389,8 @@ def _fetch(vc, user, pwd):
             d = props.get(host) or {}
             state = str(d.get("runtime.connectionState") or "unknown")
             rec = {"configured": 0, "ip": None, "mgmt_ip": None, "ts": time.time(),
-                   "state": state, "vmk": [], "storage": [], "dns": [], "power": ""}
+                   "state": state, "vmk": [], "storage": [], "dns": [], "power": "",
+                   "pnic": None, "sw": None, "mp_dead": None, "ds_bad": None, "ha": None}
             if state != "connected":
                 # Данных config.* нет: проверки вернут ошибку, а не 0.
                 rec["error"] = "состояние хоста: %s" % state
@@ -414,6 +471,30 @@ def _fetch(vc, user, pwd):
                 rec["power"] = None if pp is None else _power_label(pp)
             except Exception:
                 rec["power"] = None
+            # Сеть: аплинки vSwitch/DVS, мультипасинг, датасторы, HA-агент.
+            try:
+                if d.get("config.network.pnic") is not None:
+                    rec["pnic"], rec["sw"] = _net_summary(
+                        d.get("config.network.pnic"), d.get("config.network.vswitch"),
+                        d.get("config.network.proxySwitch"))
+            except Exception:
+                rec["pnic"] = rec["sw"] = None
+            try:
+                mp = d.get("config.storageDevice.multipathInfo")
+                rec["mp_dead"] = None if mp is None else _mp_dead(getattr(mp, "lun", None))
+            except Exception:
+                rec["mp_dead"] = None
+            try:
+                mounts = d.get("config.fileSystemVolume.mountInfo")
+                rec["ds_bad"] = None if mounts is None else _ds_bad(mounts)
+            except Exception:
+                rec["ds_bad"] = None
+            try:
+                das = d.get("runtime.dasHostState")
+                # Хост вне HA-кластера: состояния нет, это не проблема.
+                rec["ha"] = str(getattr(das, "state", "") or "none") if das is not None else "none"
+            except Exception:
+                rec["ha"] = None
             rec["ip"] = rec["mgmt_ip"] or (rec["vmk"][0] if rec.get("vmk") else None)
             name = d.get("summary.config.name") or d.get("name") or host.name
             out[name] = rec
@@ -434,22 +515,23 @@ def _is_ip(s):
     return s.replace(".", "").isdigit() and s.count(".") == 3
 
 
-def _read_cache(cf):
+def _read_cache(cf, ttl=None):
     """Свежие записи кэша ({} если кэша нет, он устарел или от старой версии)."""
     try:
         with open(cf) as f:
             now = time.time()
             fresh = {h: r for h, r in json.load(f).items()
-                     if now - r.get("ts", 0) < _CACHE_TTL}
+                     if now - r.get("ts", 0) < (ttl or _CACHE_TTL)}
     except Exception:
         return {}
     # Кэш от старой версии скрипта (без новых полей) считаем невалидным.
-    if not all("vmk" in r and "dns" in r and "state" in r for r in fresh.values()):
+    if not all("vmk" in r and "dns" in r and "state" in r and "sw" in r
+               for r in fresh.values()):
         return {}
     return fresh
 
 
-def _get_data(vc, user, pwd):
+def _get_data(vc, user, pwd, ttl=None):
     """Данные хостов: из кэша, при устаревании — опрос vCenter с записью кэша.
 
     Обновление идёт под flock: параллельные запуски ждут первого, затем
@@ -458,14 +540,14 @@ def _get_data(vc, user, pwd):
     cf = _cache_file(vc)
     refresh = bool(os.environ.get("ESXI_NTP_REFRESH"))
     if not refresh:
-        fresh = _read_cache(cf)
+        fresh = _read_cache(cf, ttl)
         if fresh:
             return fresh
     lock = open(cf + ".lock", "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not refresh:
-            fresh = _read_cache(cf)      # кто-то обновил, пока ждали блокировку
+            fresh = _read_cache(cf, ttl)  # кто-то обновил, пока ждали блокировку
             if fresh:
                 return fresh
         try:
@@ -500,6 +582,46 @@ def _run_discover(vc, user, pwd):
     return
 
 
+def _build_collect(fresh, extra):
+    """Компактный JSON для шаблона. Недоступные значения опускаются (не null)."""
+    dns_x, pwr_x = list(extra[0:2]), list(extra[2:3])
+    out = {"v": 2, "ts": int(time.time()), "cnt": len(fresh),
+           "hosts": {}, "pnic": {}, "sw": {},
+           "lld": {"hosts": [], "pnic": [], "sw": []}}
+    for name, rec in sorted(fresh.items()):
+        out["lld"]["hosts"].append({
+            "{#ESXINAME}": name,
+            "{#ESXIADDR}": str(rec.get("mgmt_ip") or rec.get("ip") or name)})
+        if rec.get("state") not in (None, "connected"):
+            out["hosts"][name] = {"state": rec["state"]}
+            continue
+        h = {"state": "connected"}
+        for key, mode, ex in (("ntp", "ntp", []), ("vmk", "vmk", []),
+                              ("stor", "storage", []), ("dns", "dns", dns_x),
+                              ("pwr", "power", pwr_x)):
+            v = _check_value(mode, rec, ex)
+            if v is not None:
+                h[key] = int(v)
+        if rec.get("mp_dead") is not None:
+            h["mp_dead"] = rec["mp_dead"]
+        if rec.get("ds_bad") is not None:
+            h["ds_bad"] = len(rec["ds_bad"])
+            h["ds_names"] = ", ".join(rec["ds_bad"])
+        if rec.get("ha") is not None:
+            h["ha"] = rec["ha"]
+            h["ha_ok"] = 0 if rec["ha"].lower() in _HA_BAD else 1
+        out["hosts"][name] = h
+        if rec.get("pnic"):
+            out["pnic"][name] = rec["pnic"]
+            out["lld"]["pnic"] += [{"{#ESXINAME}": name, "{#NIC}": n}
+                                   for n in sorted(rec["pnic"])]
+        if rec.get("sw"):
+            out["sw"][name] = rec["sw"]
+            out["lld"]["sw"] += [{"{#ESXINAME}": name, "{#VSWITCH}": n}
+                                 for n in sorted(rec["sw"])]
+    return out
+
+
 def _resolve_mode(argv):
     """Определяет режим (+offset url/user/pwd) по 1-му аргументу.
 
@@ -519,7 +641,7 @@ def _resolve_mode(argv):
             sys.stderr.write("ERROR: режиму %r нужен ключ хоста 2-м аргументом\n" % a1)
             sys.exit(2)
         return a1, argv[2].strip().lower().rstrip("."), 3
-    if a1 in ("discover", "hosts"):
+    if a1 in ("discover", "hosts", "collect"):
         return a1, "", 2
     return "ntp", a1, 2
 
@@ -601,7 +723,7 @@ def _on_deadline(signum, frame):
 
 def main():
     if len(sys.argv) < 2:
-        sys.stderr.write("usage: %s <host|discover|hosts|ntp|vmk|storage|dns|power> "
+        sys.stderr.write("usage: %s <host|discover|hosts|collect|ntp|vmk|storage|dns|power> "
                          "[<key>] [<url> <user> <pwd>] [extra...]\n" % sys.argv[0])
         sys.exit(2)
 
@@ -622,7 +744,11 @@ def main():
         _run_discover(url, user, pwd)
         return
 
-    fresh = _get_data(url, user, pwd)
+    fresh = _get_data(url, user, pwd, _COLLECT_TTL if mode == "collect" else None)
+    if mode == "collect":
+        sys.stdout.write(json.dumps(_build_collect(fresh, extra),
+                                    ensure_ascii=False, separators=(",", ":")))
+        return
     if mode == "hosts":
         sys.stdout.write("%d\n" % len(fresh))
         return
