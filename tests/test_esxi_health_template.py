@@ -198,7 +198,7 @@ class Template(unittest.TestCase):
                 trig += ip.get('trigger_prototypes', [])
         prefix = '/%s/' % self.t['template']
         for tr in trig:
-            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh])?\)(?=[=<> ]|$)',
+            for m in re.finditer(r'(?:last|max|min|avg|nodata)\(' + re.escape(prefix) + r'((?:[^,()]|,"(?:[^"]*)")+?)(?:,#\d+|,\d+[mh])?\)(?=[=<> )]|$)',
                                  tr['expression']):
                 self.assertIn(m.group(1), keys, tr['expression'])
             self.assertIn('manual_close', tr)
