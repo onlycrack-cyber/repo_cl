@@ -124,7 +124,10 @@ def _power_label(pp):
 
 def _cache_file(vc):
     h = hashlib.md5(vc.encode(), usedforsecurity=False).hexdigest()[:8]
-    return os.path.join(tempfile.gettempdir(), "esxi_ntp_cache_%s.json" % h)
+    # Имя содержит uid: файл, созданный под другим пользователем (ручной запуск
+    # под root), не должен ломать запуск под zabbix.
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    return os.path.join(tempfile.gettempdir(), "esxi_ntp_cache_%s_%s.json" % (h, uid))
 
 
 def _parse_vc(vc):
@@ -162,7 +165,7 @@ def _pc_attrs():
 _PC, _PCS_obj, _PCS_prop = _pc_attrs()
 
 
-def _batch_props(content, obj_specs, type_specs):
+def _batch_props(content, obj_specs, type_specs, errors=None):
     """Один batch-запрос PropertyCollector: {obj_moref: {prop: val}}.
 
     obj_specs — список (obj, skip) managed-объектов; type_specs — список
@@ -172,6 +175,8 @@ def _batch_props(content, obj_specs, type_specs):
     """
     try:
         if _PC is None or _PCS_obj is None or _PCS_prop is None:
+            if errors is not None:
+                errors.append("классы PropertyCollector не найдены в этой версии pyVmomi")
             return {}
         spec = _PC(
             objectSet=[_PCS_obj(obj=o, skip=(s or False)) for o, s in obj_specs],
@@ -182,9 +187,39 @@ def _batch_props(content, obj_specs, type_specs):
             result[obj.obj] = dict((p.name, p.val) for p in obj.propSet)
         return result
     except Exception as exc:
+        if errors is not None:
+            errors.append("%s: %s" % (type(exc).__name__, str(exc)[:120]))
         if os.environ.get("ESXI_NTP_DEBUG"):
             sys.stderr.write("DEBUG batch error: %r: %s\n" % (exc, str(exc)))
         return {}
+
+
+# Свойства, из которых строятся новые проверки. Читаются отдельным запросом:
+# одно неверное имя не должно обнулять остальные (и старые проверки).
+_OPT_PATHS = ("config.network.pnic", "config.network.vswitch", "config.network.proxySwitch",
+              "config.storageDevice.multipathInfo", "config.fileSystemVolume.mountInfo",
+              "runtime.dasHostState")
+
+
+def _batch_optional(content, hosts, paths, warn, htype=None):
+    """Необязательные свойства. Сбой пачки -> повтор по одному свойству, чтобы
+    найти неверное; его имя попадает в warn (-> элемент "Collector warnings")."""
+    htype = htype or vim.HostSystem
+    objs = [(h, False) for h in hosts]
+    errs = []
+    res = _batch_props(content, objs, [(htype, list(paths))], errs)
+    if not errs:
+        return res
+    out = {}
+    for p in paths:
+        e = []
+        r = _batch_props(content, objs, [(htype, [p])], e)
+        if e:
+            warn.append("свойство %s недоступно: %s" % (p, e[0]))
+            continue
+        for h, v in r.items():
+            out.setdefault(h, {}).update(v)
+    return out
 
 
 def _vmk_addrs(vnics):
@@ -265,8 +300,46 @@ def _ntp_offsets(vc_now, items, workers=8, clock=time.monotonic):
         except Exception:
             return key, None
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+    ex = ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
         return {k: v for k, v in ex.map(one, items) if v is not None}
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
+
+def _ntp_configured(d, ntp_props):
+    """1/0 — NTP настроен и ntpd запущен; None — данные хоста не прочитаны
+    (иначе ложный 0 и HIGH-тревога на пустом месте)."""
+    dts = d.get("configManager.dateTimeSystem")
+    if dts is None:
+        return None
+    info = (ntp_props.get(dts) or {}).get("dateTimeInfo")
+    known = info is not None
+    ntp = getattr(info, "ntpConfig", None) if known else None
+    if ntp is None or not getattr(ntp, "server", None):
+        # Ленивый доступ: batch мог недодать вложенные поля, дочитываем напрямую.
+        try:
+            info = dts.dateTimeInfo
+            known = True
+            ntp = getattr(info, "ntpConfig", None)
+        except Exception:
+            pass
+    if not known:
+        return None
+    cfg = 1 if (ntp and getattr(ntp, "server", None)) else 0
+    running = None
+    svc = d.get("configManager.serviceSystem")
+    if svc is not None:
+        try:
+            services = ((ntp_props.get(svc) or {}).get("service")
+                        or getattr(svc, "service", None) or [])
+        except Exception:
+            services = []
+        for s in services:
+            if getattr(s, "key", "") == "ntpd":
+                running = bool(getattr(s, "running", False))
+                break
+    return cfg if running is None else (1 if (cfg and running) else 0)
 
 
 def _fetch_slow(content, hosts):
@@ -338,6 +411,13 @@ def _fetch_slow(content, hosts):
     return out
 
 
+def _set_warn(out, warn):
+    """Предупреждения сборщика кладём в каждую запись (кэш хранит только хосты)."""
+    text = "; ".join(warn)[:500]
+    for rec in out.values():
+        rec["warn"] = text
+
+
 def _fetch(vc, user, pwd):
     """{<имя>: {'configured','vmk','storage','dns','power','ip','ts'}} — все хосты vCenter.
 
@@ -369,7 +449,8 @@ def _fetch(vc, user, pwd):
         finally:
             view.Destroy()
 
-        # Batch №1: инвентарные поля всех хостов + ссылки на managed-объекты.
+        warn = []
+        # Batch №1: основные поля всех хостов + ссылки на managed-объекты.
         props = _batch_props(
             content,
             [(h, False) for h in hosts],
@@ -380,18 +461,21 @@ def _fetch(vc, user, pwd):
                 "config.storageDevice.hostBusAdapter",
                 "config.powerSystemInfo.currentPolicy",
                 "configManager.dateTimeSystem", "configManager.serviceSystem",
-                "configManager.networkSystem",
-                "config.network.pnic", "config.network.vswitch",
-                "config.network.proxySwitch",
-                "config.storageDevice.multipathInfo",
-                "config.fileSystemVolume.mountInfo",
-                "runtime.dasHostState"])])
+                "configManager.networkSystem"])], warn)
 
         # Fallback: если batch-PropertyCollector недоступен (старая версия
         # pyVmomi) и мы не собрали свойства ни для одного хоста — используем
         # похостовое чтение (как в исходной рабочей версии скрипта).
         if not props and hosts:
-            return _fetch_slow(content, hosts)
+            warn.append("batch PropertyCollector недоступен: медленный режим, "
+                        "сеть/пути/HA/датасторы/время не собираются")
+            out = _fetch_slow(content, hosts)
+            _set_warn(out, warn)
+            return out
+
+        # Batch №1b: свойства новых проверок (сбой одного не ломает остальные).
+        for h, v in _batch_optional(content, hosts, _OPT_PATHS, warn).items():
+            props.setdefault(h, {}).update(v)
 
         # Собираем все ссылки на managed-объекты для второго batch'а.
         refs = {}
@@ -454,41 +538,8 @@ def _fetch(vc, user, pwd):
                 # Данных config.* нет: проверки вернут ошибку, а не 0.
                 rec["error"] = "состояние хоста: %s" % state
 
-            # NTP: protocol NTP + серверы + служба ntpd.
-            running = None
-            try:
-                dts = d.get("configManager.dateTimeSystem")
-                cfg = 0
-                if dts is not None:
-                    info = (ntp_props.get(dts) or {}).get("dateTimeInfo")
-                    ntp = getattr(info, "ntpConfig", None) if info is not None else None
-                    if ntp is None or not getattr(ntp, "server", None):
-                        # Ленивый доступ: batch-запрос может недодать вложенные
-                        # поля (как spec.ip у vmk), дочитываем напрямую.
-                        try:
-                            info = dts.dateTimeInfo
-                            ntp = getattr(info, "ntpConfig", None)
-                        except Exception:
-                            ntp = None
-                    cfg = 1 if (ntp and getattr(ntp, "server", None)) else 0
-            except Exception:
-                cfg = 0
-            try:
-                svc = d.get("configManager.serviceSystem")
-                if svc is not None:
-                    services = (ntp_props.get(svc) or {}).get("service") or []
-                    if not services:
-                        try:
-                            services = getattr(svc, "service", None) or []
-                        except Exception:
-                            services = []
-                    for s in services:
-                        if getattr(s, "key", "") == "ntpd":
-                            running = bool(getattr(s, "running", False))
-                            break
-            except Exception:
-                pass
-            rec["configured"] = cfg if running is None else (1 if (cfg and running) else 0)
+            # NTP: протокол NTP + серверы + служба ntpd (None = не прочитано).
+            rec["configured"] = _ntp_configured(d, ntp_props)
 
             # VMkernel adapters: настроенные интерфейсы с IP (не 0.0.0.0)
             try:
@@ -558,6 +609,7 @@ def _fetch(vc, user, pwd):
             rec["ip"] = rec["mgmt_ip"] or (rec["vmk"][0] if rec.get("vmk") else None)
             name = d.get("summary.config.name") or d.get("name") or host.name
             out[name] = rec
+        _set_warn(out, warn)
         if os.environ.get("ESXI_NTP_DEBUG"):
             sys.stderr.write("DEBUG hosts:\n%s\n" % json.dumps(
                 out, ensure_ascii=False, indent=1))
@@ -591,6 +643,18 @@ def _read_cache(cf, ttl=None):
     return fresh
 
 
+def _carry_lld(fresh, prev):
+    """Хосту не в connected нечего прочитать: берём из прошлого кэша последние
+    известные порты/свитчи, чтобы строки LLD не пропадали при кратком обрыве
+    (иначе их элементы отключаются и включаются заново)."""
+    for name, rec in fresh.items():
+        old = prev.get(name)
+        if old and rec.get("state") not in (None, "connected"):
+            for k in ("pnic", "sw"):
+                if not rec.get(k) and old.get(k):
+                    rec[k] = old[k]
+
+
 def _get_data(vc, user, pwd, ttl=None):
     """Данные хостов: из кэша, при устаревании — опрос vCenter с записью кэша.
 
@@ -603,9 +667,13 @@ def _get_data(vc, user, pwd, ttl=None):
         fresh = _read_cache(cf, ttl)
         if fresh:
             return fresh
-    lock = open(cf + ".lock", "w")
+    lock = None
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            lock = os.fdopen(os.open(cf + ".lock", os.O_CREAT | os.O_RDWR, 0o600), "w")
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except OSError:
+            pass     # без блокировки (возможен лишний опрос vCenter), но не падаем
         if not refresh:
             fresh = _read_cache(cf, ttl)  # кто-то обновил, пока ждали блокировку
             if fresh:
@@ -617,6 +685,7 @@ def _get_data(vc, user, pwd, ttl=None):
             sys.stderr.write("ERROR(connect): %s: %s | vc=%r parsed_host=%r parsed_port=%r\n"
                              % (exc_type.__name__, exc, vc, *_parse_vc(vc)))
             sys.exit(1)
+        _carry_lld(fresh, _read_cache(cf, float("inf")))
         try:
             fd, tmp = tempfile.mkstemp(prefix=os.path.basename(cf) + ".",
                                        dir=os.path.dirname(cf))
@@ -627,7 +696,8 @@ def _get_data(vc, user, pwd, ttl=None):
             pass
         return fresh
     finally:
-        lock.close()
+        if lock is not None:
+            lock.close()
 
 
 def _run_discover(vc, user, pwd):
@@ -642,11 +712,26 @@ def _run_discover(vc, user, pwd):
     return
 
 
+def _add_rows(out, name, rec, values):
+    """Строки LLD портов/свитчей; значения — только для connected хоста."""
+    if rec.get("pnic"):
+        if values:
+            out["pnic"][name] = rec["pnic"]
+        out["lld"]["pnic"] += [{"{#ESXINAME}": name, "{#NIC}": n}
+                               for n in sorted(rec["pnic"])]
+    if rec.get("sw"):
+        if values:
+            out["sw"][name] = rec["sw"]
+        out["lld"]["sw"] += [{"{#ESXINAME}": name, "{#VSWITCH}": n}
+                             for n in sorted(rec["sw"])]
+
+
 def _build_collect(fresh, extra):
     """Компактный JSON для шаблона. Недоступные значения опускаются (не null)."""
     dns_x, pwr_x = list(extra[0:2]), list(extra[2:3])
     out = {"v": 2, "ts": int(time.time()), "cnt": len(fresh),
            "hosts": {}, "pnic": {}, "sw": {},
+           "warn": next((r["warn"] for r in fresh.values() if r.get("warn")), ""),
            "lld": {"hosts": [], "pnic": [], "sw": []}}
     for name, rec in sorted(fresh.items()):
         out["lld"]["hosts"].append({
@@ -656,6 +741,7 @@ def _build_collect(fresh, extra):
         # Mode (вывод из кластера, обслуживание). Подавитель для всех триггеров.
         if rec.get("state") not in (None, "connected"):
             out["hosts"][name] = {"state": rec["state"], "alert": 0}
+            _add_rows(out, name, rec, values=False)   # строки LLD сохраняем
             continue
         h = {"state": "connected", "alert": 0 if rec.get("mm") else 1}
         for key, mode, ex in (("ntp", "ntp", []), ("vmk", "vmk", []),
@@ -675,14 +761,7 @@ def _build_collect(fresh, extra):
             h["ha"] = rec["ha"]
             h["ha_ok"] = 0 if rec["ha"].lower() in _HA_BAD else 1
         out["hosts"][name] = h
-        if rec.get("pnic"):
-            out["pnic"][name] = rec["pnic"]
-            out["lld"]["pnic"] += [{"{#ESXINAME}": name, "{#NIC}": n}
-                                   for n in sorted(rec["pnic"])]
-        if rec.get("sw"):
-            out["sw"][name] = rec["sw"]
-            out["lld"]["sw"] += [{"{#ESXINAME}": name, "{#VSWITCH}": n}
-                                 for n in sorted(rec["sw"])]
+        _add_rows(out, name, rec, values=True)
     return out
 
 
@@ -782,7 +861,9 @@ def _find_host(fresh, key):
 def _on_deadline(signum, frame):
     sys.stderr.write("ERROR: превышен общий лимит времени %d c (ESXI_DEADLINE)\n"
                      % _DEADLINE)
-    sys.exit(1)
+    sys.stderr.flush()
+    # Жёсткий выход: SystemExit дождался бы потоков пула и всех задач в очереди.
+    os._exit(1)
 
 
 def main():

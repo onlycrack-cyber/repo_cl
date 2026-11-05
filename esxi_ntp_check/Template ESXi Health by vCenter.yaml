@@ -88,6 +88,39 @@ zabbix_export:
                   value: 'vcenter'
                 - tag: scope
                   value: 'esxi-health'
+        - uuid: 20ffa3f65b4249bcb008e6f0f5608764
+          name: 'Collector warnings'
+          type: DEPENDENT
+          key: 'esxi.collect.warn'
+          delay: '0'
+          value_type: TEXT
+          history: 7d
+          trends: '0'
+          description: 'Предупреждения сборщика: какие свойства vCenter недоступны (неверный путь, права) или что скрипт работает в медленном режиме. Пусто = всё в порядке.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.warn'
+          master_item:
+            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          tags:
+            - tag: component
+              value: 'vcenter'
+            - tag: scope
+              value: 'esxi-health'
+          triggers:
+            - uuid: fd02bc1448c24e06bbea2e661c64509a
+              expression: 'length(/Template ESXi Health by vCenter/esxi.collect.warn)>0'
+              name: 'Collector reports missing vCenter data'
+              event_name: 'Collector reports missing vCenter data ({HOST.NAME})'
+              priority: WARNING
+              description: 'Скрипт не смог прочитать часть данных vCenter (см. значение элемента "Collector warnings"): часть проверок не обновляется.'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: 'vcenter'
+                - tag: scope
+                  value: 'esxi-health'
       discovery_rules:
         - uuid: 8fec4e4cf4c54907a6397429d35a8757
           name: 'ESXi hosts discovery'
