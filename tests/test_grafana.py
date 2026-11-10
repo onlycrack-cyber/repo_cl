@@ -1,7 +1,7 @@
 """Checks the Grafana dashboards against their Zabbix templates.
 
 grafana/hpe-3par-*.json against the HPE SSMC template, vmware/nsx/grafana/nsx-health.json
-against "VMware NSX by HTTP".
+against "VMware NSX by HTTP", esxi_ntp_check/grafana/esxi-health.json against "Template ESXi Health by vCenter".
 
 Every item filter in the dashboard must match at least one item or item
 prototype name of the template, so renaming an item in the template cannot
@@ -18,6 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-zabbix.json')
 HEALTH_DASHBOARD = os.path.join(ROOT, 'grafana', 'hpe-3par-health.json')
 TEMPLATE = os.path.join(ROOT, 'zbx_export_templates_hpe_ssmc.yaml')
+ESXI_DASHBOARD = os.path.join(ROOT, 'esxi_ntp_check', 'grafana', 'esxi-health.json')
+ESXI_TEMPLATE = os.path.join(ROOT, 'esxi_ntp_check', 'Template ESXi Health by vCenter.yaml')
 NSX_DASHBOARD = os.path.join(ROOT, 'vmware', 'nsx', 'grafana', 'nsx-health.json')
 NSX_TEMPLATE = os.path.join(ROOT, 'vmware', 'nsx', 'zbx_template_vmware_nsx.yaml')
 
@@ -34,6 +36,7 @@ NSX_LLD_SAMPLES = {
     '{#ALARM.EVENT}': 'Edge Node Down', '{#ALARM.NODE}': 'edge-02', '{#CERT.NAME}': 'mgr-cluster-api',
     '{#LIC.NAME}': 'NSX Enterprise Plus', '{#LIC.KEY}': '*****E1234',
 }
+ESXI_LLD_SAMPLES = {'{#ESXINAME}': 'esx01.dc.local', '{#NIC}': 'vmnic0', '{#VSWITCH}': 'vSwitch0'}
 
 
 def template_item_names(template=TEMPLATE, samples=None):
@@ -208,7 +211,7 @@ class NsxHealthDashboardTests(DashboardTests):
         # Tunnel status UNKNOWN (0) is normal for a host without overlay workloads.
         tile = next(p for p in self.panels if p['title'] == 'ESXi: туннели')
         conds = {(f['config']['id'], f['config']['options']['value'])
-                 for f in tile['transformations'][1]['options']['filters']}
+                 for f in next(tr for tr in tile['transformations'] if tr['id'] == 'filterByValue')['options']['filters']}
         self.assertEqual(conds, {('notEqual', 1), ('notEqual', 0)})
 
     def test_thresholds_match_template_defaults(self):
@@ -239,3 +242,85 @@ class NsxHealthDashboardTests(DashboardTests):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EsxiHealthDashboardTests(DashboardTests):
+    dashboard_file = ESXI_DASHBOARD
+    template_file = ESXI_TEMPLATE
+    lld_samples = ESXI_LLD_SAMPLES
+
+    def test_generated_file_is_committed(self):
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'esxi.json')
+            subprocess.run([sys.executable, os.path.join(ROOT, 'esxi_ntp_check', 'tools', 'gen_esxi_dashboard.py'),
+                            out], check=True, stdout=subprocess.DEVNULL)
+            with open(out) as fresh, open(ESXI_DASHBOARD) as committed:
+                self.assertEqual(fresh.read(), committed.read(), 'regenerate esxi_ntp_check/grafana/esxi-health.json')
+
+    def test_traffic_lights_cover_every_check(self):
+        titles = [p['title'] for p in self.panels if p['gridPos']['y'] < 11]
+        for area in ('Хостов в vCenter', 'Сборщик: предупреждения', 'Алерты выключены', 'NTP не работает',
+                     'Смещение времени', 'DNS', 'Power policy', 'VMkernel', 'Storage-адаптеры',
+                     'Dead-пути к хранилищу', 'Датасторы недоступны', 'HA-агент', 'Аплинки: линк down',
+                     'vSwitch без аплинков'):
+            self.assertIn(area, titles)
+
+    def test_host_alert_flag_filter_does_not_catch_uplink_or_vswitch_flags(self):
+        # The three discovery rules each have an "Alerting enabled for ..." item; only the per-host one counts.
+        flt = next(p for p in self.panels if p['title'] == 'Алерты выключены')['targets'][0]['item']['filter']
+        hits = [n for n in self.names if n.startswith('Alerting enabled for') and item_matches(flt, n)]
+        self.assertEqual(hits, ['Alerting enabled for esx01.dc.local'])
+
+    def test_time_offset_thresholds_match_template_defaults(self):
+        with open(ESXI_TEMPLATE) as fh:
+            macros = {m['macro']: m.get('value') for m in
+                      yaml.safe_load(fh)['zabbix_export']['templates'][0]['macros']}
+        tile = next(p for p in self.panels if p['title'] == 'Смещение времени' and p['type'] == 'stat')
+        limits = {f['config']['options']['value'] for f in next(tr for tr in tile['transformations'] if tr['id'] == 'filterByValue')['options']['filters']}
+        self.assertEqual(limits, {-int(macros['{$ESXI.NTP.OFFSET.WARN}']), int(macros['{$ESXI.NTP.OFFSET.WARN}'])})
+        series = next(p for p in self.panels if p['title'].startswith('Смещение времени относительно'))
+        steps = {s['value'] for s in series['fieldConfig']['defaults']['thresholds']['steps']} - {None}
+        high = int(macros['{$ESXI.NTP.OFFSET.HIGH}'])
+        self.assertEqual(steps, {-high, -int(macros['{$ESXI.NTP.OFFSET.WARN}']),
+                                 int(macros['{$ESXI.NTP.OFFSET.WARN}']), high})
+
+    def test_collector_warnings_use_text_mode(self):
+        p = next(p for p in self.panels if p['title'] == 'Сборщик: предупреждения')
+        self.assertEqual(p['targets'][0]['queryType'], '2')
+        # "OK" is what the collector sends when there is nothing to report (never an empty string)
+        mapping = p['fieldConfig']['defaults']['mappings'][0]
+        self.assertEqual((mapping['type'], list(mapping['options'])), ('value', ['OK']))
+
+    def test_small_warnings_tile_only_says_ok_or_present(self):
+        p = next(p for p in self.panels if p['title'] == 'Сборщик: предупреждения')
+        maps = p['fieldConfig']['defaults']['mappings']
+        self.assertEqual([m['type'] for m in maps], ['value', 'regex'])
+        self.assertEqual(maps[1]['options']['pattern'], '.+')       # any other text = there are warnings
+
+    def test_full_warning_text_has_its_own_wide_panel(self):
+        p = next(p for p in self.panels if p['title'] == 'Сборщик: текст предупреждения')
+        self.assertEqual((p['gridPos']['w'], p['targets'][0]['queryType'], p['options']['textMode']),
+                         (24, '2', 'value'))
+
+    def test_several_vcenters_can_be_shown_together(self):
+        host = next(v for v in self.dash['templating']['list'] if v['name'] == 'host')
+        self.assertTrue(host['multi'] and host['includeAll'])
+
+    def test_texts_follow_the_template_macros(self):
+        with open(ESXI_TEMPLATE) as fh:
+            macros = {m['macro']: m.get('value') for m in
+                      yaml.safe_load(fh)['zabbix_export']['templates'][0]['macros']}
+        desc = {p['title']: p['description'] for p in self.panels if p['type'] != 'state-timeline'}
+        self.assertIn(macros['{$ESXI.ALERT.HOLDDOWN}'], desc['Алерты по хостам'])
+        self.assertIn(macros['{$ESXI.POWER.POLICY}'], next(
+            p['description'] for p in self.panels if p['title'] == 'Power policy' and p['gridPos']['y'] < 11))
+        self.assertIn('±%s с предупреждение' % macros['{$ESXI.NTP.OFFSET.WARN}'],
+                      desc['Смещение времени относительно vCenter'])
+
+    def test_generator_uses_only_the_shared_helpers(self):
+        with open(os.path.join(ROOT, 'esxi_ntp_check', 'tools', 'gen_esxi_dashboard.py')) as fh:
+            self.assertNotIn('gen_nsx_dashboard', fh.read())
+

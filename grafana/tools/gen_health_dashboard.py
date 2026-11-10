@@ -106,14 +106,18 @@ def stat(title, targets, desc='', maps=None, unit='none', thresh=None, calcs=('l
             'transformations': list(transformations)}
 
 
-def problems_tile(title, item, bad, desc, unit_word='пробл.'):
-    """Number of objects not in the normal state; green "OK" when there are none."""
+def problems_tile(title, item, bad, desc, unit_word='пробл.', colour=RED, keep=None):
+    """Number of objects not in the normal state; green "OK" when there are none.
+
+    bad: conditions for keep_rows(); keep: a ready filterByValue transformation instead (e.g. "outside a range");
+    colour: colour of the tile once at least one object is counted.
+    """
     return stat(title, [query('A', item)], desc,
                 maps=[{'type': 'value', 'options': {'0': {'text': 'OK', 'color': GREEN, 'index': 0}}},
                       {'type': 'special', 'options': {'match': 'null+nan', 'result': {
                           'text': 'OK', 'color': GREEN, 'index': 1}}}],
-                unit='suffix: ' + unit_word, thresh=thresholds((GREEN, None), (RED, 1)), calcs=('count',),
-                fields='/^Last/', transformations=[LAST_PER_ROW, keep_rows(*bad)], no_value='OK',
+                unit='suffix: ' + unit_word, thresh=thresholds((GREEN, None), (colour, 1)), calcs=('count',),
+                fields='/^Last/', transformations=[LAST_PER_ROW, keep or keep_rows(*bad)], no_value='OK',
                 value_size=40, title_size=18)
 
 
@@ -151,6 +155,26 @@ def timeseries(title, item, desc, unit, rename_regex, rename_to='$1', thresh_lin
             'options': {'legend': {'showLegend': True, 'displayMode': 'list', 'placement': 'bottom'},
                         'tooltip': {'mode': 'multi', 'sort': 'desc'}},
             'transformations': [rename(rename_regex, rename_to)]}
+
+
+def bars(title, item, name_regex, desc, unit, thresh, max_=None, sort_asc=False):
+    """Horizontal bar per object, coloured by the thresholds; optionally sorted by the last value."""
+    defaults = {'unit': unit, 'min': 0, 'decimals': 0 if unit.startswith('suffix') else 1,
+                'color': {'mode': 'thresholds'}, 'thresholds': thresh}
+    if max_ is not None:
+        defaults['max'] = max_
+    transformations = [rename(name_regex)]
+    reduce_options = {'calcs': ['lastNotNull'], 'fields': '', 'values': False}
+    if sort_asc:
+        # One row per object, shortest first: the one that runs out next is on top.
+        transformations += [LAST_PER_ROW, {'id': 'sortBy', 'options': {'sort': [{'field': 'Last *', 'desc': False}]}}]
+        reduce_options = {'calcs': ['lastNotNull'], 'fields': '/^Last/', 'values': True}
+    return {'type': 'bargauge', 'title': title, 'description': desc, 'targets': [query('A', item)],
+            'fieldConfig': {'defaults': defaults, 'overrides': []},
+            'options': {'reduceOptions': reduce_options, 'orientation': 'horizontal', 'displayMode': 'basic',
+                        'valueMode': 'color', 'namePlacement': 'left', 'showUnfilled': True, 'sizing': 'auto',
+                        'minVizHeight': 16, 'maxVizHeight': 24, 'legend': {'showLegend': False}},
+            'transformations': transformations}
 
 
 def build():

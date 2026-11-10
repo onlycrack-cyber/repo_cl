@@ -173,6 +173,13 @@ ESXi transport nodes и GENEVE-туннели, Edge-кластеры и Edge-н�
 Tier-0/Tier-1, BGP-соседи Tier-0, сроки действия сертификатов и лицензий и проброс алармов NSX в проблемы Zabbix, плюс дашборд Grafana «карта здоровья NSX»:
 [vmware/nsx/](vmware/nsx/README.md).
 
+## VMware ESXi через vCenter: конфигурация и состояние хостов
+
+Шаблон **Template ESXi Health by vCenter** (скрипт на pyVmomi, один сборщик + зависимые элементы и LLD): NTP и смещение
+времени, DNS, power policy, VMkernel, адаптеры хранилища, dead-пути, датасторы, HA-агент, аплинки и vSwitch; алерты
+подавляются для хостов в Maintenance Mode. Дашборд Grafana «VMware ESXi — здоровье хостов (vCenter)»:
+[esxi_ntp_check/](esxi_ntp_check/README.md).
+
 ## Скрипт
 
 ```
