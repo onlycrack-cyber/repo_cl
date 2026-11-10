@@ -151,6 +151,87 @@
         "current": {},
         "includeAll": true,
         "multi": true
+      },
+      {
+        "name": "tz",
+        "label": "Границы суток",
+        "type": "custom",
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "query": "UTC+0 : 24h, UTC+1 : 1h, UTC+2 : 2h, UTC+3 : 3h, UTC+4 : 4h, UTC+5 : 5h, UTC+6 : 6h, UTC+7 : 7h, UTC+8 : 8h, UTC+9 : 9h, UTC+10 : 10h, UTC+11 : 11h, UTC+12 : 12h",
+        "current": {
+          "selected": true,
+          "text": "UTC+3",
+          "value": "3h"
+        },
+        "options": [
+          {
+            "selected": false,
+            "text": "UTC+0",
+            "value": "24h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+1",
+            "value": "1h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+2",
+            "value": "2h"
+          },
+          {
+            "selected": true,
+            "text": "UTC+3",
+            "value": "3h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+4",
+            "value": "4h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+5",
+            "value": "5h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+6",
+            "value": "6h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+7",
+            "value": "7h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+8",
+            "value": "8h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+9",
+            "value": "9h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+10",
+            "value": "10h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+11",
+            "value": "11h"
+          },
+          {
+            "selected": false,
+            "text": "UTC+12",
+            "value": "12h"
+          }
+        ]
       }
     ]
   },
@@ -711,8 +792,64 @@
                 "defaultParams": []
               },
               "params": [
-                "1d",
+                "1h",
                 "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "$tz"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "sum"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "+$tz"
               ],
               "added": false
             },
@@ -729,7 +866,7 @@
                 "defaultParams": []
               },
               "params": [
-                "0.024"
+                "0.001"
               ],
               "added": false
             }
@@ -791,7 +928,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "description": "Сумма суточного потребления за выбранный период (средняя мощность за сутки × 24 ч).",
+      "description": "Сумма потребления за выбранный период: средняя мощность каждого часа × 1 ч. Неполные сутки по краям периода считаются только за имеющиеся часы.",
       "id": 5,
       "gridPos": {
         "x": 14,
@@ -1418,8 +1555,64 @@
                 "defaultParams": []
               },
               "params": [
-                "1d",
+                "1h",
                 "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "$tz"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "sum"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "+$tz"
               ],
               "added": false
             },
@@ -1436,7 +1629,7 @@
                 "defaultParams": []
               },
               "params": [
-                "0.024"
+                "0.001"
               ],
               "added": false
             },
@@ -1515,8 +1708,64 @@
                 "defaultParams": []
               },
               "params": [
-                "1d",
+                "1h",
                 "avg"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "$tz"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "groupBy",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  },
+                  {
+                    "name": "p1",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "1d",
+                "sum"
+              ],
+              "added": false
+            },
+            {
+              "def": {
+                "name": "timeShift",
+                "category": "",
+                "params": [
+                  {
+                    "name": "p0",
+                    "type": "string"
+                  }
+                ],
+                "defaultParams": []
+              },
+              "params": [
+                "+$tz"
               ],
               "added": false
             },
@@ -1533,7 +1782,7 @@
                 "defaultParams": []
               },
               "params": [
-                "0.024"
+                "0.001"
               ],
               "added": false
             },
@@ -1696,7 +1945,7 @@
           "sort": "desc"
         }
       },
-      "description": "кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — выбранный период, пунктир — тот же день год назад.",
+      "description": "кВт·ч за сутки = сумма почасовой средней мощности. Границы суток — по часовому поясу из переменной «Границы суток» (по умолчанию UTC+3). Столбцы — выбранный период, пунктир — тот же день год назад.",
       "id": 9,
       "gridPos": {
         "x": 0,

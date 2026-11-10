@@ -106,10 +106,57 @@ class TemplateTests(unittest.TestCase):
         for key, params in refs:
             self.assertTrue(params.startswith('*,*'), key + '[' + params + ']')
 
+    @staticmethod
+    def is_helper(key):
+        return key.split('[')[0].endswith(('.hist', '.tl'))
+
     def test_long_trends_for_year_over_year(self):
         for p in self.protos:
-            if p.get('value_type', 'FLOAT') in ('FLOAT', 'UNSIGNED'):
+            if p.get('value_type', 'FLOAT') in ('FLOAT', 'UNSIGNED') and not self.is_helper(p['key']):
                 self.assertEqual(p.get('trends'), '730d', p['key'])
+
+    def test_timeleft_is_computed_once_per_forecast_in_a_helper_item(self):
+        # Three copies of timeleft() in one formula tripled the history reads of every evaluation.
+        by_key = {p['key']: p for p in self.protos}
+        for p in self.protos:
+            n = p['params'].count('timeleft(') if 'params' in p else 0
+            self.assertLessEqual(n, 1, p['key'])
+            if p['key'].split('[')[0].endswith('.daysleft'):
+                self.assertEqual(n, 0, p['key'])
+                hist = p['key'].replace('.daysleft', '.hist')
+                tl = p['key'].replace('.daysleft', '.tl')
+                self.assertIn(hist, by_key)
+                self.assertIn(tl, by_key)
+                self.assertIn(tl, p['params'])
+                self.assertEqual(by_key[tl]['params'].count('timeleft('), 1, tl)
+                self.assertNotIn('count(', p['params'])
+        for key in by_key:
+            if self.is_helper(key):
+                self.assertEqual(by_key[key].get('trends'), '0', key)
+
+    def test_history_check_survives_gaps_and_short_item_history(self):
+        # trendcount over the whole period: one missing day does not reset it, and trends outlive a
+        # short history setting of the source item. The shift is in days like the period.
+        for p in self.protos:
+            if p['key'].split('[')[0].endswith('.hist'):
+                self.assertRegex(p['params'], r'^\(trendcount\(//.*,\{\$VMW\.FORECAST\.PERIOD\}:now/d-'
+                                              r'\{\$VMW\.FORECAST\.MIN\.HISTORY\}\)>0\)$', p['key'])
+        self.assertNotIn(' count(//', self.text)
+
+    def test_forecast_problems_do_not_recover_on_no_forecast(self):
+        # -1 means "no forecast right now": closing and reopening a real problem would notify twice.
+        for p in self.protos:
+            for t in p.get('trigger_prototypes', []):
+                self.assertNotIn('<0', t['recovery_expression'], t['name'])
+
+    def test_clusters_with_quote_or_backslash_are_not_discovered(self):
+        rule = next(r for r in self.tpl['discovery_rules'] if r['key'].startswith('vmware.cluster'))
+        cond = rule['filter']['conditions'][0]
+        self.assertEqual((cond['macro'], cond['operator']), ('{#CLUSTER.NAME}', 'NOT_MATCHES_REGEX'))
+        for bad in ('Prod "A"', 'a\\b'):
+            self.assertTrue(re.search(cond['value'], bad), bad)
+        for fine in ('Prod-A', 'Кластер 1', "it's"):
+            self.assertFalse(re.search(cond['value'], fine), fine)
 
     def test_generator_output_is_committed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -223,6 +270,59 @@ class DashboardTests(unittest.TestCase):
                 cells = {(x, y) for x in range(g['x'], g['x'] + g['w']) for y in range(g['y'], g['y'] + g['h'])}
                 self.assertFalse(cells & taken, (fname, p['title']))
                 taken |= cells
+
+    def test_baked_in_thresholds_default_to_the_template_macros(self):
+        sys.path.insert(0, os.path.join(VMW, 'tools'))
+        import gen_grafana_dashboards as gen
+        macros = {m['macro']: m['value'] for m in load_template()['macros']}
+        self.assertEqual(gen.CFG, {
+            'crit': int(macros['{$VMW.FORECAST.CRIT}']), 'warn': int(macros['{$VMW.FORECAST.WARN}']),
+            'horizon': int(macros['{$VMW.FORECAST.HORIZON}'].rstrip('d')),
+            'ds_pfree_min': int(macros['{$VMW.DS.PFREE.MIN}']), 'cpu_max': int(macros['{$VMW.CL.CPU.MAX}']),
+            'mem_max': int(macros['{$VMW.CL.MEM.MAX}'])})
+
+    def test_no_placeholder_left_and_overridden_thresholds_reach_the_dashboards(self):
+        for d in self.dashes.values():
+            self.assertNotRegex(json.dumps(d, ensure_ascii=False), r'@[A-Z]+@')
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run([sys.executable, os.path.join(VMW, 'tools', 'gen_grafana_dashboards.py'), tmp,
+                            '--crit', '60', '--warn', '120', '--horizon', '180', '--ds-pfree-min', '15',
+                            '--cpu-max', '70', '--mem-max', '90'], check=True, stdout=subprocess.DEVNULL)
+            with open(os.path.join(tmp, 'vmware-datastores.json')) as fh:
+                text = fh.read()
+            with open(os.path.join(tmp, 'vmware-cpu-memory.json')) as fh:
+                cpu = fh.read()
+        self.assertIn('Через 180 дн.', text)
+        self.assertIn('Меньше 60 дней', text)
+        self.assertIn('(15 %)', text)
+        self.assertIn('(70 %)', cpu)
+        self.assertIn('(90 %)', cpu)
+        self.assertNotIn('Через 90 дн', text)
+
+    def test_item_regexes_escape_everything_special(self):
+        sys.path.insert(0, os.path.join(VMW, 'tools'))
+        import gen_grafana_dashboards as gen
+        self.assertEqual(gen.rx('Datastore [$datastore]: used, p.p.'),
+                         '/^Datastore \\[($datastore)\\]: used, p\\.p\\.$/')
+        rx_ = gen.rx('used/free ratio {avg}|max *')
+        self.assertEqual(rx_, '/^used\\/free ratio \\{avg\\}\\|max \\*$/')
+        self.assertTrue(re.search(rx_[1:-1], 'used/free ratio {avg}|max *'))
+        self.assertFalse(re.search(rx_[1:-1], 'usedXfree ratio avgmax'))
+
+    def test_energy_is_summed_per_hour_on_local_day_boundaries(self):
+        power = self.dashes['vmware-power.json']
+        tz = next(v for v in power['templating']['list'] if v['name'] == 'tz')
+        self.assertEqual(tz['current']['value'], '3h')
+        # a zero shift is rejected by the plugin: UTC+0 is a whole day, which keeps the UTC boundaries
+        self.assertEqual({o['text']: o['value'] for o in tz['options']}['UTC+0'], '24h')
+        self.assertNotIn('0h', [o['value'] for o in tz['options']])
+        bars = next(p for p in power['panels'] if p['title'].startswith('Энергия по дням'))
+        funcs = [(f['def']['name'], f['params']) for f in bars['targets'][0]['functions']]
+        self.assertEqual(funcs, [('sumSeries', []), ('groupBy', ['1h', 'avg']), ('timeShift', ['$tz']),
+                                 ('groupBy', ['1d', 'sum']), ('timeShift', ['+$tz']), ('scale', ['0.001']),
+                                 ('setAlias', ['за период'])])
+        # no daily mean times 24: it overstated the partial days at both ends of the period
+        self.assertNotIn('0.024', json.dumps(power))
 
     def test_generator_output_is_committed(self):
         with tempfile.TemporaryDirectory() as tmp:

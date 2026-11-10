@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates the VMware capacity dashboards for Grafana (Zabbix plugin 4.x/5.x).
 
-    python3 vmware/tools/gen_grafana_dashboards.py vmware/grafana
+    python3 vmware/tools/gen_grafana_dashboards.py vmware/grafana [--crit N --warn N --horizon DAYS ...]
 
 Writes vmware-datastores.json, vmware-cpu-memory.json, vmware-power.json.
 
@@ -11,9 +11,10 @@ Data sources (all through the Zabbix data source):
 * forecasts, exhaustion dates and year-over-year numbers per datastore/cluster
   come from the "VMware capacity planning" template items on the vCenter host.
 """
+import argparse
 import json
 import os
-import sys
+import re
 
 DS = {'type': 'alexanderzobnin-zabbix-datasource', 'uid': '${datasource}'}
 REFS = 'ABCDEFGHIJKLMNOP'
@@ -21,6 +22,41 @@ OK, WARN, HIGH, CRIT, GREY, BLUE = 'green', 'orange', 'red', 'dark-red', 'text',
 LAST_YEAR = 'год назад'
 NOW_NAME = 'за период'
 VCGROUP_RX = '/^(?!.*\\((?:hypervisor|vm)\\)$)(?!Templates)(?!Discovered hosts$).+/'
+
+# Thresholds baked into the dashboards. Grafana cannot read Zabbix macros, so these are the defaults of
+# the template macros {$VMW.FORECAST.CRIT/WARN/HORIZON}, {$VMW.DS.PFREE.MIN}, {$VMW.CL.CPU.MAX} and
+# {$VMW.CL.MEM.MAX}; after overriding a macro, regenerate the dashboards with the same value (see --help).
+CFG = {'crit': 30, 'warn': 90, 'horizon': 90, 'ds_pfree_min': 10, 'cpu_max': 80, 'mem_max': 85}
+
+
+def cpu_thr():
+    return thresholds((OK, None), (WARN, CFG['cpu_max'] - 10), (HIGH, CFG['cpu_max']))
+
+
+def mem_thr():
+    return thresholds((OK, None), (WARN, CFG['mem_max'] - 10), (HIGH, CFG['mem_max']))
+
+
+def pct_thr():
+    """Datastore fill: red where free space drops below {$VMW.DS.PFREE.MIN}, orange 10 points before."""
+    high = 100 - CFG['ds_pfree_min']
+    return thresholds((OK, None), (WARN, high - 10), (HIGH, high))
+
+
+def days_thr():
+    return thresholds((CRIT, None), (HIGH, CFG['crit']), (WARN, CFG['warn']), (OK, CFG['warn'] * 2))
+
+
+def fill_tokens(obj):
+    """Replaces @TOKENS@ in all texts of a dashboard with the configured values."""
+    values = {'@CRIT@': CFG['crit'], '@WARN@': CFG['warn'], '@HOR@': CFG['horizon'], '@DS@': CFG['ds_pfree_min'],
+              '@CPU@': CFG['cpu_max'], '@MEM@': CFG['mem_max'], '@DSH@': 100 - CFG['ds_pfree_min'],
+              '@DSW@': 90 - CFG['ds_pfree_min']}
+    text = json.dumps(obj, ensure_ascii=False)
+    for token, value in values.items():
+        text = text.replace(token, str(value))
+    return json.loads(text)
+
 
 # Hosts holding the data.
 VC = ('$vcgroup', '$vcenter')                               # vCenter host: stock datastores + capacity template
@@ -82,12 +118,15 @@ def used_pct_from_free():
 
 
 def rx(name):
-    """Item name -> regex for the Zabbix plugin, with $datastore/$cluster left as variables."""
-    out = name
-    for ch in '.()[]+?':
-        out = out.replace(ch, '\\' + ch)
-    return '/^' + out.replace('\\[$datastore\\]', '\\[($datastore)\\]').replace(
-        '\\[$cluster\\]', '\\[($cluster)\\]') + '$/'
+    """Item name -> regex for the Zabbix plugin, with $datastore/$cluster left as variables.
+
+    Every character special to a JavaScript regex (and the "/" delimiter) is escaped, so a name can
+    never turn into a quantifier, an alternation or a broken filter.
+    """
+    parts = re.split(r'(\$datastore|\$cluster)', name)
+    out = ''.join('(%s)' % p if p.startswith('$') else re.sub(r'([\\^$.|?*+()\[\]{}/])', r'\\\1', p)
+                  for p in parts)
+    return '/^' + out + '$/'
 
 
 # ------------------------------------------------------------------ panel helpers
@@ -152,7 +191,6 @@ DAYS_MAP = [vmap((-1, 'мало данных', GREY)), rmap(3650, 1e9, 'не р�
 DAYS = 'suffix: дн.'          # Grafana's "d" unit turns 93 days into "13 weeks"
 DATE = 'time: DD.MM.YYYY'     # date items are scaled to ms in the query (Zabbix returns seconds)
 DATE_MAP = [vmap((0, '—', GREY))]
-DAYS_THRESH = thresholds((CRIT, None), (HIGH, 30), (WARN, 90), (OK, 180))
 
 
 def panel(ptype, title, targets, desc='', defaults=None, options=None, overrides=None, transformations=None,
@@ -313,7 +351,6 @@ def plain(unit, decimals=None, mappings=()):
     return props
 
 
-PCT = thresholds((OK, None), (WARN, 80), (HIGH, 90))
 CHANGE = thresholds((OK, None), (WARN, 5), (HIGH, 15))   # growth in p.p. per period
 DAYS_MIN_PIPE = [  # nearest exhaustion across series: drop "-1 no data", sort, keep the first
     {'id': 'reduce', 'options': {'reducers': ['lastNotNull'], 'mode': 'seriesToRows', 'includeTimeField': False}},
@@ -339,6 +376,16 @@ def var_zbx(name, label, qtype, group='', host='', item='', regex='', multi=Fals
             'includeAll': include_all, 'multi': multi}
 
 
+def var_tz():
+    """Whole-hour UTC offset that decides where the days of the energy bars start (default UTC+3)."""
+    # 24h for UTC+0: a zero shift is rejected by the plugin, and a whole day keeps the UTC boundaries.
+    opts = [('UTC+%d' % h, '%dh' % (h or 24)) for h in range(0, 13)]
+    return {'name': 'tz', 'label': 'Границы суток', 'type': 'custom', 'hide': 0, 'multi': False,
+            'includeAll': False, 'query': ', '.join('%s : %s' % o for o in opts),
+            'current': {'selected': True, 'text': 'UTC+3', 'value': '3h'},
+            'options': [{'selected': v == '3h', 'text': t, 'value': v} for t, v in opts]}
+
+
 def common_vars():
     return [var_ds(),
             # Groups the VMware templates create for discovered hosts never hold the vCenter host.
@@ -348,7 +395,7 @@ def common_vars():
 
 
 def dashboard(uid, title, desc, panels, variables, time_from='now-90d', tags=()):
-    return {
+    return fill_tokens({
         'uid': uid, 'title': title, 'description': desc, 'tags': ['vmware', 'zabbix', 'capacity'] + list(tags),
         'editable': True, 'graphTooltip': 1, 'refresh': '', 'schemaVersion': 39, 'version': 1,
         'time': {'from': time_from, 'to': 'now'}, 'timepicker': {}, 'timezone': 'browser',
@@ -359,7 +406,7 @@ def dashboard(uid, title, desc, panels, variables, time_from='now-90d', tags=())
         'annotations': {'list': [{'builtIn': 1, 'datasource': {'type': 'grafana', 'uid': '-- Grafana --'},
                                   'enable': True, 'hide': True, 'iconColor': 'rgba(0, 211, 255, 1)',
                                   'name': 'Annotations & Alerts', 'type': 'dashboard'}]},
-        'templating': {'list': variables}, 'panels': panels}
+        'templating': {'list': variables}, 'panels': panels})
 
 
 # ================================================================== 1. datastores
@@ -377,14 +424,14 @@ def datastores():
     b.add(gauge('Заполненность', [named_q('A', VC, DSI('used space'), 'used', [fn('sumSeries')]),
                                   named_q('B', VC, TOTAL, 'total', [fn('sumSeries')])],
                 'Занято / ёмкость по всем выбранным датасторам.', 'percentunit',
-                thresholds((OK, None), (WARN, 0.8), (HIGH, 0.9)),
+                thresholds((OK, None), (WARN, (90 - CFG['ds_pfree_min']) / 100), (HIGH, (100 - CFG['ds_pfree_min']) / 100)),
                 LAST_EACH + [calc('fill', 'used', '/', 'total'), keep('fill')], max_=1), 4, 4, now=True)
     b.add(stat('Прирост занятого за год', [zq('A', VC, DSI('used space change over 1 year'), [fn('sumSeries')])],
                'Занятое место сейчас минус год назад (среднее за сутки). Нужны тренды старше года.', 'bytes', 1), 4, 4, now=True)
     b.add(stat('Ближайшее исчерпание', [zq('A', VC, DSI('days until free space below threshold'))],
                'Датастор, у которого раньше всех свободное место упадёт ниже порога {$VMW.DS.PFREE.MIN} '
-               '(10 %), и сколько дней до этого. Прогноз — линейный тренд за {$VMW.FORECAST.PERIOD}.',
-               DAYS, 0, DAYS_THRESH, DAYS_MAP, text_mode='value_and_name', calcs=('lastNotNull',),
+               '(@DS@ %), и сколько дней до этого. Прогноз — линейный тренд за {$VMW.FORECAST.PERIOD}.',
+               DAYS, 0, days_thr(), DAYS_MAP, text_mode='value_and_name', calcs=('lastNotNull',),
                transformations=[rename('^Datastore \\[(.*)\\]: .*$')] + DAYS_MIN_PIPE, fields='/^Last/',
                values=True), 4, 4, now=True)
 
@@ -396,10 +443,10 @@ def datastores():
         'used space change over 1 year|capacity change over 1 year)$/')),
         zq('B', VC, DSI('date free space below threshold (forecast)'), [fn('scale', '1000')])],
         '/^Datastore \\[(?<entity>.*)\\]: (?<metric>.*)$/', [
-            ('used, %', 'Занято', colored('percent', PCT, decimals=1)),
-            ('used at forecast horizon, %', 'Через 90 дней', colored('percent', PCT, decimals=1)),
+            ('used, %', 'Занято', colored('percent', pct_thr(), decimals=1)),
+            ('used at forecast horizon, %', 'Через @HOR@ дн.', colored('percent', pct_thr(), decimals=1)),
             ('days until free space below threshold', 'Дней до исчерпания',
-             colored(DAYS, DAYS_THRESH, DAYS_MAP, decimals=0)),
+             colored(DAYS, days_thr(), DAYS_MAP, decimals=0)),
             ('date free space below threshold (forecast)', 'Дата исчерпания', plain(DATE, mappings=DATE_MAP)),
             ('used change over 30 days, p.p.', 'За 30 дней, п.п.', colored('none', CHANGE, decimals=1, mode='color-text')),
             ('used change over 1 year, p.p.', 'За год, п.п.', colored('none', CHANGE, decimals=1, mode='color-text')),
@@ -407,22 +454,22 @@ def datastores():
             ('capacity change over 1 year', 'Ёмкость: изменение за год', plain('bytes', 1)),
             ('free space', 'Свободно', plain('bytes', 1)),
         ],
-        'Исчерпание — когда свободного места станет меньше {$VMW.DS.PFREE.MIN} (10 %). «Не растёт» — тренд не '
+        'Исчерпание — когда свободного места станет меньше {$VMW.DS.PFREE.MIN} (@DS@ %). «Не растёт» — тренд не '
         'ведёт к исчерпанию в ближайшие 10 лет. «Мало данных» — меньше {$VMW.FORECAST.MIN.HISTORY} истории. '
         'Изменения в процентных пунктах заполненности; положительные — рост.', 'Датастор',
         sort=('Дней до исчерпания', False)), 24, 8, now=True)
     b.add(bargauge('Дней до исчерпания', [zq('A', VC, DSI('days until free space below threshold'))],
-                   'Меньше 30 дней — красный, меньше 90 — оранжевый.', DAYS, DAYS_THRESH,
+                   'Меньше @CRIT@ дней — красный, меньше @WARN@ — оранжевый.', DAYS, days_thr(),
                    [rename('^Datastore \\[(.*)\\]: .*$')], DAYS_MAP, 0, 365, 0),
           12, 8, now=True)
-    b.add(bargauge('Заполненность через 90 дней (прогноз)', [zq('A', VC, DSI('used at forecast horizon, %'))],
+    b.add(bargauge('Заполненность через @HOR@ дн. (прогноз)', [zq('A', VC, DSI('used at forecast horizon, %'))],
                    'Линейный прогноз на {$VMW.FORECAST.HORIZON} по тренду за {$VMW.FORECAST.PERIOD}.',
                    transformations=[rename('^Datastore \\[(.*)\\]: .*$')], max_=100), 12, 8, now=True)
 
     b.row('Утилизация за период')
     b.add(timeseries('Заполненность датасторов', [zq('A', VC, FREE, used_pct_from_free())],
                      'Занято = 100 − «Free space on datastore (percentage)» из стандартного шаблона за выбранный '
-                     'период. Пунктир — 80 и 90 %.', 'percent', 1, PCT, 'dashed',
+                     'период. Пунктир — @DSW@ и @DSH@ %.', 'percent', 1, pct_thr(), 'dashed',
                      [rename('^Free space on datastore \\[(.*)\\] \\(percentage\\)$')], min_=0, max_=100, fill=0,
                      legend_calcs=('lastNotNull', 'max')), 24, 9)
     b.add(timeseries('Ёмкость датасторов', [zq('A', VC, TOTAL)],
@@ -440,7 +487,7 @@ def datastores():
                    min_=None, decimals=1), 12, 8, now=True)
     p = timeseries('$datastore за период', [
         *year_pair(VC, rx('Free space on datastore [$datastore] (percentage)'), used_pct_from_free())],
-        'Заполненность за выбранный период и за тот же период год назад (пунктир).', 'percent', 1, PCT, 'dashed',
+        'Заполненность за выбранный период и за тот же период год назад (пунктир).', 'percent', 1, pct_thr(), 'dashed',
         overrides=[now_by_name(), last_year_by_name()], min_=0, max_=100, fill=10,
         repeat='datastore', repeatDirection='h', maxPerRow=3)
     b.add(p, 8, 8)
@@ -461,17 +508,17 @@ def cpu_memory():
 
     b.row('Сводка по кластерам')
     b.add(stat('CPU, %', [zq('A', VC, CLI('CPU utilization, %'))],
-               'Средняя загрузка CPU хостов кластера.', 'percent', 1, thresholds((OK, None), (WARN, 70), (HIGH, 80)),
+               'Средняя загрузка CPU хостов кластера.', 'percent', 1, cpu_thr(),
                transformations=[CL_RENAME], graph='area'), 6, 5, now=True)
     b.add(stat('Память, %', [zq('A', VC, CLI('memory utilization, %'))],
                'Занятая память / вся память хостов кластера.', 'percent', 1,
-               thresholds((OK, None), (WARN, 75), (HIGH, 85)), transformations=[CL_RENAME], graph='area'), 6, 5, now=True)
+               mem_thr(), transformations=[CL_RENAME], graph='area'), 6, 5, now=True)
     b.add(stat('CPU: дней до порога', [zq('A', VC, CLI('days until CPU above threshold'))],
-               'Через сколько дней загрузка CPU кластера превысит {$VMW.CL.CPU.MAX} (80 %).', DAYS, 0,
-               DAYS_THRESH, DAYS_MAP, transformations=[CL_RENAME]), 6, 5, now=True)
+               'Через сколько дней загрузка CPU кластера превысит {$VMW.CL.CPU.MAX} (@CPU@ %).', DAYS, 0,
+               days_thr(), DAYS_MAP, transformations=[CL_RENAME]), 6, 5, now=True)
     b.add(stat('Память: дней до порога', [zq('A', VC, CLI('days until memory above threshold'))],
-               'Через сколько дней загрузка памяти кластера превысит {$VMW.CL.MEM.MAX} (85 %).', DAYS, 0,
-               DAYS_THRESH, DAYS_MAP, transformations=[CL_RENAME]), 6, 5, now=True)
+               'Через сколько дней загрузка памяти кластера превысит {$VMW.CL.MEM.MAX} (@MEM@ %).', DAYS, 0,
+               days_thr(), DAYS_MAP, transformations=[CL_RENAME]), 6, 5, now=True)
 
     b.row('Прогноз и планирование')
     b.add(pivot('Кластеры: прогноз', [zq('A', VC, '/^Cluster \\[($cluster)\\]: (CPU utilization, %|CPU at forecast '
@@ -482,24 +529,24 @@ def cpu_memory():
                                              '\\(forecast\\)$/', [fn('scale', '1000')])],
                 '/^Cluster \\[(?<entity>.*)\\]: (?<metric>.*)$/', [
                     ('hypervisors', 'Хостов', plain('none', 0)),
-                    ('CPU utilization, %', 'CPU', colored('percent', thresholds((OK, None), (WARN, 70), (HIGH, 80)), decimals=1)),
-                    ('CPU at forecast horizon, %', 'CPU через 90 дней', colored('percent', thresholds((OK, None), (WARN, 70), (HIGH, 80)), decimals=1)),
-                    ('days until CPU above threshold', 'CPU: дней до порога', colored(DAYS, DAYS_THRESH, DAYS_MAP, 0)),
+                    ('CPU utilization, %', 'CPU', colored('percent', cpu_thr(), decimals=1)),
+                    ('CPU at forecast horizon, %', 'CPU через @HOR@ дн.', colored('percent', cpu_thr(), decimals=1)),
+                    ('days until CPU above threshold', 'CPU: дней до порога', colored(DAYS, days_thr(), DAYS_MAP, 0)),
                     ('date CPU above threshold (forecast)', 'CPU: дата', plain(DATE, mappings=DATE_MAP)),
-                    ('memory utilization, %', 'Память', colored('percent', thresholds((OK, None), (WARN, 75), (HIGH, 85)), decimals=1)),
-                    ('memory at forecast horizon, %', 'Память через 90 дней', colored('percent', thresholds((OK, None), (WARN, 75), (HIGH, 85)), decimals=1)),
-                    ('days until memory above threshold', 'Память: дней до порога', colored(DAYS, DAYS_THRESH, DAYS_MAP, 0)),
+                    ('memory utilization, %', 'Память', colored('percent', mem_thr(), decimals=1)),
+                    ('memory at forecast horizon, %', 'Память через @HOR@ дн.', colored('percent', mem_thr(), decimals=1)),
+                    ('days until memory above threshold', 'Память: дней до порога', colored(DAYS, days_thr(), DAYS_MAP, 0)),
                     ('date memory above threshold (forecast)', 'Память: дата', plain(DATE, mappings=DATE_MAP)),
                     ('memory total', 'Память всего', plain('bytes', 0)),
                 ],
-                'Порог исчерпания: CPU {$VMW.CL.CPU.MAX} (80 %), память {$VMW.CL.MEM.MAX} (85 %). Прогноз — линейный '
+                'Порог исчерпания: CPU {$VMW.CL.CPU.MAX} (@CPU@ %), память {$VMW.CL.MEM.MAX} (@MEM@ %). Прогноз — линейный '
                 'тренд за {$VMW.FORECAST.PERIOD}; появляется, когда у элементов кластера накопится '
                 '{$VMW.FORECAST.MIN.HISTORY} истории.', 'Кластер'), 24, 6, now=True)
 
     b.row('Кластер $cluster', repeat='cluster')
     b.add(timeseries('CPU по хостам', [zq('A', HV_ONE, 'CPU usage in percent')],
                      'Загрузка CPU каждого гипервизора кластера (стандартный шаблон «VMware Hypervisor»). '
-                     'Пунктир — порог 80 %.', 'percent', 1, thresholds((OK, None), (HIGH, 80)), 'dashed',
+                     'Пунктир — порог @CPU@ %.', 'percent', 1, thresholds((OK, None), (HIGH, CFG['cpu_max'])), 'dashed',
                      [rename('^(.*): CPU usage in percent$')], min_=0, max_=100, fill=0,
                      legend_calcs=('mean', 'max')), 12, 8)
     b.add(timeseries('Память кластера за период', [
@@ -508,7 +555,7 @@ def cpu_memory():
         named_q('C', HV_ONE, 'Used memory', 'used_1y', [fn('sumSeries'), fn('timeShift', '1y')]),
         named_q('D', HV_ONE, 'Total memory', 'total_1y', [fn('sumSeries'), fn('timeShift', '1y')])],
         'Занятая память / вся память хостов кластера, сейчас и за тот же период год назад (пунктир).',
-        'percentunit', 1, thresholds((OK, None), (HIGH, 0.85)), 'dashed',
+        'percentunit', 1, thresholds((OK, None), (HIGH, CFG['mem_max'] / 100)), 'dashed',
         [JOIN, calc(NOW_NAME, 'used', '/', 'total'), calc(LAST_YEAR, 'used_1y', '/', 'total_1y'),
          keep('Time', NOW_NAME, LAST_YEAR)],
         overrides=[last_year_by_name()], min_=0, max_=1), 12, 8)
@@ -531,7 +578,7 @@ def cpu_memory():
     b.add(pivot('Гипервизоры', [zq('A', HV_ALL, '/^(CPU usage in percent|Used memory|Total memory|CPU cores|'
                                                 'CPU frequency)$/')],
                 '/^(?<entity>[^:]+): (?<metric>.*)$/', [
-                    ('CPU usage in percent', 'CPU', colored('percent', thresholds((OK, None), (WARN, 70), (HIGH, 80)), decimals=1)),
+                    ('CPU usage in percent', 'CPU', colored('percent', cpu_thr(), decimals=1)),
                     ('Used memory', 'Память занято', plain('bytes', 1)),
                     ('Total memory', 'Память всего', plain('bytes', 0)),
                     ('CPU cores', 'Ядер', plain('none', 0)),
@@ -551,7 +598,13 @@ def cpu_memory():
 def power():
     b = Builder()
     KW = [fn('sumSeries'), fn('scale', '0.001')]
-    KWH_DAY = [fn('sumSeries'), fn('groupBy', '1d', 'avg'), fn('scale', '0.024')]   # avg W × 24 h / 1000
+    # Energy = sum over hours of the hourly mean power (W·h) / 1000. Summing only the hours that exist
+    # keeps the first and the last (partial) day correct instead of scaling them to a full day. The plugin
+    # buckets days on UTC midnights: shifting the series forward by the offset of the $tz variable and back
+    # again after the daily sum moves the boundaries to local midnight. The plugin's timeShift('Nh') puts
+    # the data of t-N h at time t (the series moves forward in time), timeShift('+Nh') the opposite.
+    KWH_DAY = [fn('sumSeries'), fn('groupBy', '1h', 'avg'), fn('timeShift', '$tz'), fn('groupBy', '1d', 'sum'),
+               fn('timeShift', '+$tz'), fn('scale', '0.001')]
 
     b.row('Сводка')
     b.add(stat('Потребление сейчас', [zq('A', HV_ALL, 'Power usage', KW)],
@@ -565,7 +618,7 @@ def power():
                 LAST_EACH + [calc('load', 'power', '/', 'max'), keep('load')], max_=1),
           4, 5, now=True)
     b.add(stat('Энергия за период', [zq('A', HV_ALL, 'Power usage', KWH_DAY)],
-               'Сумма суточного потребления за выбранный период (средняя мощность за сутки × 24 ч).', 'kwatth', 1,
+               'Сумма потребления за выбранный период: средняя мощность каждого часа × 1 ч. Неполные сутки по краям периода считаются только за имеющиеся часы.', 'kwatth', 1,
                calcs=('sum',)), 5, 5)
     b.add(stat('Изменение к прошлому году', [
         named_q('A', HV_ALL, 'Power usage', 'power', [fn('sumSeries')]),
@@ -581,7 +634,7 @@ def power():
         overrides=[now_by_name(), last_year_by_name()], legend_calcs=('mean', 'max')), 24, 8)
     b.add(timeseries('Энергия по дням за период', [
         *year_pair(HV_ALL, 'Power usage', KWH_DAY)],
-        'кВт·ч в сутки = средняя мощность за сутки × 24 ч. Столбцы — выбранный период, пунктир — тот же день год назад.',
+        'кВт·ч за сутки = сумма почасовой средней мощности. Границы суток — по часовому поясу из переменной «Границы суток» (по умолчанию UTC+3). Столбцы — выбранный период, пунктир — тот же день год назад.',
         'kwatth', 1, bars=True,
         overrides=[now_by_name('blue'),
                    last_year_by_name(LAST_YEAR, {'id': 'custom.drawStyle', 'value': 'line'},
@@ -611,19 +664,31 @@ def power():
                      b.panels, common_vars() + [
                          var_zbx('cluster', 'Кластер', 'item', '$vcgroup', '$vcenter',
                                  '/^Cluster \\[.*\\]: power usage$/', '/^Cluster \\[(.*)\\]: power/',
-                                 multi=True, include_all=True)],
+                                 multi=True, include_all=True),
+                         var_tz()],
                      tags=['power'])
 
 
-def main(out_dir):
+def main(argv=None):
+    ap = argparse.ArgumentParser(description='Generate the VMware capacity dashboards for Grafana.')
+    ap.add_argument('out_dir')
+    for key, default, macro in (('crit', 30, '{$VMW.FORECAST.CRIT}'), ('warn', 90, '{$VMW.FORECAST.WARN}'),
+                                ('horizon', 90, '{$VMW.FORECAST.HORIZON}, days'),
+                                ('ds-pfree-min', 10, '{$VMW.DS.PFREE.MIN}'), ('cpu-max', 80, '{$VMW.CL.CPU.MAX}'),
+                                ('mem-max', 85, '{$VMW.CL.MEM.MAX}')):
+        ap.add_argument('--' + key, type=int, default=default,
+                        help='value of %s on the vCenter host (default %d)' % (macro, default))
+    args = ap.parse_args(argv)
+    CFG.update(crit=args.crit, warn=args.warn, horizon=args.horizon, ds_pfree_min=args.ds_pfree_min,
+               cpu_max=args.cpu_max, mem_max=args.mem_max)
     for name, build in (('vmware-datastores.json', datastores), ('vmware-cpu-memory.json', cpu_memory),
                         ('vmware-power.json', power)):
         d = build()
-        with open(os.path.join(out_dir, name), 'w') as fh:
+        with open(os.path.join(args.out_dir, name), 'w') as fh:
             json.dump(d, fh, ensure_ascii=False, indent=2)
             fh.write('\n')
         print('%-26s panels=%d' % (name, len([p for p in d['panels'] if p['type'] != 'row'])))
 
 
 if __name__ == '__main__':
-    main(sys.argv[1])
+    main()

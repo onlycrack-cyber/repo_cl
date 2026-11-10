@@ -87,25 +87,39 @@ def has_history(ref):
 
     Without it a fresh item (e.g. a cluster aggregate right after linking the template) gets a
     linear fit over a few noisy points and forecasts nonsense such as "CPU full in 0.003 days".
+    Looks for any trend hour in the {$VMW.FORECAST.PERIOD} that ends MIN.HISTORY ago (trend functions need the shift in whole days, like the period), so a gap in
+    collection does not reset it, and trends outlive a short history setting of the source item.
     """
-    return '(count(//%s,1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)' % ref
+    return '(trendcount(//%s,{$VMW.FORECAST.PERIOD}:now/d-{$VMW.FORECAST.MIN.HISTORY})>0)' % ref
 
 
-def days_left(ref, threshold, below):
-    """Days until `ref` crosses `threshold`.
+def helper_keys(key):
+    """Keys of the two helper items of a forecast item: `<key>` -> (history flag, raw time left)."""
+    return key.replace('.daysleft', '.hist'), key.replace('.daysleft', '.tl')
 
-    0 when already crossed, {$VMW.FORECAST.MAX.DAYS} when never (timeleft() returns 1.79e308 in
-    both of those cases, hence the explicit guard), -1 while history is too short to forecast or
-    timeleft() cannot fit a trend.
+
+def raw_timeleft(hist_key, ref, threshold):
+    """Seconds until `ref` crosses `threshold`, computed once per hour for the forecast items.
+
+    -2: not enough history, -1: timeleft() cannot fit a trend, otherwise seconds, capped at
+    ({$VMW.FORECAST.MAX.DAYS}+1) days: timeleft() returns 1.79e308 for "never" and "already crossed".
     """
-    crossed = 'last(//%s)>%s' % (ref, threshold) if below else 'last(//%s)<%s' % (ref, threshold)
-    tl = 'timeleft(//%s,{$VMW.FORECAST.PERIOD},%s)' % (ref, threshold)
-    # timeleft() itself returns -1 when it cannot fit (e.g. right after linking): treat it as
-    # "no forecast" (-1), not as -0.00001 days, which would read as "already exhausted".
-    neg = '(%s<0)' % tl
-    days = '(%s)*((1-%s)*min(%s/86400,{$VMW.FORECAST.MAX.DAYS})-%s)' % (crossed, neg, tl, neg)
-    ok = has_history(ref)
-    return '%s*%s-(1-%s)' % (ok, days, ok)
+    cap = '({$VMW.FORECAST.MAX.DAYS}+1)*86400'
+    return 'last(//%s)*(min(timeleft(//%s,{$VMW.FORECAST.PERIOD},%s),%s)+2)-2' % (hist_key, ref, threshold, cap)
+
+
+def days_left(ref, tl_key, threshold, below):
+    """Days until `ref` crosses `threshold`, from the helper item `tl_key` (see raw_timeleft).
+
+    0 when already crossed, {$VMW.FORECAST.MAX.DAYS} when never, -1 while history is too short to
+    forecast or timeleft() cannot fit a trend (not -0.00001 days, which would read as "exhausted").
+    """
+    safe = 'last(//%s)>%s' % (ref, threshold) if below else 'last(//%s)<%s' % (ref, threshold)
+    h = 'last(//%s)' % tl_key
+    no_history = '(%s<-1.5)' % h
+    unknown = '(%s<0)' % h
+    return '-%s+(1-%s)*(%s)*((1-%s)*min(%s/86400,{$VMW.FORECAST.MAX.DAYS})-%s)' % (
+        no_history, no_history, safe, unknown, h, unknown)
 
 
 def exhaustion_date(days_key):
@@ -114,25 +128,29 @@ def exhaustion_date(days_key):
     return '(%s>=0)*(%s<{$VMW.FORECAST.MAX.DAYS})*(now()+%s*86400)' % (d, d, d)
 
 
-def forecast_at_horizon(ref, expr='%s'):
+def forecast_at_horizon(ref, hist_key, expr='%s'):
     """Value at {$VMW.FORECAST.HORIZON}; the current value while history is too short to forecast."""
     fc = expr % ('forecast(//%s,{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})' % ref)
     now = expr % ('last(//%s)' % ref)
-    ok = has_history(ref)
+    ok = 'last(//%s)' % hist_key
     return 'min(max(%s*%s+(1-%s)*%s,0),100)' % (ok, fc, ok, now)
 
 
 def forecast_triggers(item_key, what, threshold_desc, component, entity):
-    """High below {$VMW.FORECAST.CRIT} days, Warning below {$VMW.FORECAST.WARN} days, 20% hysteresis."""
+    """High below {$VMW.FORECAST.CRIT} days, Warning below {$VMW.FORECAST.WARN} days, 20% hysteresis.
+
+    The problems recover only when the forecast moves away, not on -1 ("no forecast"): a gap in
+    collection must not close a problem that is still real and open it again later.
+    """
     ref = '/%s/%s' % (T, item_key)
     high = trigger('%s: %s in less than {$VMW.FORECAST.CRIT} days' % (what, threshold_desc),
                    'last(%s)>=0 and last(%s)<{$VMW.FORECAST.CRIT}' % (ref, ref), 'HIGH', component,
-                   recovery='last(%s)<0 or last(%s)>{$VMW.FORECAST.CRIT}*1.2' % (ref, ref), opdata='Days left: {ITEM.LASTVALUE1}',
+                   recovery='last(%s)>{$VMW.FORECAST.CRIT}*1.2' % ref, opdata='Days left: {ITEM.LASTVALUE1}',
                    desc='Linear forecast over the last {$VMW.FORECAST.PERIOD}. 0 days means the threshold is '
                         'already reached. Ignores -1 (not enough history yet).', entity=entity)
     warn = trigger('%s: %s in less than {$VMW.FORECAST.WARN} days' % (what, threshold_desc),
                    'last(%s)>=0 and last(%s)<{$VMW.FORECAST.WARN}' % (ref, ref), 'WARNING', component,
-                   recovery='last(%s)<0 or last(%s)>{$VMW.FORECAST.WARN}*1.2' % (ref, ref), opdata='Days left: {ITEM.LASTVALUE1}',
+                   recovery='last(%s)>{$VMW.FORECAST.WARN}*1.2' % ref, opdata='Days left: {ITEM.LASTVALUE1}',
                    desc='Linear forecast over the last {$VMW.FORECAST.PERIOD}.', deps=[high], entity=entity)
     return [high, warn]
 
@@ -147,8 +165,17 @@ ds_items = [
          'last(//%s)*(100-last(//%s))/100' % (DS_T, DS_P), 'datastore', 'B', entity=ds_entity),
     calc('Datastore [{#DATASTORE}]: free space', DSK('free'),
          'last(//%s)*last(//%s)/100' % (DS_T, DS_P), 'datastore', 'B', entity=ds_entity),
+    calc('Datastore [{#DATASTORE}]: forecast history available', helper_keys(DSK('daysleft'))[0],
+         has_history(DS_P), 'datastore', delay='1h', history='7d', trends='0', entity=ds_entity,
+         desc='1 when the free-space item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper of the '
+              'forecast items.'),
+    calc('Datastore [{#DATASTORE}]: seconds until free space below threshold (raw)', helper_keys(DSK('daysleft'))[1],
+         raw_timeleft(helper_keys(DSK('daysleft'))[0], DS_P, '{$VMW.DS.PFREE.MIN}'), 'datastore', delay='1h',
+         history='7d', trends='0', entity=ds_entity,
+         desc='Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'),
     calc('Datastore [{#DATASTORE}]: days until free space below threshold', DSK('daysleft'),
-         days_left(DS_P, '{$VMW.DS.PFREE.MIN}', below=True), 'datastore', 'd', delay='1h',
+         days_left(DS_P, helper_keys(DSK('daysleft'))[1], '{$VMW.DS.PFREE.MIN}', below=True), 'datastore', 'd',
+         delay='1h',
          desc='Linear trend of free space over {$VMW.FORECAST.PERIOD}. 0: already below the threshold. '
               '{$VMW.FORECAST.MAX.DAYS}: not decreasing or later than that. -1: less than '
               '{$VMW.FORECAST.MIN.HISTORY} of history, no forecast yet.',
@@ -160,7 +187,7 @@ ds_items = [
          desc='When free space is expected to fall below {$VMW.DS.PFREE.MIN}%. 0: no forecast (not decreasing, '
               'later than {$VMW.FORECAST.MAX.DAYS} days, or not enough history).', entity=ds_entity),
     calc('Datastore [{#DATASTORE}]: used at forecast horizon, %', DSK('forecast'),
-         forecast_at_horizon(DS_P, '(100-%s)'),
+         forecast_at_horizon(DS_P, helper_keys(DSK('daysleft'))[0], '(100-%s)'),
          'datastore', '%', delay='1h', entity=ds_entity),
     calc('Datastore [{#DATASTORE}]: used change over 30 days, p.p.', DSK('pused.change30d'),
          'trendavg(//%s,1d:now/d-30d)-avg(//%s,1d)' % (DS_P, DS_P), 'datastore', '%', delay='1h',
@@ -217,8 +244,16 @@ cl_items = [
     calc('Cluster [{#CLUSTER.NAME}]: energy per day', CLK('energy.day'),
          'sum(%s)*24/1000' % fe('avg', HV_POWER, '1d'), 'power', 'kWh', delay='1h',
          desc='Average power over the last 24 hours × 24 h.', entity=cl_entity),
+    calc('Cluster [{#CLUSTER.NAME}]: CPU forecast history available', helper_keys(CLK('cpu.daysleft'))[0],
+         has_history(CLK('cpu.pused')), 'cpu', delay='1h', history='7d', trends='0', entity=cl_entity,
+         desc='1 when the cluster CPU item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper.'),
+    calc('Cluster [{#CLUSTER.NAME}]: seconds until CPU above threshold (raw)', helper_keys(CLK('cpu.daysleft'))[1],
+         raw_timeleft(helper_keys(CLK('cpu.daysleft'))[0], CLK('cpu.pused'), '{$VMW.CL.CPU.MAX}'), 'cpu',
+         delay='1h', history='7d', trends='0', entity=cl_entity,
+         desc='Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'),
     calc('Cluster [{#CLUSTER.NAME}]: days until CPU above threshold', CLK('cpu.daysleft'),
-         days_left(CLK('cpu.pused'), '{$VMW.CL.CPU.MAX}', below=False), 'cpu', 'd', delay='1h',
+         days_left(CLK('cpu.pused'), helper_keys(CLK('cpu.daysleft'))[1], '{$VMW.CL.CPU.MAX}', below=False),
+         'cpu', 'd', delay='1h',
          desc='Linear trend of cluster CPU utilization over {$VMW.FORECAST.PERIOD}. -1 until the cluster item '
               'has {$VMW.FORECAST.MIN.HISTORY} of history (it starts when the template is linked).',
          trig=forecast_triggers(CLK('cpu.daysleft'), 'Cluster [{#CLUSTER.NAME}]',
@@ -228,10 +263,18 @@ cl_items = [
          exhaustion_date(CLK('cpu.daysleft')), 'cpu', 'unixtime', delay='1h',
          desc='0: no forecast (not growing, too far ahead, or not enough history).', entity=cl_entity),
     calc('Cluster [{#CLUSTER.NAME}]: CPU at forecast horizon, %', CLK('cpu.forecast'),
-         forecast_at_horizon(CLK('cpu.pused')),
+         forecast_at_horizon(CLK('cpu.pused'), helper_keys(CLK('cpu.daysleft'))[0]),
          'cpu', '%', delay='1h', entity=cl_entity),
+    calc('Cluster [{#CLUSTER.NAME}]: memory forecast history available', helper_keys(CLK('mem.daysleft'))[0],
+         has_history(CLK('mem.pused')), 'memory', delay='1h', history='7d', trends='0', entity=cl_entity,
+         desc='1 when the cluster memory item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper.'),
+    calc('Cluster [{#CLUSTER.NAME}]: seconds until memory above threshold (raw)', helper_keys(CLK('mem.daysleft'))[1],
+         raw_timeleft(helper_keys(CLK('mem.daysleft'))[0], CLK('mem.pused'), '{$VMW.CL.MEM.MAX}'), 'memory',
+         delay='1h', history='7d', trends='0', entity=cl_entity,
+         desc='Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'),
     calc('Cluster [{#CLUSTER.NAME}]: days until memory above threshold', CLK('mem.daysleft'),
-         days_left(CLK('mem.pused'), '{$VMW.CL.MEM.MAX}', below=False), 'memory', 'd', delay='1h',
+         days_left(CLK('mem.pused'), helper_keys(CLK('mem.daysleft'))[1], '{$VMW.CL.MEM.MAX}', below=False),
+         'memory', 'd', delay='1h',
          trig=forecast_triggers(CLK('mem.daysleft'), 'Cluster [{#CLUSTER.NAME}]',
                                 'memory utilization above {$VMW.CL.MEM.MAX}%', 'memory', cl_entity),
          entity=cl_entity),
@@ -239,15 +282,18 @@ cl_items = [
          exhaustion_date(CLK('mem.daysleft')), 'memory', 'unixtime', delay='1h',
          desc='0: no forecast (not growing, too far ahead, or not enough history).', entity=cl_entity),
     calc('Cluster [{#CLUSTER.NAME}]: memory at forecast horizon, %', CLK('mem.forecast'),
-         forecast_at_horizon(CLK('mem.pused')),
+         forecast_at_horizon(CLK('mem.pused'), helper_keys(CLK('mem.daysleft'))[0]),
          'memory', '%', delay='1h', entity=cl_entity),
 ]
 
 
-def rule(name, key, desc, items):
-    return {'uuid': uid('rule:' + key), 'name': name, 'type': 'SIMPLE', 'key': key, 'delay': '1h',
-            'username': '{$VMWARE.USERNAME}', 'password': '{$VMWARE.PASSWORD}', 'lifetime': '7d',
-            'description': desc, 'item_prototypes': items}
+def rule(name, key, desc, items, lld_filter=None):
+    r = {'uuid': uid('rule:' + key), 'name': name, 'type': 'SIMPLE', 'key': key, 'delay': '1h',
+         'username': '{$VMWARE.USERNAME}', 'password': '{$VMWARE.PASSWORD}'}
+    if lld_filter:
+        r['filter'] = lld_filter
+    r.update({'lifetime': '7d', 'description': desc, 'item_prototypes': items})
+    return r
 
 
 rules = [
@@ -256,7 +302,11 @@ rules = [
          ds_items),
     rule('Capacity: cluster discovery', 'vmware.cluster.discovery["{$VMWARE.URL}"]',
          'Same request as the standard cluster discovery. Cluster items aggregate the hypervisor hosts in the '
-         'host group "<cluster> (hypervisor)" that the standard template creates.', cl_items),
+         'host group "<cluster> (hypervisor)" that the standard template creates. Clusters whose name contains a '
+         'double quote or a backslash are skipped: the name is put into quoted item keys and filters, where '
+         'those characters cannot be written.', cl_items,
+         lld_filter={'evaltype': 'AND', 'conditions': [
+             {'macro': '{#CLUSTER.NAME}', 'value': '["\\\\]', 'operator': 'NOT_MATCHES_REGEX', 'formulaid': 'A'}]}),
 ]
 
 macros = [
@@ -266,7 +316,7 @@ macros = [
     ('{$VMW.FORECAST.CRIT}', '30', 'High trigger when a resource runs out in fewer days.'),
     ('{$VMW.FORECAST.HORIZON}', '90d', 'How far ahead the "forecast" items look.'),
     ('{$VMW.FORECAST.MAX.DAYS}', '3650', '"Days until" value meaning "not within 10 years / not growing".'),
-    ('{$VMW.FORECAST.MIN.HISTORY}', '7d', 'Minimum history before forecasting; until then "days until" is -1.'),
+    ('{$VMW.FORECAST.MIN.HISTORY}', '7d', 'Minimum history before forecasting, in whole days (trend functions need a day-aligned shift); until then "days until" is -1.'),
     ('{$VMW.FORECAST.PERIOD}', '30d', 'History window the linear forecasts are fitted on.'),
     ('{$VMW.FORECAST.WARN}', '90', 'Warning trigger when a resource runs out in fewer days.'),
 ]
@@ -283,7 +333,7 @@ template = {
         'hosts that template discovers into the "<cluster> (hypervisor)" host groups.\n\n'
         'Year-over-year items need trends older than one year: the standard templates keep trends for 365d, '
         'so raise it (Administration > Housekeeping > Override item trend period, e.g. 800d).'),
-    'vendor': {'name': 'Custom', 'version': '7.0-1.0.0'},
+    'vendor': {'name': 'Custom', 'version': '7.0-1.1.0'},
     'groups': [{'name': 'Templates/Applications'}],
     'discovery_rules': rules,
     'tags': [{'tag': 'class', 'value': 'software'}, {'tag': 'target', 'value': 'vmware'}],
