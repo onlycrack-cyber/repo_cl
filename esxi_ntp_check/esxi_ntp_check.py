@@ -25,6 +25,8 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
         -> ОДИН компактный JSON по всем хостам (для шаблона "ESXi Health by
            vCenter": зависимые LLD и айтемы разбирают его JSONPath'ом).
            Недоступные значения в JSON опускаются (айтем -> unsupported).
+           warn — предупреждения сборщика или "OK" (не пустая строка: Zabbix может
+           не сохранить пустое значение, и старый текст остался бы последним).
            hosts.<имя>.alert = 0, если хост не connected или в Maintenance Mode
            (шаблон подавляет по нему все триггеры хоста).
 
@@ -731,7 +733,7 @@ def _build_collect(fresh, extra):
     dns_x, pwr_x = list(extra[0:2]), list(extra[2:3])
     out = {"v": 2, "ts": int(time.time()), "cnt": len(fresh),
            "hosts": {}, "pnic": {}, "sw": {},
-           "warn": next((r["warn"] for r in fresh.values() if r.get("warn")), ""),
+           "warn": next((r["warn"] for r in fresh.values() if r.get("warn")), "OK"),
            "lld": {"hosts": [], "pnic": [], "sw": []}}
     for name, rec in sorted(fresh.items()):
         out["lld"]["hosts"].append({
@@ -756,7 +758,7 @@ def _build_collect(fresh, extra):
             h["mp_dead"] = rec["mp_dead"]
         if rec.get("ds_bad") is not None:
             h["ds_bad"] = len(rec["ds_bad"])
-            h["ds_names"] = ", ".join(rec["ds_bad"])
+            h["ds_names"] = ", ".join(rec["ds_bad"]) or "-"
         if rec.get("ha") is not None:
             h["ha"] = rec["ha"]
             h["ha_ok"] = 0 if rec["ha"].lower() in _HA_BAD else 1

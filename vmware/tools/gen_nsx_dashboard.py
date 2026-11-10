@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'grafana', 'tools'))
 from gen_health_dashboard import (  # noqa: E402
-    DS, GREEN, ORANGE, RED, DARK_RED, GREY, LAST_PER_ROW, Dashboard, mappings, problems_tile, query, rename, stat,
+    bars, DS, GREEN, ORANGE, RED, DARK_RED, GREY, LAST_PER_ROW, Dashboard, mappings, problems_tile, query, rename, stat,
     thresholds, tiles, timeline, timeseries)
 
 # Same keys as the value maps of the template ("NSX status", "NSX cluster status", "NSX BGP state").
@@ -75,26 +75,6 @@ def gateway_tiles(title, desc):
                 unit='suffix: SR не в норме', thresh=thresholds((GREEN, None), (RED, 1)),
                 transformations=[rename(GW_BAD_NAME, '$1 $2')], value_size=18, title_size=14,
                 text_mode='value_and_name')
-
-
-def bars(title, item, name_regex, desc, unit, thresh, max_=None, sort_asc=False):
-    """Horizontal bar per object, coloured by the thresholds; optionally sorted by the last value."""
-    defaults = {'unit': unit, 'min': 0, 'decimals': 0 if unit.startswith('suffix') else 1,
-                'color': {'mode': 'thresholds'}, 'thresholds': thresh}
-    if max_ is not None:
-        defaults['max'] = max_
-    transformations = [rename(name_regex)]
-    reduce_options = {'calcs': ['lastNotNull'], 'fields': '', 'values': False}
-    if sort_asc:
-        # One row per object, shortest first: the one that runs out next is on top.
-        transformations += [LAST_PER_ROW, {'id': 'sortBy', 'options': {'sort': [{'field': 'Last *', 'desc': False}]}}]
-        reduce_options = {'calcs': ['lastNotNull'], 'fields': '/^Last/', 'values': True}
-    return {'type': 'bargauge', 'title': title, 'description': desc, 'targets': [query('A', item)],
-            'fieldConfig': {'defaults': defaults, 'overrides': []},
-            'options': {'reduceOptions': reduce_options, 'orientation': 'horizontal', 'displayMode': 'basic',
-                        'valueMode': 'color', 'namePlacement': 'left', 'showUnfilled': True, 'sizing': 'auto',
-                        'minVizHeight': 16, 'maxVizHeight': 24, 'legend': {'showLegend': False}},
-            'transformations': transformations}
 
 
 def problems_panel():

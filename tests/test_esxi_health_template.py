@@ -102,10 +102,14 @@ class Collect(unittest.TestCase):
             h = M._build_collect({'a': rec(1, ha=st)}, [])['hosts']['a']
             self.assertEqual(h['ha_ok'], ok, st)
 
-    def test_warn_is_always_present(self):
-        self.assertEqual(self.out['warn'], '')
-        w = M._build_collect({'a': rec(1, warn='свойство x недоступно')}, [])
-        self.assertEqual(w['warn'], 'свойство x недоступно')
+    def test_warn_is_never_an_empty_string(self):
+        # Zabbix may not store an empty value, then the last warning would stay forever: use a sentinel.
+        self.assertEqual(self.out['warn'], 'OK')
+        self.assertEqual(M._build_collect({'a': rec(1, warn='')}, [])['warn'], 'OK')
+
+    def test_empty_datastore_names_are_a_dash(self):
+        h = M._build_collect({'a': rec(1, ds_bad=[]), 'b': rec(2, ds_bad=['ds1', 'ds2'])}, [])['hosts']
+        self.assertEqual((h['a']['ds_names'], h['b']['ds_names']), ('-', 'ds1, ds2'))
 
     def test_unreadable_ntp_ref_is_omitted(self):
         self.assertNotIn('ntp', M._build_collect({'a': rec(1, configured=None)}, [])['hosts']['a'])
@@ -240,6 +244,12 @@ class Template(unittest.TestCase):
                     for k in re.findall(r'/%s/(esxi[^,)]*?\])' % re.escape(self.t['template']), e):
                         self.assertIn(k, own, e)
         self.assertEqual(n, 13)
+
+    def test_warn_trigger_compares_with_the_sentinel(self):
+        trig = next(x for i in self.t['items'] for x in i.get('triggers', []) if 'collect.warn' in x['expression'])
+        self.assertTrue(trig['expression'].endswith('<>"OK"'), trig['expression'])
+        w = M._build_collect({'a': rec(1, warn='свойство x недоступно')}, [])
+        self.assertEqual(w['warn'], 'свойство x недоступно')
 
     def test_collector_triggers_are_not_guarded(self):
         for i in self.t['items']:

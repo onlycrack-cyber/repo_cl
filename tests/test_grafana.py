@@ -211,7 +211,7 @@ class NsxHealthDashboardTests(DashboardTests):
         # Tunnel status UNKNOWN (0) is normal for a host without overlay workloads.
         tile = next(p for p in self.panels if p['title'] == 'ESXi: туннели')
         conds = {(f['config']['id'], f['config']['options']['value'])
-                 for f in tile['transformations'][1]['options']['filters']}
+                 for f in next(tr for tr in tile['transformations'] if tr['id'] == 'filterByValue')['options']['filters']}
         self.assertEqual(conds, {('notEqual', 1), ('notEqual', 0)})
 
     def test_thresholds_match_template_defaults(self):
@@ -279,7 +279,7 @@ class EsxiHealthDashboardTests(DashboardTests):
             macros = {m['macro']: m.get('value') for m in
                       yaml.safe_load(fh)['zabbix_export']['templates'][0]['macros']}
         tile = next(p for p in self.panels if p['title'] == 'Смещение времени' and p['type'] == 'stat')
-        limits = {f['config']['options']['value'] for f in tile['transformations'][1]['options']['filters']}
+        limits = {f['config']['options']['value'] for f in next(tr for tr in tile['transformations'] if tr['id'] == 'filterByValue')['options']['filters']}
         self.assertEqual(limits, {-int(macros['{$ESXI.NTP.OFFSET.WARN}']), int(macros['{$ESXI.NTP.OFFSET.WARN}'])})
         series = next(p for p in self.panels if p['title'].startswith('Смещение времени относительно'))
         steps = {s['value'] for s in series['fieldConfig']['defaults']['thresholds']['steps']} - {None}
@@ -290,4 +290,11 @@ class EsxiHealthDashboardTests(DashboardTests):
     def test_collector_warnings_use_text_mode(self):
         p = next(p for p in self.panels if p['title'] == 'Сборщик: предупреждения')
         self.assertEqual(p['targets'][0]['queryType'], '2')
+        # "OK" is what the collector sends when there is nothing to report (never an empty string)
+        mapping = p['fieldConfig']['defaults']['mappings'][0]
+        self.assertEqual((mapping['type'], list(mapping['options'])), ('value', ['OK']))
+
+    def test_generator_uses_only_the_shared_helpers(self):
+        with open(os.path.join(ROOT, 'esxi_ntp_check', 'tools', 'gen_esxi_dashboard.py')) as fh:
+            self.assertNotIn('gen_nsx_dashboard', fh.read())
 

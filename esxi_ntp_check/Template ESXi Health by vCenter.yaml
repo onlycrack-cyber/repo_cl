@@ -96,7 +96,7 @@ zabbix_export:
           value_type: TEXT
           history: 7d
           trends: '0'
-          description: 'Предупреждения сборщика: какие свойства vCenter недоступны (неверный путь, права) или что скрипт работает в медленном режиме. Пусто = всё в порядке.'
+          description: 'Предупреждения сборщика: какие свойства vCenter недоступны (неверный путь, права) или что скрипт работает в медленном режиме. "OK" = предупреждений нет (пустая строка не используется: Zabbix может её не сохранить).'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -110,7 +110,7 @@ zabbix_export:
               value: 'esxi-health'
           triggers:
             - uuid: fd02bc1448c24e06bbea2e661c64509a
-              expression: 'length(/Template ESXi Health by vCenter/esxi.collect.warn)>0'
+              expression: 'last(/Template ESXi Health by vCenter/esxi.collect.warn)<>"OK"'
               name: 'Collector reports missing vCenter data'
               event_name: 'Collector reports missing vCenter data ({HOST.NAME})'
               priority: WARNING

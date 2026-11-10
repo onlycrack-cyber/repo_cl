@@ -18,11 +18,9 @@ import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(here, '..', '..', 'grafana', 'tools'))
-sys.path.insert(0, os.path.join(here, '..', '..', 'vmware', 'tools'))
 from gen_health_dashboard import (  # noqa: E402
-    DS, GREEN, ORANGE, RED, DARK_RED, GREY, LAST_PER_ROW, Dashboard, keep_rows, mappings, problems_tile, query,
-    rename, stat, thresholds, tiles, timeline, timeseries)
-from gen_nsx_dashboard import bars  # noqa: E402
+    DS, GREEN, ORANGE, RED, Dashboard, bars, problems_tile, query, rename, stat, thresholds, tiles, timeline,
+    timeseries)
 
 # Same keys as the value maps of the template. Texts are for people; the colours say "needs action".
 NTP = {0: ('НЕ РАБОТАЕТ', RED), 1: ('OK', GREEN)}
@@ -80,24 +78,9 @@ def keep_outside(limit):
         {'fieldName': 'Last *', 'config': {'id': 'greater', 'options': {'value': limit}}}]}}
 
 
-def light(title, key, bad, desc, unit_word='хост.'):
-    """Traffic light: number of hosts whose last value is bad; green "OK" when none."""
-    return problems_tile(title, item(key), bad, desc, unit_word)
-
-
-def count_tile(title, key, desc, colour, unit_word='хост.'):
-    """Number of hosts whose last value is above 0 (dead paths, inaccessible datastores)."""
-    t = light(title, key, [('greater', 0)], desc, unit_word)
-    t['fieldConfig']['defaults']['thresholds'] = thresholds((GREEN, None), (colour, 1))
-    return t
-
-
-def count_rows(title, key, desc, bad, colour, unit_word):
-    """Light that counts rows by a custom filter, with a chosen colour."""
-    t = problems_tile(title, item(key), [], desc, unit_word)
-    t['transformations'] = [LAST_PER_ROW, bad]
-    t['fieldConfig']['defaults']['thresholds'] = thresholds((GREEN, None), (colour, 1))
-    return t
+def light(title, key, bad, desc, unit_word='хост.', colour=RED, keep=None):
+    """Traffic light: number of hosts whose last value matches `bad` (or the `keep` filter); green "OK" if none."""
+    return problems_tile(title, item(key), bad, desc, unit_word, colour, keep)
 
 
 def per_host_numbers(title, key, desc, unit_word):
@@ -137,20 +120,20 @@ def build():
                no_value='Нет данных'), 0, 1, 3, 5)
     d.add(stat('Сборщик: предупреждения', [text_query('A', WARN)],
                'Что скрипт не смог прочитать у vCenter (неверное имя свойства, нет прав, медленный режим). '
-               'OK — пусто. Иначе часть проверок не обновляется.',
-               maps=[{'type': 'special', 'options': {'match': 'empty', 'result': {
-                   'text': 'OK', 'color': GREEN, 'index': 0}}}],
-               thresh=thresholds((ORANGE, None)), value_size=14, title_size=18, no_value='OK'), 3, 1, 3, 5)
-    d.add(count_rows('Алерты выключены', 'alert',
-                     'Хосты в Maintenance Mode или не в состоянии connected: их алерты подавлены (и закрываются '
-                     'сами). Оранжевый — просто напоминание, что хост выведен из контроля.',
-                     keep_rows(('equal', 0)), ORANGE, 'хост.'), 6, 1, 3, 5)
+               'OK — предупреждений нет. Иначе показан текст предупреждения: часть проверок не обновляется.',
+               maps=[{'type': 'value', 'options': {'OK': {'text': 'OK', 'color': GREEN, 'index': 0}}}],
+               thresh=thresholds((ORANGE, None)), value_size=14, title_size=18, no_value='нет данных'),
+          3, 1, 3, 5)
+    d.add(light('Алерты выключены', 'alert', [('equal', 0)],
+                'Хосты в Maintenance Mode или не в состоянии connected: их алерты подавлены (и закрываются '
+                'сами). Оранжевый — просто напоминание, что хост выведен из контроля.', colour=ORANGE),
+          6, 1, 3, 5)
     d.add(light('NTP не работает', 'ntp', [('notEqual', 1)],
                 'Число хостов, где NTP не настроен или служба ntpd остановлена.'), 9, 1, 3, 5)
-    d.add(count_rows('Смещение времени', 'offset',
-                     'Число хостов, у которых время отличается от vCenter больше чем на %d с (порог '
-                     '{$ESXI.NTP.OFFSET.WARN} шаблона по умолчанию).' % OFFSET_WARN,
-                     keep_outside(OFFSET_WARN), RED, 'хост.'), 12, 1, 3, 5)
+    d.add(light('Смещение времени', 'offset', [],
+                'Число хостов, у которых время отличается от vCenter больше чем на %d с (порог '
+                '{$ESXI.NTP.OFFSET.WARN} шаблона по умолчанию).' % OFFSET_WARN, keep=keep_outside(OFFSET_WARN)),
+          12, 1, 3, 5)
     d.add(light('DNS', 'dns', [('notEqual', 1)],
                 'Число хостов, где нет двух DNS-серверов (или нет заданных {$ESXI.DNS.PREFERRED} / '
                 '{$ESXI.DNS.ALTERNATE}).'), 15, 1, 3, 5)
@@ -164,11 +147,11 @@ def build():
     d.add(light('Storage-адаптеры', 'storage', [('notEqual', 1)],
                 'Число хостов, у которых хотя бы один известный адаптер не online. Один отказавший порт из двух: '
                 'хост работает на оставшемся, избыточность потеряна.'), 0, 6, 4, 5)
-    d.add(count_tile('Dead-пути к хранилищу', 'dead',
-                     'Число хостов, у которых есть пути к LUN в состоянии dead (мультипасинг). Local-диски '
-                     'с одним путём не затрагиваются.', RED), 4, 6, 4, 5)
-    d.add(count_tile('Датасторы недоступны', 'ds',
-                     'Число хостов, которым недоступен датастор (mountInfo.accessible = false).', RED), 8, 6, 4, 5)
+    d.add(light('Dead-пути к хранилищу', 'dead', [('greater', 0)],
+                'Число хостов, у которых есть пути к LUN в состоянии dead (мультипасинг). Local-диски '
+                'с одним путём не затрагиваются.'), 4, 6, 4, 5)
+    d.add(light('Датасторы недоступны', 'ds', [('greater', 0)],
+                'Число хостов, которым недоступен датастор (mountInfo.accessible = false).'), 8, 6, 4, 5)
     d.add(light('HA-агент', 'ha', [('notEqual', 1)],
                 'Число хостов, у которых HA-агент в проблемном состоянии (isolated, partitioned, ошибки '
                 'инициализации, hostDown). Хост вне HA-кластера не считается.'), 12, 6, 4, 5)
