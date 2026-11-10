@@ -82,7 +82,7 @@
       },
       {
         "name": "host",
-        "label": "vCenter (мастер-хост)",
+        "label": "vCenter (мастер-хосты)",
         "type": "query",
         "datasource": {
           "type": "alexanderzobnin-zabbix-datasource",
@@ -103,8 +103,8 @@
         "hide": 0,
         "current": {},
         "options": [],
-        "includeAll": false,
-        "multi": false
+        "includeAll": true,
+        "multi": true
       }
     ]
   },
@@ -219,7 +219,7 @@
     {
       "type": "stat",
       "title": "Сборщик: предупреждения",
-      "description": "Что скрипт не смог прочитать у vCenter (неверное имя свойства, нет прав, медленный режим). OK — предупреждений нет. Иначе показан текст предупреждения: часть проверок не обновляется.",
+      "description": "Что скрипт не смог прочитать у vCenter (неверное имя свойства, нет прав, медленный режим). OK — предупреждений нет; иначе часть проверок не обновляется, текст — в строке под светофором.",
       "targets": [
         {
           "refId": "A",
@@ -267,6 +267,17 @@
                   "index": 0
                 }
               }
+            },
+            {
+              "type": "regex",
+              "options": {
+                "pattern": ".+",
+                "result": {
+                  "text": "ЕСТЬ",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
             }
           ],
           "color": {
@@ -301,7 +312,7 @@
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
-          "valueSize": 14,
+          "valueSize": 24,
           "titleSize": 18
         }
       },
@@ -2118,7 +2129,7 @@
       "id": 16,
       "gridPos": {
         "x": 0,
-        "y": 11,
+        "y": 14,
         "w": 24,
         "h": 8
       },
@@ -2135,7 +2146,7 @@
       "id": 17,
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 22,
         "w": 24,
         "h": 1
       }
@@ -2243,7 +2254,7 @@
       "id": 18,
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 23,
         "w": 8,
         "h": 5
       },
@@ -2355,7 +2366,7 @@
       "id": 19,
       "gridPos": {
         "x": 8,
-        "y": 20,
+        "y": 23,
         "w": 8,
         "h": 5
       },
@@ -2467,7 +2478,7 @@
       "id": 20,
       "gridPos": {
         "x": 16,
-        "y": 20,
+        "y": 23,
         "w": 8,
         "h": 5
       },
@@ -2579,7 +2590,7 @@
       "id": 21,
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 28,
         "w": 8,
         "h": 5
       },
@@ -2691,7 +2702,7 @@
       "id": 22,
       "gridPos": {
         "x": 8,
-        "y": 25,
+        "y": 28,
         "w": 8,
         "h": 5
       },
@@ -2803,7 +2814,7 @@
       "id": 23,
       "gridPos": {
         "x": 16,
-        "y": 25,
+        "y": 28,
         "w": 8,
         "h": 5
       },
@@ -2815,7 +2826,7 @@
     {
       "type": "stat",
       "title": "Алерты по хостам",
-      "description": "ПОДАВЛЕНЫ — хост в Maintenance Mode или не connected; через 10 минут после возврата алерты включаются снова ({$ESXI.ALERT.HOLDDOWN}).",
+      "description": "ПОДАВЛЕНЫ — хост в Maintenance Mode или не connected; через 10m после возврата алерты включаются снова ({$ESXI.ALERT.HOLDDOWN}).",
       "targets": [
         {
           "refId": "A",
@@ -2915,7 +2926,7 @@
       "id": 24,
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 33,
         "w": 8,
         "h": 5
       },
@@ -3027,7 +3038,7 @@
       "id": 25,
       "gridPos": {
         "x": 8,
-        "y": 30,
+        "y": 33,
         "w": 8,
         "h": 5
       },
@@ -3139,7 +3150,7 @@
       "id": 26,
       "gridPos": {
         "x": 16,
-        "y": 30,
+        "y": 33,
         "w": 8,
         "h": 5
       },
@@ -3156,7 +3167,7 @@
       "id": 27,
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 38,
         "w": 24,
         "h": 1
       }
@@ -3264,7 +3275,7 @@
       "id": 28,
       "gridPos": {
         "x": 0,
-        "y": 36,
+        "y": 39,
         "w": 8,
         "h": 7
       },
@@ -3365,7 +3376,7 @@
       "id": 29,
       "gridPos": {
         "x": 8,
-        "y": 36,
+        "y": 39,
         "w": 8,
         "h": 7
       },
@@ -3466,7 +3477,7 @@
       "id": 30,
       "gridPos": {
         "x": 16,
-        "y": 36,
+        "y": 39,
         "w": 8,
         "h": 7
       },
@@ -3483,7 +3494,7 @@
       "id": 31,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 46,
         "w": 24,
         "h": 1
       }
@@ -3579,7 +3590,7 @@
       "id": 32,
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 47,
         "w": 8,
         "h": 7
       },
@@ -3679,7 +3690,7 @@
       "id": 33,
       "gridPos": {
         "x": 8,
-        "y": 44,
+        "y": 47,
         "w": 8,
         "h": 7
       },
@@ -3790,7 +3801,7 @@
       "id": 34,
       "gridPos": {
         "x": 16,
-        "y": 44,
+        "y": 47,
         "w": 8,
         "h": 7
       },
@@ -3807,7 +3818,7 @@
       "id": 35,
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 54,
         "w": 24,
         "h": 1
       }
@@ -3905,7 +3916,7 @@
       "id": 36,
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 55,
         "w": 8,
         "h": 7
       },
@@ -4007,7 +4018,7 @@
       "id": 37,
       "gridPos": {
         "x": 8,
-        "y": 52,
+        "y": 55,
         "w": 8,
         "h": 7
       },
@@ -4109,7 +4120,7 @@
       "id": 38,
       "gridPos": {
         "x": 16,
-        "y": 52,
+        "y": 55,
         "w": 8,
         "h": 7
       },
@@ -4211,7 +4222,7 @@
       "id": 39,
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 62,
         "w": 8,
         "h": 7
       },
@@ -4313,7 +4324,7 @@
       "id": 40,
       "gridPos": {
         "x": 8,
-        "y": 59,
+        "y": 62,
         "w": 8,
         "h": 7
       },
@@ -4415,9 +4426,111 @@
       "id": 41,
       "gridPos": {
         "x": 16,
-        "y": 59,
+        "y": 62,
         "w": 8,
         "h": 7
+      },
+      "datasource": {
+        "type": "alexanderzobnin-zabbix-datasource",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Сборщик: текст предупреждения",
+      "description": "Полный текст предупреждений сборщика: какие свойства vCenter не прочитаны или что скрипт работает в медленном режиме. OK — предупреждений нет.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "alexanderzobnin-zabbix-datasource",
+            "uid": "${datasource}"
+          },
+          "queryType": "2",
+          "group": {
+            "filter": "$group"
+          },
+          "host": {
+            "filter": "$host"
+          },
+          "application": {
+            "filter": ""
+          },
+          "itemTag": {
+            "filter": ""
+          },
+          "item": {
+            "filter": "Collector warnings"
+          },
+          "functions": [],
+          "options": {
+            "showDisabledItems": false,
+            "skipEmptyValues": false,
+            "disableDataAlignment": false,
+            "useZabbixValueMapping": false
+          },
+          "textFilter": "",
+          "useCaptureGroups": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "OK": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "valueSize": 16,
+          "titleSize": 14
+        }
+      },
+      "transformations": [],
+      "id": 42,
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 3
       },
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",

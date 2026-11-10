@@ -294,6 +294,32 @@ class EsxiHealthDashboardTests(DashboardTests):
         mapping = p['fieldConfig']['defaults']['mappings'][0]
         self.assertEqual((mapping['type'], list(mapping['options'])), ('value', ['OK']))
 
+    def test_small_warnings_tile_only_says_ok_or_present(self):
+        p = next(p for p in self.panels if p['title'] == 'Сборщик: предупреждения')
+        maps = p['fieldConfig']['defaults']['mappings']
+        self.assertEqual([m['type'] for m in maps], ['value', 'regex'])
+        self.assertEqual(maps[1]['options']['pattern'], '.+')       # any other text = there are warnings
+
+    def test_full_warning_text_has_its_own_wide_panel(self):
+        p = next(p for p in self.panels if p['title'] == 'Сборщик: текст предупреждения')
+        self.assertEqual((p['gridPos']['w'], p['targets'][0]['queryType'], p['options']['textMode']),
+                         (24, '2', 'value'))
+
+    def test_several_vcenters_can_be_shown_together(self):
+        host = next(v for v in self.dash['templating']['list'] if v['name'] == 'host')
+        self.assertTrue(host['multi'] and host['includeAll'])
+
+    def test_texts_follow_the_template_macros(self):
+        with open(ESXI_TEMPLATE) as fh:
+            macros = {m['macro']: m.get('value') for m in
+                      yaml.safe_load(fh)['zabbix_export']['templates'][0]['macros']}
+        desc = {p['title']: p['description'] for p in self.panels if p['type'] != 'state-timeline'}
+        self.assertIn(macros['{$ESXI.ALERT.HOLDDOWN}'], desc['Алерты по хостам'])
+        self.assertIn(macros['{$ESXI.POWER.POLICY}'], next(
+            p['description'] for p in self.panels if p['title'] == 'Power policy' and p['gridPos']['y'] < 11))
+        self.assertIn('±%s с предупреждение' % macros['{$ESXI.NTP.OFFSET.WARN}'],
+                      desc['Смещение времени относительно vCenter'])
+
     def test_generator_uses_only_the_shared_helpers(self):
         with open(os.path.join(ROOT, 'esxi_ntp_check', 'tools', 'gen_esxi_dashboard.py')) as fh:
             self.assertNotIn('gen_nsx_dashboard', fh.read())

@@ -53,7 +53,22 @@ WARN = 'Collector warnings'
 NIC_LABEL = '$2 · $1'            # "esx01 · vmnic0"
 
 # The template defaults of {$ESXI.NTP.OFFSET.WARN} / {$ESXI.NTP.OFFSET.HIGH}, seconds.
-OFFSET_WARN, OFFSET_HIGH = 1, 5
+
+
+def template_macros():
+    """Default values of the template macros: the dashboard thresholds and texts follow the template."""
+    import yaml
+    path = os.path.join(here, '..', 'Template ESXi Health by vCenter.yaml')
+    with open(path, encoding='utf-8') as fh:
+        tpl = yaml.safe_load(fh)['zabbix_export']['templates'][0]
+    return {m['macro']: m.get('value') for m in tpl['macros']}
+
+
+MACROS = template_macros()
+OFFSET_WARN = int(MACROS['{$ESXI.NTP.OFFSET.WARN}'])
+OFFSET_HIGH = int(MACROS['{$ESXI.NTP.OFFSET.HIGH}'])
+HOLDDOWN = MACROS['{$ESXI.ALERT.HOLDDOWN}']
+POWER_POLICY = MACROS['{$ESXI.POWER.POLICY}']
 
 
 def item(key):
@@ -108,6 +123,12 @@ def problems_panel():
                         'highlightNewerThan': '1h', 'customLastChangeFormat': False}}
 
 
+# "OK" is what the collector sends when there is nothing to report (never an empty string); any other text is a
+# warning. The small tile only says which of the two it is, the full text goes to the wide panel.
+WARN_MAPS = [{'type': 'value', 'options': {'OK': {'text': 'OK', 'color': GREEN, 'index': 0}}},
+             {'type': 'regex', 'options': {'pattern': '.+', 'result': {'text': 'ЕСТЬ', 'color': ORANGE, 'index': 1}}}]
+
+
 def build():
     d = Dashboard()
     d.row('Состояние ESXi: зелёный — норма, красный — нужны действия, оранжевый — потеряна избыточность', 0)
@@ -120,10 +141,9 @@ def build():
                no_value='Нет данных'), 0, 1, 3, 5)
     d.add(stat('Сборщик: предупреждения', [text_query('A', WARN)],
                'Что скрипт не смог прочитать у vCenter (неверное имя свойства, нет прав, медленный режим). '
-               'OK — предупреждений нет. Иначе показан текст предупреждения: часть проверок не обновляется.',
-               maps=[{'type': 'value', 'options': {'OK': {'text': 'OK', 'color': GREEN, 'index': 0}}}],
-               thresh=thresholds((ORANGE, None)), value_size=14, title_size=18, no_value='нет данных'),
-          3, 1, 3, 5)
+               'OK — предупреждений нет; иначе часть проверок не обновляется, текст — в строке под светофором.',
+               maps=WARN_MAPS, thresh=thresholds((ORANGE, None)), value_size=24, title_size=18,
+               no_value='нет данных'), 3, 1, 3, 5)
     d.add(light('Алерты выключены', 'alert', [('equal', 0)],
                 'Хосты в Maintenance Mode или не в состоянии connected: их алерты подавлены (и закрываются '
                 'сами). Оранжевый — просто напоминание, что хост выведен из контроля.', colour=ORANGE),
@@ -139,7 +159,7 @@ def build():
                 '{$ESXI.DNS.ALTERNATE}).'), 15, 1, 3, 5)
     d.add(light('Power policy', 'power', [('notEqual', 1)],
                 'Число хостов, у которых активная политика энергосбережения не равна {$ESXI.POWER.POLICY} '
-                '(по умолчанию High performance).'), 18, 1, 3, 5)
+                '(по умолчанию %s).' % POWER_POLICY), 18, 1, 3, 5)
     d.add(light('VMkernel', 'vmk', [('notEqual', 1)],
                 'Число хостов без настроенных VMkernel-адаптеров с IP.'), 21, 1, 3, 5)
 
@@ -180,8 +200,8 @@ def build():
                 'Состояние HA-агента хоста; текст состояния — в элементе «vSphere HA agent state».',
                 value_size=14), 16, 25, 8, 5)
     d.add(tiles('Алерты по хостам', item('alert'), ALERTING, name('alert'),
-                'ПОДАВЛЕНЫ — хост в Maintenance Mode или не connected; через 10 минут после возврата алерты '
-                'включаются снова ({$ESXI.ALERT.HOLDDOWN}).', value_size=14), 0, 30, 8, 5)
+                'ПОДАВЛЕНЫ — хост в Maintenance Mode или не connected; через %s после возврата алерты '
+                'включаются снова ({$ESXI.ALERT.HOLDDOWN}).' % HOLDDOWN, value_size=14), 0, 30, 8, 5)
     d.add(per_host_numbers('Dead-пути', 'dead', 'Число путей в состоянии dead на каждом хосте.', 'пут.'),
           8, 30, 8, 5)
     d.add(per_host_numbers('Недоступные датасторы', 'ds', 'Число датасторов, недоступных хосту.', 'ДС'),
@@ -216,8 +236,9 @@ def build():
                      'Число датасторов, недоступных хосту, по хостам.', 'none', name('ds'),
                      thresh_lines=thresholds((GREEN, None), (RED, 1))), 8, 44, 8, 7)
     offset = timeseries('Смещение времени относительно vCenter', item('offset'),
-                        'Время ESXi минус время vCenter. Линии — пороги шаблона: ±1 с предупреждение, ±5 с '
-                        'высокая важность. Положительное значение — ESXi идёт вперёд.', 's', name('offset'),
+                        'Время ESXi минус время vCenter. Линии — пороги шаблона: ±%d с предупреждение, ±%d с '
+                        'высокая важность. Положительное значение — ESXi идёт вперёд.' % (OFFSET_WARN, OFFSET_HIGH),
+                        's', name('offset'),
                         thresh_lines=thresholds((RED, None), (ORANGE, -OFFSET_HIGH), (GREEN, -OFFSET_WARN),
                                                 (ORANGE, OFFSET_WARN), (RED, OFFSET_HIGH)))
     offset['fieldConfig']['defaults'].pop('min')          # the offset can be negative
@@ -235,6 +256,17 @@ def build():
                    'История линков аплинков: хост · vmnic.', rename_to=NIC_LABEL), 8, 59, 8, 7)
     d.add(timeline('Power policy', item('power'), POWER, name('power'), 'История политики энергосбережения.'),
           16, 59, 8, 7)
+
+    # The text of the collector warnings, full width, right under the traffic lights.
+    for panel in d.panels:
+        if panel['gridPos']['y'] >= 11:
+            panel['gridPos']['y'] += 3
+    d.add(stat('Сборщик: текст предупреждения', [text_query('A', WARN)],
+               'Полный текст предупреждений сборщика: какие свойства vCenter не прочитаны или что скрипт работает в '
+               'медленном режиме. OK — предупреждений нет.',
+               maps=[{'type': 'value', 'options': {'OK': {'text': 'OK', 'color': GREEN, 'index': 0}}}],
+               thresh=thresholds((ORANGE, None)), text_mode='value', value_size=16, title_size=14,
+               no_value='нет данных'), 0, 11, 24, 3)
     return d.panels
 
 
@@ -259,10 +291,10 @@ def dashboard():
              'query': {'group': '/.*/', 'host': '', 'application': '', 'itemTag': '', 'item': '',
                        'queryType': 'group'}, 'definition': '', 'regex': '', 'hide': 0, 'current': {},
              'options': [], 'includeAll': False, 'multi': False},
-            {'name': 'host', 'label': 'vCenter (мастер-хост)', 'type': 'query', 'datasource': DS, 'refresh': 2,
+            {'name': 'host', 'label': 'vCenter (мастер-хосты)', 'type': 'query', 'datasource': DS, 'refresh': 2,
              'sort': 1, 'query': {'group': '$group', 'host': '/.*/', 'application': '', 'itemTag': '', 'item': '',
                                   'queryType': 'host'}, 'definition': '', 'regex': '', 'hide': 0, 'current': {},
-             'options': [], 'includeAll': False, 'multi': False}]},
+             'options': [], 'includeAll': True, 'multi': True}]},
         'panels': build()}
 
 
