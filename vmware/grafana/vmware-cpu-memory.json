@@ -903,7 +903,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "CPU через 90 дней"
+                "value": "CPU через 90 дн."
               },
               {
                 "id": "unit",
@@ -1124,7 +1124,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Память через 90 дней"
+                "value": "Память через 90 дн."
               },
               {
                 "id": "unit",

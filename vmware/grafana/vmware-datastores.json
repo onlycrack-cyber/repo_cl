@@ -1221,7 +1221,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Через 90 дней"
+                "value": "Через 90 дн."
               },
               {
                 "id": "unit",
@@ -1772,7 +1772,7 @@
     },
     {
       "type": "bargauge",
-      "title": "Заполненность через 90 дней (прогноз)",
+      "title": "Заполненность через 90 дн. (прогноз)",
       "datasource": {
         "type": "alexanderzobnin-zabbix-datasource",
         "uid": "${datasource}"

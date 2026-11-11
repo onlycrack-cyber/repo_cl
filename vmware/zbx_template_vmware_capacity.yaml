@@ -15,7 +15,7 @@ zabbix_export:
         Year-over-year items need trends older than one year: the standard templates keep trends for 365d, so raise it (Administration > Housekeeping > Override item trend period, e.g. 800d).
       vendor:
         name: Custom
-        version: 7.0-1.0.0
+        version: 7.0-1.1.0
       groups:
         - name: Templates/Applications
       discovery_rules:
@@ -80,6 +80,40 @@ zabbix_export:
                   value: '{#DATASTORE}'
                 - tag: target
                   value: vmware
+            - uuid: 701ef6c10f66436a90bfd25bd774a96e
+              name: 'Datastore [{#DATASTORE}]: forecast history available'
+              type: CALCULATED
+              key: vmw.cap.ds.hist[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: (trendcount(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD}:now/d-{$VMW.FORECAST.MIN.HISTORY})>0)
+              description: 1 when the free-space item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper of the forecast items.
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
+            - uuid: ede46c0616a64c7ea6ff9f35f8f77637
+              name: 'Datastore [{#DATASTORE}]: seconds until free space below threshold (raw)'
+              type: CALCULATED
+              key: vmw.cap.ds.tl[{#DATASTORE.UUID}]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: last(//vmw.cap.ds.hist[{#DATASTORE.UUID}])*(min(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN}),({$VMW.FORECAST.MAX.DAYS}+1)*86400)+2)-2
+              description: 'Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'
+              tags:
+                - tag: component
+                  value: datastore
+                - tag: datastore
+                  value: '{#DATASTORE}'
+                - tag: target
+                  value: vmware
             - uuid: 752d0c0bb13e4cef9578423602e86903
               name: 'Datastore [{#DATASTORE}]: days until free space below threshold'
               type: CALCULATED
@@ -89,7 +123,7 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: d
-              params: (count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])>{$VMW.DS.PFREE.MIN})*((1-(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})<0))*min(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.DS.PFREE.MIN})<0))-(1-(count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              params: -(last(//vmw.cap.ds.tl[{#DATASTORE.UUID}])<-1.5)+(1-(last(//vmw.cap.ds.tl[{#DATASTORE.UUID}])<-1.5))*(last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])>{$VMW.DS.PFREE.MIN})*((1-(last(//vmw.cap.ds.tl[{#DATASTORE.UUID}])<0))*min(last(//vmw.cap.ds.tl[{#DATASTORE.UUID}])/86400,{$VMW.FORECAST.MAX.DAYS})-(last(//vmw.cap.ds.tl[{#DATASTORE.UUID}])<0))
               description: 'Linear trend of free space over {$VMW.FORECAST.PERIOD}. 0: already below the threshold. {$VMW.FORECAST.MAX.DAYS}: not decreasing or later than that. -1: less than {$VMW.FORECAST.MIN.HISTORY} of history, no forecast yet.'
               tags:
                 - tag: component
@@ -102,7 +136,7 @@ zabbix_export:
                 - uuid: 746a794210a74639a2403385fd18f9f3
                   expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.CRIT}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
                   name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.CRIT} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: HIGH
@@ -119,7 +153,7 @@ zabbix_export:
                 - uuid: 495db132e235455d8d2106136bab516a
                   expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.WARN}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.WARN}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.WARN}*1.2
                   name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.WARN} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: WARNING
@@ -127,7 +161,7 @@ zabbix_export:
                   dependencies:
                     - name: 'Datastore [{#DATASTORE}]: free space below {$VMW.DS.PFREE.MIN}% in less than {$VMW.FORECAST.CRIT} days'
                       expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>=0 and last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<{$VMW.FORECAST.CRIT}
-                      recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])<0 or last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.ds.daysleft[{#DATASTORE.UUID}])>{$VMW.FORECAST.CRIT}*1.2
                   tags:
                     - tag: component
                       value: datastore
@@ -164,7 +198,7 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: '%'
-              params: min(max((count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(100-forecast(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON}))+(1-(count(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*(100-last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])),0),100)
+              params: min(max(last(//vmw.cap.ds.hist[{#DATASTORE.UUID}])*(100-forecast(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON}))+(1-last(//vmw.cap.ds.hist[{#DATASTORE.UUID}]))*(100-last(//vmware.datastore.size[{$VMWARE.URL},{#DATASTORE.UUID},pfree])),0),100)
               tags:
                 - tag: component
                   value: datastore
@@ -267,8 +301,15 @@ zabbix_export:
           delay: 1h
           username: '{$VMWARE.USERNAME}'
           password: '{$VMWARE.PASSWORD}'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#CLUSTER.NAME}'
+                value: '["\\]'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
           lifetime: 7d
-          description: Same request as the standard cluster discovery. Cluster items aggregate the hypervisor hosts in the host group "<cluster> (hypervisor)" that the standard template creates.
+          description: 'Same request as the standard cluster discovery. Cluster items aggregate the hypervisor hosts in the host group "<cluster> (hypervisor)" that the standard template creates. Clusters whose name contains a double quote or a backslash are skipped: the name is put into quoted item keys and filters, where those characters cannot be written.'
           item_prototypes:
             - uuid: fa5bfa12ea9143c79c8a7a5b25ef1f9f
               name: 'Cluster [{#CLUSTER.NAME}]: hypervisors'
@@ -424,6 +465,40 @@ zabbix_export:
                   value: power
                 - tag: target
                   value: vmware
+            - uuid: 9acf11921f964bff8a2df12d04ebaa5a
+              name: 'Cluster [{#CLUSTER.NAME}]: CPU forecast history available'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.hist["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: (trendcount(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD}:now/d-{$VMW.FORECAST.MIN.HISTORY})>0)
+              description: 1 when the cluster CPU item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper.
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: abfb343ed11240d683c0275250fb0afd
+              name: 'Cluster [{#CLUSTER.NAME}]: seconds until CPU above threshold (raw)'
+              type: CALCULATED
+              key: vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: last(//vmw.cap.cl.cpu.hist["{#CLUSTER.NAME}"])*(min(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX}),({$VMW.FORECAST.MAX.DAYS}+1)*86400)+2)-2
+              description: 'Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: cpu
+                - tag: target
+                  value: vmware
             - uuid: 3997c6a533514c23b16b772543d91750
               name: 'Cluster [{#CLUSTER.NAME}]: days until CPU above threshold'
               type: CALCULATED
@@ -433,7 +508,7 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: d
-              params: (count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"])<{$VMW.CL.CPU.MAX})*((1-(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})<0))*min(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.CPU.MAX})<0))-(1-(count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              params: -(last(//vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"])<-1.5)+(1-(last(//vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"])<-1.5))*(last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"])<{$VMW.CL.CPU.MAX})*((1-(last(//vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"])<0))*min(last(//vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"])/86400,{$VMW.FORECAST.MAX.DAYS})-(last(//vmw.cap.cl.cpu.tl["{#CLUSTER.NAME}"])<0))
               description: Linear trend of cluster CPU utilization over {$VMW.FORECAST.PERIOD}. -1 until the cluster item has {$VMW.FORECAST.MIN.HISTORY} of history (it starts when the template is linked).
               tags:
                 - tag: cluster
@@ -446,7 +521,7 @@ zabbix_export:
                 - uuid: 89b25940ce9a48eab11eaed855f035d3
                   expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
                   name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.CRIT} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: HIGH
@@ -463,7 +538,7 @@ zabbix_export:
                 - uuid: 0f5e1fdf2db449349210e7b679a46ed3
                   expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.WARN}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
                   name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.WARN} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: WARNING
@@ -471,7 +546,7 @@ zabbix_export:
                   dependencies:
                     - name: 'Cluster [{#CLUSTER.NAME}]: CPU utilization above {$VMW.CL.CPU.MAX}% in less than {$VMW.FORECAST.CRIT} days'
                       expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
-                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.cpu.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
                   tags:
                     - tag: cluster
                       value: '{#CLUSTER.NAME}'
@@ -508,12 +583,46 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: '%'
-              params: min(max((count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*forecast(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-(count(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"]),0),100)
+              params: min(max(last(//vmw.cap.cl.cpu.hist["{#CLUSTER.NAME}"])*forecast(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-last(//vmw.cap.cl.cpu.hist["{#CLUSTER.NAME}"]))*last(//vmw.cap.cl.cpu.pused["{#CLUSTER.NAME}"]),0),100)
               tags:
                 - tag: cluster
                   value: '{#CLUSTER.NAME}'
                 - tag: component
                   value: cpu
+                - tag: target
+                  value: vmware
+            - uuid: 305505ec44ac4151b48d98de479cb63f
+              name: 'Cluster [{#CLUSTER.NAME}]: memory forecast history available'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.hist["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: (trendcount(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD}:now/d-{$VMW.FORECAST.MIN.HISTORY})>0)
+              description: 1 when the cluster memory item has history older than {$VMW.FORECAST.MIN.HISTORY}. Helper.
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
+                - tag: target
+                  value: vmware
+            - uuid: 202663f4eeb34203a32359a90cbc10ce
+              name: 'Cluster [{#CLUSTER.NAME}]: seconds until memory above threshold (raw)'
+              type: CALCULATED
+              key: vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"]
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              params: last(//vmw.cap.cl.mem.hist["{#CLUSTER.NAME}"])*(min(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX}),({$VMW.FORECAST.MAX.DAYS}+1)*86400)+2)-2
+              description: 'Helper of the forecast items: timeleft() computed once. -2: not enough history, -1: no trend.'
+              tags:
+                - tag: cluster
+                  value: '{#CLUSTER.NAME}'
+                - tag: component
+                  value: memory
                 - tag: target
                   value: vmware
             - uuid: f4d0e9076218473b96eb4f455c5f42ed
@@ -525,7 +634,7 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: d
-              params: (count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*(last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"])<{$VMW.CL.MEM.MAX})*((1-(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})<0))*min(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})/86400,{$VMW.FORECAST.MAX.DAYS})-(timeleft(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.CL.MEM.MAX})<0))-(1-(count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))
+              params: -(last(//vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"])<-1.5)+(1-(last(//vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"])<-1.5))*(last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"])<{$VMW.CL.MEM.MAX})*((1-(last(//vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"])<0))*min(last(//vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"])/86400,{$VMW.FORECAST.MAX.DAYS})-(last(//vmw.cap.cl.mem.tl["{#CLUSTER.NAME}"])<0))
               tags:
                 - tag: cluster
                   value: '{#CLUSTER.NAME}'
@@ -537,7 +646,7 @@ zabbix_export:
                 - uuid: 6622052064e349868746773489847a9e
                   expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
                   name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.CRIT} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: HIGH
@@ -554,7 +663,7 @@ zabbix_export:
                 - uuid: d8e9b8104d5240bf948f2703f54f9206
                   expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.WARN}
                   recovery_mode: RECOVERY_EXPRESSION
-                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
+                  recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.WARN}*1.2
                   name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.WARN} days'
                   opdata: 'Days left: {ITEM.LASTVALUE1}'
                   priority: WARNING
@@ -562,7 +671,7 @@ zabbix_export:
                   dependencies:
                     - name: 'Cluster [{#CLUSTER.NAME}]: memory utilization above {$VMW.CL.MEM.MAX}% in less than {$VMW.FORECAST.CRIT} days'
                       expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>=0 and last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<{$VMW.FORECAST.CRIT}
-                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])<0 or last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
+                      recovery_expression: last(/VMware capacity planning/vmw.cap.cl.mem.daysleft["{#CLUSTER.NAME}"])>{$VMW.FORECAST.CRIT}*1.2
                   tags:
                     - tag: cluster
                       value: '{#CLUSTER.NAME}'
@@ -599,7 +708,7 @@ zabbix_export:
               trends: 730d
               value_type: FLOAT
               units: '%'
-              params: min(max((count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0)*forecast(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-(count(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],1d:now-{$VMW.FORECAST.MIN.HISTORY})>0))*last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"]),0),100)
+              params: min(max(last(//vmw.cap.cl.mem.hist["{#CLUSTER.NAME}"])*forecast(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"],{$VMW.FORECAST.PERIOD},{$VMW.FORECAST.HORIZON})+(1-last(//vmw.cap.cl.mem.hist["{#CLUSTER.NAME}"]))*last(//vmw.cap.cl.mem.pused["{#CLUSTER.NAME}"]),0),100)
               tags:
                 - tag: cluster
                   value: '{#CLUSTER.NAME}'
@@ -633,7 +742,7 @@ zabbix_export:
           description: '"Days until" value meaning "not within 10 years / not growing".'
         - macro: '{$VMW.FORECAST.MIN.HISTORY}'
           value: 7d
-          description: Minimum history before forecasting; until then "days until" is -1.
+          description: Minimum history before forecasting, in whole days (trend functions need a day-aligned shift); until then "days until" is -1.
         - macro: '{$VMW.FORECAST.PERIOD}'
           value: 30d
           description: History window the linear forecasts are fitted on.
