@@ -123,6 +123,14 @@ python3 vmware/tools/gen_capacity_template.py vmware/zbx_template_vmware_capacit
 python3 vmware/tools/gen_grafana_dashboards.py vmware/grafana
 ```
 
+### Копия «v2» для проверки на сервере
+
+`python3 deploy/make_test_build.py` собирает `dist-v2/zbx_template_vmware_capacity_v2.yaml`: шаблон
+«VMware capacity planning v2» с новыми UUID, ключами `vmw.cap_v2.*` и ключами обнаружения с пробелом перед
+параметром (`vmware.datastore.discovery[ "{$VMWARE.URL}"]`). Его можно импортировать рядом с боевым, ничего
+не заменяя, и даже привязать к тому же хосту vCenter. Имена элементов не меняются, поэтому дашборды на одном
+хосте покажут оба набора; для чистого сравнения привяжите копию к отдельному тестовому хосту.
+
 ### Пороги на дашбордах
 
 Grafana не умеет читать макросы Zabbix, поэтому цвета и подписи (30/90 дней, горизонт 90 дней, пороги
