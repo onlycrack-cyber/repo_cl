@@ -13,6 +13,10 @@ the production files without replacing anything:
 * the External check keys call ssmc_collect_<suffix>.py, a copy of the collector with its own file name;
 * template-level user macros keep their names, so link only one of the two templates to a host.
 
+The SSMC build also writes the Grafana dashboards hpe-3par-zabbix_<suffix>.json and
+hpe-3par-health_<suffix>.json: same panels, but another uid and the title ends with "<suffix>", so importing them
+does not overwrite the production dashboards. They find items by name, which the copy keeps.
+
 VMware copy: "VMware capacity planning <suffix>", all uuids new, item keys vmw.cap.* renamed to
 vmw.cap_<suffix>.* (formulas and triggers follow) and the discovery keys written with a space before the
 quoted parameter (vmware.datastore.discovery[ "{$VMWARE.URL}"]), so both copies can even be linked to the same
@@ -21,6 +25,7 @@ show both copies; link the copy to a separate test host to compare cleanly.
 """
 import argparse
 import hashlib
+import json
 import os
 import re
 
@@ -60,6 +65,15 @@ def build_vmware_template(text, suffix):
     return re.sub(r'(version: 7\.0-\d+\.\d+\.\d+)\n', r'\1-%s\n' % suffix, text, count=1)
 
 
+def build_dashboard(text, suffix):
+    d = json.loads(text)
+    d['uid'] = '%s-%s' % (d['uid'], suffix)
+    d['title'] = '%s %s' % (d['title'], suffix)
+    d['tags'] = list(d.get('tags', [])) + [suffix]
+    d.pop('id', None)
+    return json.dumps(d, ensure_ascii=False, indent=2) + '\n'
+
+
 def script_name(suffix):
     return SCRIPT.replace('.py', '_%s.py' % suffix)
 
@@ -93,6 +107,13 @@ def main(argv=None):
             fh.write(script)
         os.chmod(s_path, 0o755)
         written += [t_path, s_path]
+        for name in ('hpe-3par-zabbix', 'hpe-3par-health'):
+            with open(os.path.join(ROOT, 'grafana', name + '.json')) as fh:
+                dash = build_dashboard(fh.read(), args.suffix)
+            d_path = os.path.join(out_dir, '%s_%s.json' % (name, args.suffix))
+            with open(d_path, 'w') as fh:
+                fh.write(dash)
+            written.append(d_path)
     if args.product in ('all', 'vmware'):
         with open(os.path.join(ROOT, 'vmware', VMW_FILE)) as fh:
             template = build_vmware_template(fh.read(), args.suffix)
