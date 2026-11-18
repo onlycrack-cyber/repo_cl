@@ -52,6 +52,7 @@ class ScheduleHelper {
 			'split' => ReportSplitter::SPLIT_NONE,
 			'skip_empty' => 0,
 			'group_recipients' => [],
+			'host_recipients' => [],
 			'common_recipients' => self::COMMON_ALL,
 			'created_by' => '0',
 			'updated_at' => 0
@@ -91,7 +92,8 @@ class ScheduleHelper {
 				? (string) $schedule['split']
 				: ReportSplitter::SPLIT_NONE,
 			'skip_empty' => (int) !empty($schedule['skip_empty']),
-			'group_recipients' => self::normalizeGroupRecipients($schedule['group_recipients']),
+			'group_recipients' => self::normalizeRecipientRules($schedule['group_recipients'], 'groupids'),
+			'host_recipients' => self::normalizeRecipientRules($schedule['host_recipients'], 'hostids'),
 			'common_recipients' => $schedule['common_recipients'] === self::COMMON_FALLBACK
 				? self::COMMON_FALLBACK
 				: self::COMMON_ALL,
@@ -101,15 +103,22 @@ class ScheduleHelper {
 	}
 
 	/**
-	 * Recipient rules for "Per host group" reports: a part of a host group is sent to the recipients of every
-	 * rule that lists this group.
-	 *
-	 * @param mixed $rules       List of ['groupids' => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => ...].
-	 * @param bool  $keep_empty  Keep rules without data (rows of the edit form).
+	 * Per-part recipient rules. For each split mode: schedule field => object ID field of a rule.
+	 * A report part (host group or host) is sent to the recipients of every rule that lists its object.
+	 */
+	public const RECIPIENT_RULES = [
+		ReportSplitter::SPLIT_GROUP => ['field' => 'group_recipients', 'key' => 'groupids'],
+		ReportSplitter::SPLIT_HOST => ['field' => 'host_recipients', 'key' => 'hostids']
+	];
+
+	/**
+	 * @param mixed  $rules       List of [<key> => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => ...].
+	 * @param string $key         "groupids" or "hostids".
+	 * @param bool   $keep_empty  Keep rules without data (rows of the edit form).
 	 *
 	 * @return array
 	 */
-	public static function normalizeGroupRecipients($rules, bool $keep_empty = false): array {
+	public static function normalizeRecipientRules($rules, string $key, bool $keep_empty = false): array {
 		if (!is_array($rules)) {
 			return [];
 		}
@@ -128,13 +137,13 @@ class ScheduleHelper {
 			}
 
 			$rule = [
-				'groupids' => ReportBuilder::ids($rule['groupids'] ?? []),
+				$key => ReportBuilder::ids($rule[$key] ?? []),
 				'userids' => ReportBuilder::ids($rule['userids'] ?? []),
 				'usrgrpids' => ReportBuilder::ids($rule['usrgrpids'] ?? []),
 				'extra_sendto' => RecipientResolver::normalizeSendto($extra_sendto)
 			];
 
-			if ($keep_empty || $rule['groupids'] || self::hasRecipients($rule)) {
+			if ($keep_empty || $rule[$key] || self::hasRecipients($rule)) {
 				$result[] = $rule;
 			}
 		}
@@ -147,10 +156,18 @@ class ScheduleHelper {
 	}
 
 	/**
-	 * Whether group recipient rules are used: only for reports split per host group.
+	 * Recipient rules used by the schedule: only those of the current split mode.
+	 *
+	 * @return array|null  ['rules' => array, 'key' => string] or null if the schedule has no per-part recipients.
 	 */
-	public static function usesGroupRecipients(array $schedule): bool {
-		return $schedule['split'] === ReportSplitter::SPLIT_GROUP && $schedule['group_recipients'];
+	public static function getActiveRecipientRules(array $schedule): ?array {
+		if (!array_key_exists($schedule['split'], self::RECIPIENT_RULES)) {
+			return null;
+		}
+
+		['field' => $field, 'key' => $key] = self::RECIPIENT_RULES[$schedule['split']];
+
+		return $schedule[$field] ? ['rules' => $schedule[$field], 'key' => $key] : null;
 	}
 
 	/**
@@ -174,9 +191,9 @@ class ScheduleHelper {
 			$errors[] = 'Incorrect value for field "Media type": a media type must be selected.';
 		}
 
-		$has_group_recipients = self::usesGroupRecipients($schedule);
+		$active_rules = self::getActiveRecipientRules($schedule);
 
-		if (!self::hasRecipients($schedule) && !$has_group_recipients) {
+		if (!self::hasRecipients($schedule) && $active_rules === null) {
 			$errors[] = 'At least one recipient (user, user group or additional address) is required.';
 		}
 
@@ -184,26 +201,31 @@ class ScheduleHelper {
 			$errors[] = 'Incorrect value for field "Additional recipients".';
 		}
 
-		if ($has_group_recipients) {
-			foreach ($schedule['group_recipients'] as $index => $rule) {
+		if ($active_rules !== null) {
+			$key = $active_rules['key'];
+			[$table, $objects, $filter_field] = $key === 'groupids'
+				? ['Recipients per host group', 'host groups', 'Host groups']
+				: ['Recipients per host', 'hosts', 'Hosts'];
+
+			foreach ($active_rules['rules'] as $index => $rule) {
 				$row = $index + 1;
 
-				if (!$rule['groupids']) {
-					$errors[] = sprintf('Recipients per host group, row %d: host groups must be selected.', $row);
+				if (!$rule[$key]) {
+					$errors[] = sprintf('%s, row %d: %s must be selected.', $table, $row, $objects);
 				}
 
 				if (!self::hasRecipients($rule)) {
-					$errors[] = sprintf('Recipients per host group, row %d: at least one recipient is required.', $row);
+					$errors[] = sprintf('%s, row %d: at least one recipient is required.', $table, $row);
 				}
 
 				if (!self::isValidSendto($rule['extra_sendto'])) {
-					$errors[] = sprintf('Recipients per host group, row %d: incorrect additional recipients.', $row);
+					$errors[] = sprintf('%s, row %d: incorrect additional recipients.', $table, $row);
 				}
 
-				// With a group filter only the filtered groups become report parts.
-				if ($schedule['groupids'] && array_diff($rule['groupids'], $schedule['groupids'])) {
-					$errors[] = sprintf('Recipients per host group, row %d: every host group must also be selected '.
-						'in the report filter "Host groups" (or leave the filter empty).', $row
+				// With a filter only the filtered objects become report parts.
+				if ($schedule[$key] && array_diff($rule[$key], $schedule[$key])) {
+					$errors[] = sprintf('%s, row %d: all %s must also be selected in the report filter "%s" '.
+						'(or leave the filter empty).', $table, $row, $objects, $filter_field
 					);
 				}
 			}

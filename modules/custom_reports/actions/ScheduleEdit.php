@@ -54,9 +54,11 @@ class ScheduleEdit extends CController {
 			'split' =>				'in '.implode(',', ReportSplitter::MODES),
 			'skip_empty' =>			'in 0,1',
 			'group_recipients' =>	'array',
+			'host_recipients' =>	'array',
 			'common_recipients' =>	'in '.ScheduleHelper::COMMON_ALL.','.ScheduleHelper::COMMON_FALLBACK,
-			'add_group_recipient' =>	'in 1',
-			'remove_group_recipient' =>	'int32'
+			'rule_list' =>			'in group_recipients,host_recipients',
+			'rule_add' =>			'in 1',
+			'rule_remove' =>		'int32'
 		];
 
 		$ret = $this->validateInput($fields);
@@ -111,36 +113,44 @@ class ScheduleEdit extends CController {
 			$schedule = ScheduleHelper::normalize(array_replace($schedule, $input));
 		}
 
-		// Rows of the "Recipients per host group" table, including rows that are not filled in yet.
-		$rules = $this->hasInput('form_refresh')
-			? ScheduleHelper::normalizeGroupRecipients($this->getInput('group_recipients', []), true)
-			: $schedule['group_recipients'];
+		// Rows of the "Recipients per host group / per host" tables, including rows that are not filled in yet.
+		$rule_ids = ['groupids' => [], 'hostids' => [], 'userids' => [], 'usrgrpids' => []];
 
-		if ($this->hasInput('remove_group_recipient')) {
-			unset($rules[$this->getInput('remove_group_recipient')]);
-			$rules = array_values($rules);
-		}
+		foreach (ScheduleHelper::RECIPIENT_RULES as ['field' => $field, 'key' => $key]) {
+			$rules = $this->hasInput('form_refresh')
+				? ScheduleHelper::normalizeRecipientRules($this->getInput($field, []), $key, true)
+				: $schedule[$field];
 
-		if ($this->hasInput('add_group_recipient')) {
-			$rules[] = ['groupids' => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => []];
-		}
+			if ($this->getInput('rule_list', '') === $field) {
+				if ($this->hasInput('rule_remove')) {
+					unset($rules[$this->getInput('rule_remove')]);
+					$rules = array_values($rules);
+				}
 
-		$schedule['group_recipients'] = $rules;
-		$schedule['scheduleid'] = $scheduleid;
+				if ($this->hasInput('rule_add')) {
+					$rules[] = [$key => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => []];
+				}
+			}
 
-		$rule_ids = ['groupids' => [], 'userids' => [], 'usrgrpids' => []];
+			$schedule[$field] = $rules;
 
-		foreach ($rules as $rule) {
-			foreach ($rule_ids as $key => $ids) {
-				$rule_ids[$key] = array_merge($ids, $rule[$key]);
+			foreach ($rules as $rule) {
+				foreach ([$key, 'userids', 'usrgrpids'] as $id_key) {
+					$rule_ids[$id_key] = array_merge($rule_ids[$id_key], $rule[$id_key]);
+				}
 			}
 		}
+
+		$schedule['scheduleid'] = $scheduleid;
 
 		$response = new CControllerResponseData([
 			'schedule' => $schedule,
 			'rule_names' => [
 				'groupids' => array_column($this->getMultiselectData('hostgroup', array_unique($rule_ids['groupids'])),
 					null, 'id'
+				),
+				'hostids' => array_column($this->getMultiselectData('host', array_unique($rule_ids['hostids'])), null,
+					'id'
 				),
 				'userids' => array_column($this->getMultiselectData('user', array_unique($rule_ids['userids'])), null,
 					'id'

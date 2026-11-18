@@ -45,8 +45,11 @@
 		}
 
 		if (checkedValue('split') !== null) {
-			setRowVisible('cr-group-recipients-row', checkedValue('split') === 'group');
-			setRowVisible('cr-common-recipients-row', checkedValue('split') === 'group');
+			const split = checkedValue('split');
+
+			setRowVisible('cr-group-recipients-row', split === 'group');
+			setRowVisible('cr-host-recipients-row', split === 'host');
+			setRowVisible('cr-common-recipients-row', split === 'group' || split === 'host');
 		}
 	}
 
@@ -56,7 +59,7 @@
 		}
 	});
 
-	// "Recipients per host group": rows are added and removed by re-rendering the form with its current values.
+	// "Recipients per host group / per host": rows are added and removed by re-rendering the form with its current values.
 	document.addEventListener('click', function(e) {
 		const add = e.target.closest('.js-cr-rule-add');
 		const remove = e.target.closest('.js-cr-rule-remove');
@@ -69,13 +72,13 @@
 		e.preventDefault();
 
 		const form = button.closest('form');
-		const vars = {form_refresh: '1'};
+		const vars = {form_refresh: '1', rule_list: button.dataset.list};
 
 		if (add !== null) {
-			vars.add_group_recipient = '1';
+			vars.rule_add = '1';
 		}
 		else {
-			vars.remove_group_recipient = remove.dataset.index;
+			vars.rule_remove = remove.dataset.index;
 		}
 
 		form.querySelector('input[name="action"]').value = 'customreports.schedule.edit';

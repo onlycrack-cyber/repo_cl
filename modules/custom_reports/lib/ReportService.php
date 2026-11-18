@@ -44,7 +44,9 @@ class ReportService {
 		$resolver = new RecipientResolver($this->api);
 		$common = $this->resolveRecipients($resolver, $schedule, $schedule['mediatypeid']);
 
-		if (!ScheduleHelper::usesGroupRecipients($schedule)) {
+		$active_rules = ScheduleHelper::getActiveRecipientRules($schedule);
+
+		if ($active_rules === null) {
 			if (!$common) {
 				throw new RuntimeException(sprintf('No recipients: selected users have no active media of type "%s".',
 					$media_type['name']
@@ -58,38 +60,38 @@ class ReportService {
 			}, $report, $schedule['format'], $schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
 		}
 
-		// Per host group with own recipients: groupid => addresses of all rules that list the group.
-		$by_group = [];
+		// Split with own recipients: groupid/hostid => addresses of all rules that list the group/host.
+		$by_part = [];
 
-		foreach ($schedule['group_recipients'] as $rule) {
+		foreach ($active_rules['rules'] as $rule) {
 			$sendto = $this->resolveRecipients($resolver, $rule, $schedule['mediatypeid']);
 
-			foreach ($rule['groupids'] as $groupid) {
-				$by_group[$groupid] = array_merge($by_group[$groupid] ?? [], $sendto);
+			foreach ($rule[$active_rules['key']] as $id) {
+				$by_part[$id] = array_merge($by_part[$id] ?? [], $sendto);
 			}
 		}
 
 		$fallback_only = $schedule['common_recipients'] === ScheduleHelper::COMMON_FALLBACK;
 		$has_common = ScheduleHelper::hasRecipients($schedule);
 
-		$recipients = static function (array $part) use ($by_group, $common, $fallback_only, $has_common): ?array {
-			$has_rule = array_key_exists($part['id'], $by_group);
+		$recipients = static function (array $part) use ($by_part, $common, $fallback_only, $has_common): ?array {
+			$has_rule = array_key_exists($part['id'], $by_part);
 
-			// The group is not addressed by any rule and there are no common recipients.
+			// The group/host is not addressed by any rule and there are no common recipients.
 			if (!$has_rule && !$has_common) {
 				return null;
 			}
 
-			$own = $by_group[$part['id']] ?? [];
+			$own = $by_part[$part['id']] ?? [];
 			$sendto = ($has_rule && $fallback_only) ? $own : array_merge($own, $common);
 
 			return array_values(array_unique($sendto));
 		};
 
-		$report = $this->buildReport($schedule, ReportSplitter::SPLIT_GROUP);
+		$report = $this->buildReport($schedule, $schedule['split']);
 
 		return $this->deliver($media_type, $recipients, $report, $schedule['format'], $schedule['name'],
-			ReportSplitter::SPLIT_GROUP, (bool) $schedule['skip_empty']
+			$schedule['split'], (bool) $schedule['skip_empty']
 		);
 	}
 

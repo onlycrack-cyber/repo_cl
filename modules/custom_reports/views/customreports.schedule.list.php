@@ -77,6 +77,10 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		$recipients[] = _n('%1$s host group rule', '%1$s host group rules', count($schedule['group_recipients']));
 	}
 
+	if (($schedule['split'] ?? '') === ReportSplitter::SPLIT_HOST && !empty($schedule['host_recipients'])) {
+		$recipients[] = _n('%1$s host rule', '%1$s host rules', count($schedule['host_recipients']));
+	}
+
 	$last_run = max((int) ($state['last_run'] ?? 0), (int) ($state['last_manual_run'] ?? 0));
 	$result = '';
 
