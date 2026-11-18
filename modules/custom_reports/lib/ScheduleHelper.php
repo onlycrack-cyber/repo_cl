@@ -46,6 +46,7 @@ class ScheduleHelper {
 			'sortfield' => ReportBuilder::SORT_SEVERITY,
 			'sortorder' => ReportBuilder::SORT_DESC,
 			'analytics' => PeriodAnalytics::PERIOD_AUTO,
+			'problem_list' => ReportBuilder::LIST_FULL,
 			'frequency' => self::FREQUENCY_DAILY,
 			'weekday' => 1,
 			'time' => '09:00',
@@ -90,6 +91,7 @@ class ScheduleHelper {
 			'analytics' => in_array($schedule['analytics'], PeriodAnalytics::PERIODS, true)
 				? $schedule['analytics']
 				: PeriodAnalytics::PERIOD_AUTO,
+			'problem_list' => $filter['problem_list'],
 			'frequency' => $schedule['frequency'] === self::FREQUENCY_WEEKLY ? self::FREQUENCY_WEEKLY : self::FREQUENCY_DAILY,
 			'weekday' => min(7, max(1, (int) $schedule['weekday'])),
 			'time' => trim((string) $schedule['time']),

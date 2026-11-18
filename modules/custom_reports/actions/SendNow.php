@@ -13,6 +13,7 @@ use CMessageHelper;
 use CUrl;
 use Exception;
 use Modules\CustomReports\Lib\FrontendHelper;
+use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 
@@ -26,7 +27,8 @@ class SendNow extends CController {
 			'mediatypeid' =>	'required|db media_type.mediatypeid',
 			'format' =>			'required|in '.implode(',', ReportRenderer::FORMATS),
 			'split' =>			'required|in '.implode(',', ReportSplitter::MODES),
-			'skip_empty' =>		'in 0,1'
+			'skip_empty' =>		'in 0,1',
+			'problem_list' =>	'in '.ReportBuilder::LIST_FULL.','.ReportBuilder::LIST_SUMMARY
 		];
 
 		$ret = $this->validateInput($fields);
@@ -49,7 +51,9 @@ class SendNow extends CController {
 		try {
 			$service = FrontendHelper::createService();
 			$split = $this->getInput('split');
-			$report = $service->buildReport(FrontendHelper::getFilter(), $split);
+			$filter = ['problem_list' => $this->getInput('problem_list', ReportBuilder::LIST_FULL)]
+				+ FrontendHelper::getFilter();
+			$report = $service->buildReport($filter, $split);
 			$result = $service->sendReport($report, $mediatypeid, $sendto, $this->getInput('format'),
 				_('Problem report (test)'), $split, (bool) $this->getInput('skip_empty', 0)
 			);

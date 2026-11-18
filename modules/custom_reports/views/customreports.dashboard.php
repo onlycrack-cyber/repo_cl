@@ -274,6 +274,38 @@ if ($analytics !== null) {
 		$top_new->addRow([$host['name'], $host['count']]);
 	}
 
+	// Unresolved problems: one line per trigger with the alerts of the period.
+	$unresolved = (new CTableInfo())
+		->setHeader([_('Severity'), _('Host'), _('Problem'), _('Open since'), _('Duration'), _('Alerts sent'),
+			_('Fired'), _('Last alert')
+		])
+		->setNoDataMessage(_('No unresolved problems.'));
+
+	foreach ($report['unresolved'] as $item) {
+		$alerts = $item['alerts_sent'] === null ? '-' : [
+			$item['alerts_sent'],
+			$item['alerts_failed'] ? (new CSpan(' '._s('(%1$s failed)', $item['alerts_failed'])))->addClass(ZBX_STYLE_RED) : null
+		];
+
+		$unresolved->addRow([
+			CSeverityHelper::makeSeverityCell($item['severity']),
+			implode(', ', array_column($item['hosts'], 'name')),
+			[$item['name'], $item['acknowledged'] ? (new CSpan(' ('._('ack').')'))->addClass(ZBX_STYLE_GREEN) : null],
+			(new CCol(zbx_date2str(DATE_TIME_FORMAT, $item['since'])))->addClass(ZBX_STYLE_NOWRAP),
+			(new CCol([
+				ReportRenderer::formatDuration($item['age']),
+				$item['whole_period'] ? [BR(), (new CSpan(_('whole period')))->addClass(ZBX_STYLE_RED)] : null
+			]))->addClass(ZBX_STYLE_NOWRAP),
+			$alerts,
+			$item['repeats'] > 0 ? $item['repeats'] : '-',
+			(new CSpan($item['last_alert']))->addClass(ZBX_STYLE_GREY)
+		]);
+	}
+
+	$whole_period = count(array_filter($report['unresolved'], static function (array $item): bool {
+		return $item['whole_period'];
+	}));
+
 	$analytics_block = (new CDiv([
 		new CTag('h4', true, _s('Period analytics: %1$s (%2$s - %3$s)', $period_labels_an[$analytics['period']],
 			zbx_date2str(DATE_TIME_FORMAT, $analytics['from']), zbx_date2str(DATE_TIME_FORMAT, $analytics['till'])
@@ -287,6 +319,12 @@ if ($analytics !== null) {
 			(new CDiv($recurring))->addClass('cr-analytics-table'),
 			(new CDiv($top_new))->addClass('cr-analytics-table cr-analytics-narrow')
 		]))->addClass('cr-analytics-tables'),
+		new CTag('h4', true, _s('Unresolved problems: %1$s, open the whole period: %2$s', count($report['unresolved']),
+			$whole_period
+		)),
+		(new CDiv(_('One line per problem: alerts and repeated events of the period are counted instead of being listed.')))
+			->addClass('cr-note'),
+		$unresolved,
 		$analytics['truncated']
 			? (new CDiv(_('Period analytics is limited by "analytics_limit" events.')))->addClass(ZBX_STYLE_RED)
 			: null
@@ -322,6 +360,12 @@ if ($data['can_send']) {
 						ReportSplitter::SPLIT_NONE => _('One report'),
 						ReportSplitter::SPLIT_GROUP => _('Separately per host group'),
 						ReportSplitter::SPLIT_HOST => _('Separately per host')
+					])),
+				(new CSelect('problem_list'))
+					->setValue(ReportBuilder::LIST_FULL)
+					->addOptions(CSelect::createOptionsFromArray([
+						ReportBuilder::LIST_FULL => _('All open problems'),
+						ReportBuilder::LIST_SUMMARY => _('Unresolved summary only')
 					])),
 				(new CCheckBox('skip_empty'))->setChecked(true)->setLabel(_('Skip empty')),
 				new CSubmit('send', _('Send now'))

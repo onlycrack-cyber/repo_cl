@@ -33,6 +33,10 @@ class FrontendApiClient implements ApiClientInterface {
 				$service = API::Event();
 				break;
 
+			case 'alert':
+				$service = API::Alert();
+				break;
+
 			case 'host':
 				$service = API::Host();
 				break;

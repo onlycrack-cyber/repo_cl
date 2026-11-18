@@ -46,6 +46,10 @@ class ReportBuilder {
 		self::SORT_PROBLEM, self::SORT_ACK
 	];
 
+	// Problem list in sent reports: every open problem, or only the grouped "Unresolved problems" summary.
+	public const LIST_FULL = 'full';
+	public const LIST_SUMMARY = 'summary';
+
 	public const SORT_ASC = 'ASC';
 	public const SORT_DESC = 'DESC';
 
@@ -78,7 +82,8 @@ class ReportBuilder {
 			'sortorder' => ($filter['sortorder'] ?? '') === self::SORT_ASC ? self::SORT_ASC : self::SORT_DESC,
 			'analytics' => in_array($filter['analytics'] ?? '', PeriodAnalytics::PERIODS, true)
 				? $filter['analytics']
-				: PeriodAnalytics::PERIOD_7D
+				: PeriodAnalytics::PERIOD_7D,
+			'problem_list' => ($filter['problem_list'] ?? '') === self::LIST_SUMMARY ? self::LIST_SUMMARY : self::LIST_FULL
 		];
 	}
 
@@ -103,6 +108,7 @@ class ReportBuilder {
 			'analytics_data' => null,
 			'analytics' => null,
 			'analytics_error' => null,
+			'unresolved' => [],
 			'problems' => [],
 			'total' => 0,
 			'truncated' => false,
@@ -220,8 +226,9 @@ class ReportBuilder {
 			// Analytics is optional: the list of open problems is still sent if the event history cannot be read.
 			try {
 				$report['analytics_data'] = (new PeriodAnalytics($this->api, $this->analytics_limit))
-					->collect($filter, $period, $now);
+					->collect($filter, $period, $now, array_column($report['problems'], 'eventid'));
 				$report['analytics'] = PeriodAnalytics::compute($report['analytics_data']);
+				$report['unresolved'] = PeriodAnalytics::unresolved($report['problems'], $report['analytics_data']);
 			}
 			catch (ApiException $e) {
 				$report['analytics_error'] = $e->getMessage();
@@ -333,6 +340,7 @@ class ReportBuilder {
 		if ($report['analytics_data'] !== null && $match !== null) {
 			$report['analytics_data'] = PeriodAnalytics::subset($report['analytics_data'], $match);
 			$report['analytics'] = PeriodAnalytics::compute($report['analytics_data']);
+			$report['unresolved'] = PeriodAnalytics::unresolved($report['problems'], $report['analytics_data']);
 		}
 
 		return $report;

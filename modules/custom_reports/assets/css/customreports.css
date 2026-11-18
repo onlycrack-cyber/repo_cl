@@ -118,7 +118,11 @@
 }
 
 .cr-analytics h4 {
-	margin: 0 0 8px 0;
+	margin: 16px 0 8px 0;
+}
+
+.cr-analytics h4:first-child {
+	margin-top: 0;
 }
 
 .cr-kpi-period {

@@ -166,10 +166,21 @@ class ReportRenderer {
 			$html .= '</table>';
 		}
 
-		// Problems.
-		$html .= '<h3 style="margin:8px 0 4px 0">Active problems</h3>';
+		if ($report['analytics'] !== null) {
+			$html .= self::renderUnresolvedHtml($report, $cell);
+		}
 
-		if ($report['problems']) {
+		// Problems (in the "summary" mode the grouped section above replaces the full list).
+		$summary_only = self::isSummaryOnly($report);
+
+		if (!$summary_only) {
+			$html .= '<h3 style="margin:8px 0 4px 0">Active problems</h3>';
+		}
+
+		if ($summary_only) {
+			// Nothing: see "Unresolved problems".
+		}
+		elseif ($report['problems']) {
 			$html .= '<table style="width:100%"><tr>';
 
 			foreach (['Time', 'Duration', 'Severity', 'Host', 'Problem', 'Ack'] as $header) {
@@ -205,7 +216,7 @@ class ReportRenderer {
 			$html .= '<p>No active problems match the filter.</p>';
 		}
 
-		if ($report['truncated']) {
+		if ($report['truncated'] && !$summary_only) {
 			$html .= '<p style="color:#e45959">The report is limited to '.$report['total'].' problems.</p>';
 		}
 
@@ -281,14 +292,30 @@ class ReportRenderer {
 			return $text;
 		}
 
-		$text .= "\n\n".$b('Problems:');
-		$total = count($report['problems']);
+		$summary_only = self::isSummaryOnly($report);
 
-		foreach ($report['problems'] as $index => $problem) {
-			$line = "\n".Severity::ICONS[$problem['severity']].' '.$e(self::hostNames($problem)).': '.
-				$e($problem['name']).' ('.self::formatDuration($problem['age']).($problem['acknowledged'] ? ', ack' : '').
-				')';
+		if ($summary_only) {
+			$text .= "\n\n".$b("\u{23F3} ".$e(self::unresolvedTitle($report)).':');
+			$items = [];
 
+			foreach ($report['unresolved'] as $item) {
+				$items[] = "\n".Severity::ICONS[$item['severity']].' '.$e(self::unresolvedText($item));
+			}
+		}
+		else {
+			$text .= "\n\n".$b('Problems:');
+			$items = [];
+
+			foreach ($report['problems'] as $problem) {
+				$items[] = "\n".Severity::ICONS[$problem['severity']].' '.$e(self::hostNames($problem)).': '.
+					$e($problem['name']).' ('.self::formatDuration($problem['age']).
+					($problem['acknowledged'] ? ', ack' : '').')';
+			}
+		}
+
+		$total = count($items);
+
+		foreach ($items as $index => $line) {
 			$rest = $total - $index - 1;
 			$tail = "\n... and ".($rest + 1).' more';
 
@@ -301,7 +328,7 @@ class ReportRenderer {
 			$text .= $line;
 		}
 
-		if ($report['truncated'] && $max_length == 0) {
+		if ($report['truncated'] && $max_length == 0 && !$summary_only) {
 			$text .= "\n(the report is limited to ".$total.' problems)';
 		}
 
@@ -310,6 +337,100 @@ class ReportRenderer {
 		}
 
 		return $text;
+	}
+
+	/**
+	 * The grouped "Unresolved problems" section replaces the full problem list (needs period analytics).
+	 */
+	public static function isSummaryOnly(array $report): bool {
+		return ($report['filter']['problem_list'] ?? '') === ReportBuilder::LIST_SUMMARY && $report['analytics'] !== null;
+	}
+
+	/**
+	 * "Unresolved problems: 7, open the whole period (last 7 days): 3".
+	 */
+	public static function unresolvedTitle(array $report): string {
+		$whole = count(array_filter($report['unresolved'], static function (array $item): bool {
+			return $item['whole_period'];
+		}));
+
+		return sprintf('Unresolved problems: %d, open the whole period (%s): %d', count($report['unresolved']),
+			PeriodAnalytics::LABELS[$report['analytics']['period']], $whole
+		);
+	}
+
+	/**
+	 * One line about an unresolved problem, as in an alert:
+	 * "db-pg-01: Disk failure - open 9d 2h (the whole period), alerts sent: 100, fired 3 times, last alert: ...".
+	 */
+	public static function unresolvedText(array $item): string {
+		$parts = ['open '.self::formatDuration($item['age']).($item['whole_period'] ? ' (the whole period)' : '')];
+
+		if ($item['alerts_sent'] !== null) {
+			$parts[] = 'alerts sent: '.$item['alerts_sent'].($item['alerts_failed'] ? ', failed: '.$item['alerts_failed'] : '');
+		}
+
+		if ($item['repeats'] > 1) {
+			$parts[] = 'fired '.$item['repeats'].' times';
+		}
+
+		if ($item['open_count'] > 1) {
+			$parts[] = $item['open_count'].' open problems';
+		}
+
+		if ($item['acknowledged']) {
+			$parts[] = 'ack';
+		}
+
+		$text = implode(', ', array_column($item['hosts'], 'name')).': '.$item['name'].' - '.implode(', ', $parts);
+
+		if ($item['last_alert'] !== '' && $item['last_alert'] !== $item['name']) {
+			$text .= '. Last alert: "'.$item['last_alert'].'"';
+		}
+
+		return $text;
+	}
+
+	private static function renderUnresolvedHtml(array $report, string $cell): string {
+		$meta = $report['severity_meta'];
+		$html = '<h3 style="margin:8px 0 4px 0">'.self::e(self::unresolvedTitle($report)).'</h3>';
+
+		if (!$report['unresolved']) {
+			return $html.'<p>No unresolved problems.</p>';
+		}
+
+		$html .= '<div style="margin-bottom:4px;color:#768d99">One line per problem: alerts and repeated events of the '.
+			'period are counted instead of being listed.</div><table style="width:100%;margin-bottom:12px"><tr>';
+
+		foreach (['Severity', 'Host', 'Problem', 'Open since', 'Duration', 'Alerts sent', 'Fired', 'Last alert'] as $h) {
+			$html .= '<th style="'.$cell.'background:#f4f4f4">'.$h.'</th>';
+		}
+
+		$html .= '</tr>';
+
+		foreach ($report['unresolved'] as $item) {
+			$alerts = $item['alerts_sent'] === null
+				? '-'
+				: $item['alerts_sent'].($item['alerts_failed'] ? ' <span style="color:#e45959">('.$item['alerts_failed'].
+					' failed)</span>' : '');
+
+			$html .= '<tr>'.
+				'<td style="'.$cell.'background:#'.self::e($meta[$item['severity']]['color']).'">'.
+					self::e($meta[$item['severity']]['name']).'</td>'.
+				'<td style="'.$cell.'white-space:nowrap">'.self::e(implode(', ', array_column($item['hosts'], 'name'))).
+					'</td>'.
+				'<td style="'.$cell.'">'.self::e($item['name']).($item['acknowledged'] ? ' <span style="color:#429e47">'.
+					'(ack)</span>' : '').'</td>'.
+				'<td style="'.$cell.'white-space:nowrap">'.date('Y-m-d H:i', $item['since']).'</td>'.
+				'<td style="'.$cell.'white-space:nowrap'.($item['whole_period'] ? ';font-weight:bold;color:#e45959' : '').'">'.
+					self::formatDuration($item['age']).($item['whole_period'] ? '<br>whole period' : '').'</td>'.
+				'<td style="'.$cell.'text-align:right">'.$alerts.'</td>'.
+				'<td style="'.$cell.'text-align:right">'.($item['repeats'] > 0 ? $item['repeats'] : '-').'</td>'.
+				'<td style="'.$cell.'color:#768d99">'.self::e($item['last_alert']).'</td>'.
+				'</tr>';
+		}
+
+		return $html.'</table>';
 	}
 
 	/**

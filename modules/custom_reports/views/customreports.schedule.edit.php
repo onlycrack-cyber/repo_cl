@@ -122,6 +122,14 @@ $form_list = (new CFormList('schedule_form_list'))
 			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
 			->setModern(true)
 	)
+	->addRow(_('Problem list'), [
+		(new CRadioButtonList('problem_list', $schedule['problem_list']))
+			->addValue(_('All open problems'), ReportBuilder::LIST_FULL)
+			->addValue(_('Unresolved summary only'), ReportBuilder::LIST_SUMMARY)
+			->setModern(true),
+		(new CDiv(_('Unresolved summary: one line per problem with how long it is open, whether it was open the whole period, how many alerts were sent and the last alert, instead of every problem. Needs period analytics.')))
+			->addClass(ZBX_STYLE_GREY)
+	])
 	->addRow(_('Period analytics'), [
 		(new CRadioButtonList('analytics', $schedule['analytics']))
 			->addValue(_('Auto'), PeriodAnalytics::PERIOD_AUTO)

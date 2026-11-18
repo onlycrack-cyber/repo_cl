@@ -50,6 +50,7 @@ class ScheduleEdit extends CController {
 			'sortfield' =>			'in '.implode(',', ReportBuilder::SORT_FIELDS),
 			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'analytics' =>			'in '.implode(',', PeriodAnalytics::PERIODS),
+			'problem_list' =>		'in '.ReportBuilder::LIST_FULL.','.ReportBuilder::LIST_SUMMARY,
 			'frequency' =>			'in '.ScheduleHelper::FREQUENCY_DAILY.','.ScheduleHelper::FREQUENCY_WEEKLY,
 			'weekday' =>			'in 1,2,3,4,5,6,7',
 			'time' =>				'string',

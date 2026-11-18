@@ -36,6 +36,11 @@ class PeriodAnalytics {
 	// ZBX_PROBLEM_UPDATE_ACKNOWLEDGE.
 	private const ACTION_ACKNOWLEDGE = 0x02;
 
+	// ALERT_TYPE_MESSAGE, ALERT_STATUS_SENT, ALERT_STATUS_FAILED.
+	private const ALERT_TYPE_MESSAGE = 0;
+	private const ALERT_STATUS_SENT = 1;
+	private const ALERT_STATUS_FAILED = 2;
+
 	private const TOP = 5;
 
 	private ApiClientInterface $api;
@@ -62,13 +67,15 @@ class PeriodAnalytics {
 	/**
 	 * Reads problem events of the period and of the previous period.
 	 *
-	 * @param array  $filter  Normalized report filter (host groups, hosts, severities, problem name are applied).
-	 * @param string $period  PERIOD_24H, PERIOD_7D or PERIOD_30D.
-	 * @param int    $now
+	 * @param array    $filter            Normalized report filter (host groups, hosts, severities, problem name).
+	 * @param string   $period            PERIOD_24H, PERIOD_7D or PERIOD_30D.
+	 * @param int      $now
+	 * @param string[] $open_eventids     Events of the currently open problems: their alerts are counted too, even if
+	 *                                    the problem started before the period.
 	 *
 	 * @throws ApiException
 	 */
-	public function collect(array $filter, string $period, int $now): array {
+	public function collect(array $filter, string $period, int $now, array $open_eventids = []): array {
 		$length = self::SECONDS[$period];
 		$from = $now - $length;
 
@@ -120,7 +127,9 @@ class PeriodAnalytics {
 			'till' => $now,
 			'truncated' => $truncated,
 			'events' => [],
-			'prev_events' => []
+			'prev_events' => [],
+			'alerts' => null,
+			'alerts_truncated' => false
 		];
 
 		foreach ($events as $event) {
@@ -134,6 +143,7 @@ class PeriodAnalytics {
 			}
 
 			$data['events'][] = [
+				'eventid' => $event['eventid'],
 				'triggerid' => $event['objectid'],
 				'clock' => (int) $event['clock'],
 				'severity' => (int) $event['severity'],
@@ -161,7 +171,167 @@ class PeriodAnalytics {
 			];
 		}
 
+		$this->collectAlerts($data, $open_eventids);
+
 		return $data;
+	}
+
+	/**
+	 * Notifications sent during the period, per problem event: eventid => [sent, failed, last_clock, last_subject].
+	 * Optional: without the permission to read alerts the report shows no alert counts.
+	 */
+	private function collectAlerts(array &$data, array $open_eventids): void {
+		$eventids = array_values(array_unique(array_merge(array_column($data['events'], 'eventid'), $open_eventids)));
+
+		if (!$eventids) {
+			$data['alerts'] = [];
+
+			return;
+		}
+
+		$limit = $this->limit * 5;
+		$alerts = [];
+
+		try {
+			foreach (array_chunk($eventids, 1000) as $chunk) {
+				$alerts = array_merge($alerts, $this->api->call('alert.get', [
+					// alert.get cannot filter by "alerttype": remote command results are skipped below.
+					'output' => ['eventid', 'clock', 'subject', 'status', 'alerttype'],
+					'eventids' => $chunk,
+					'time_from' => $data['from'],
+					'time_till' => $data['till'],
+					'limit' => $limit + 1
+				]));
+			}
+		}
+		catch (ApiException $e) {
+			return;
+		}
+
+		$data['alerts_truncated'] = count($alerts) > $limit;
+		$data['alerts'] = [];
+
+		foreach (array_slice($alerts, 0, $limit) as $alert) {
+			if ((int) $alert['alerttype'] != self::ALERT_TYPE_MESSAGE) {
+				continue;
+			}
+
+			$stat = &$data['alerts'][$alert['eventid']];
+			$stat = $stat ?? ['sent' => 0, 'failed' => 0, 'last_clock' => 0, 'last_subject' => ''];
+
+			if ((int) $alert['status'] == self::ALERT_STATUS_SENT) {
+				$stat['sent']++;
+			}
+			elseif ((int) $alert['status'] == self::ALERT_STATUS_FAILED) {
+				$stat['failed']++;
+			}
+
+			if ((int) $alert['clock'] >= $stat['last_clock']) {
+				$stat['last_clock'] = (int) $alert['clock'];
+				$stat['last_subject'] = $alert['subject'];
+			}
+
+			unset($stat);
+		}
+	}
+
+	/**
+	 * Problems that are still unresolved, one line per trigger (no duplicates however often the trigger fired or
+	 * how many alerts it sent): open since, whether it was open the whole period, alerts sent during the period,
+	 * how many times it fired during the period, the subject of the last alert.
+	 *
+	 * @param array      $problems  Open problems of the report (ReportBuilder).
+	 * @param array|null $data      Result of collect() (or subset()).
+	 */
+	public static function unresolved(array $problems, ?array $data): array {
+		$items = [];
+
+		foreach ($problems as $problem) {
+			$id = $problem['triggerid'];
+
+			if (!array_key_exists($id, $items)) {
+				$items[$id] = [
+					'triggerid' => $id,
+					'name' => $problem['name'],
+					'hosts' => $problem['hosts'],
+					'severity' => $problem['severity'],
+					'since' => $problem['clock'],
+					'open_count' => 0,
+					'acknowledged' => true,
+					'eventids' => []
+				];
+			}
+
+			$item = &$items[$id];
+			$item['open_count']++;
+			$item['severity'] = max($item['severity'], $problem['severity']);
+			$item['acknowledged'] = $item['acknowledged'] && $problem['acknowledged'] == 1;
+			$item['eventids'][] = $problem['eventid'];
+
+			if ($problem['clock'] < $item['since']) {
+				$item['since'] = $problem['clock'];
+			}
+			else {
+				$item['name'] = $problem['name'];
+			}
+
+			unset($item);
+		}
+
+		$repeats = [];
+
+		foreach ($data['events'] ?? [] as $event) {
+			if (array_key_exists($event['triggerid'], $items)) {
+				$repeats[$event['triggerid']] = ($repeats[$event['triggerid']] ?? 0) + 1;
+				$items[$event['triggerid']]['eventids'][] = $event['eventid'];
+			}
+		}
+
+		$from = $data['from'] ?? null;
+		$till = $data['till'] ?? time();
+		$alerts = $data['alerts'] ?? null;
+		$result = [];
+
+		foreach ($items as $id => $item) {
+			$sent = null;
+			$failed = null;
+			$last_subject = '';
+			$last_clock = 0;
+
+			if ($alerts !== null) {
+				$sent = 0;
+				$failed = 0;
+
+				foreach (array_unique($item['eventids']) as $eventid) {
+					if (array_key_exists($eventid, $alerts)) {
+						$sent += $alerts[$eventid]['sent'];
+						$failed += $alerts[$eventid]['failed'];
+
+						if ($alerts[$eventid]['last_clock'] >= $last_clock) {
+							$last_clock = $alerts[$eventid]['last_clock'];
+							$last_subject = $alerts[$eventid]['last_subject'];
+						}
+					}
+				}
+			}
+
+			unset($item['eventids']);
+			$result[] = $item + [
+				'age' => max(0, $till - $item['since']),
+				'whole_period' => $from !== null && $item['since'] <= $from,
+				'repeats' => $repeats[$id] ?? 0,
+				'alerts_sent' => $sent,
+				'alerts_failed' => $failed,
+				'last_alert' => $last_subject
+			];
+		}
+
+		// Problems open the whole period first, then by severity and age.
+		usort($result, static function (array $a, array $b): int {
+			return [$b['whole_period'], $b['severity'], $b['age']] <=> [$a['whole_period'], $a['severity'], $a['age']];
+		});
+
+		return $result;
 	}
 
 	/**
