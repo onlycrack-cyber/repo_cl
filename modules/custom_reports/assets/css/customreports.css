@@ -1,0 +1,98 @@
+/* Custom Problem Reports: only layout rules, colors come from the active Zabbix theme. */
+
+.cr-tabs {
+	display: flex;
+	margin: 0 0 10px 0;
+	padding: 0;
+	border-bottom: 1px solid rgba(128, 128, 128, .35);
+	list-style: none;
+}
+
+.cr-tabs li {
+	margin: 0 4px -1px 0;
+}
+
+.cr-tabs a {
+	display: block;
+	padding: 7px 14px;
+	border: 1px solid transparent;
+	text-decoration: none;
+}
+
+.cr-tabs a.cr-tab-active {
+	border-color: rgba(128, 128, 128, .35);
+	border-bottom-color: transparent;
+	font-weight: bold;
+}
+
+.cr-kpi {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: 10px 0;
+}
+
+.cr-kpi-card {
+	min-width: 110px;
+	padding: 10px 14px;
+	border: 1px solid rgba(128, 128, 128, .3);
+	border-radius: 2px;
+	box-sizing: border-box;
+}
+
+.cr-kpi-value {
+	font-size: 26px;
+	font-weight: bold;
+	line-height: 1.2;
+}
+
+.cr-kpi-label {
+	margin-top: 2px;
+	white-space: nowrap;
+}
+
+.cr-kpi-total {
+	min-width: 140px;
+}
+
+.cr-kpi-hosts {
+	flex: 1 1 260px;
+}
+
+.cr-kpi-hosts .cr-kpi-label {
+	font-weight: bold;
+	margin-bottom: 4px;
+}
+
+.cr-top-hosts {
+	margin: 0;
+	padding-left: 18px;
+}
+
+.cr-top-hosts li {
+	line-height: 18px;
+}
+
+.cr-top-hosts-count {
+	float: right;
+	margin-left: 20px;
+	font-weight: bold;
+}
+
+.cr-send {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 10px 0;
+}
+
+.cr-note {
+	margin: 0 0 10px 0;
+	opacity: .8;
+}
+
+.cr-inline-form {
+	display: inline-block;
+	margin-right: 10px;
+}

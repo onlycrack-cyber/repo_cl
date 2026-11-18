@@ -180,6 +180,12 @@ Tier-0/Tier-1, BGP-соседи Tier-0, сроки действия сертиф
 подавляются для хостов в Maintenance Mode. Дашборд Grafana «VMware ESXi — здоровье хостов (vCenter)»:
 [esxi_ntp_check/](esxi_ntp_check/README.md).
 
+## Модуль фронтенда: отчёты по незакрытым проблемам
+
+Модуль `modules/custom_reports` для Zabbix 7.0 добавляет *Reports → Custom Problem Reports*: дашборд
+по активным проблемам с выгрузкой CSV/HTML/PDF и рассылку отчётов по расписанию через media types
+(Email, Telegram, Script). Установка и cron: [modules/custom_reports/README.md](modules/custom_reports/README.md).
+
 ## Скрипт
 
 ```
