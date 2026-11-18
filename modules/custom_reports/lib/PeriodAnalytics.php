@@ -102,8 +102,9 @@ class PeriodAnalytics {
 			'output' => ['eventid', 'objectid', 'clock', 'severity', 'name', 'r_eventid'],
 			'selectHosts' => ['hostid', 'name'],
 			'selectAcknowledges' => ['clock', 'action'],
-			'time_from' => $from,
-			'time_till' => $now
+			// Problems active at any time of the period: started in it, or earlier and not resolved before it.
+			'problem_time_from' => $from,
+			'problem_time_till' => $now
 		]);
 
 		$truncated = count($events) > $this->limit;
@@ -127,12 +128,25 @@ class PeriodAnalytics {
 			'till' => $now,
 			'truncated' => $truncated,
 			'events' => [],
+			'carried' => [],
 			'prev_events' => [],
 			'alerts' => null,
 			'alerts_truncated' => false
 		];
 
 		foreach ($events as $event) {
+			// Started before the period and still open at its start: only needed for "open problems" per day.
+			if ((int) $event['clock'] < $from) {
+				$data['carried'][] = [
+					'clock' => (int) $event['clock'],
+					'resolved' => $recovery[$event['r_eventid']] ?? null,
+					'severity' => (int) $event['severity'],
+					'hosts' => array_column($event['hosts'], 'hostid')
+				];
+
+				continue;
+			}
+
 			$ack_clock = null;
 
 			foreach ($event['acknowledges'] as $ack) {
@@ -348,6 +362,11 @@ class PeriodAnalytics {
 				return $match($event['hosts']);
 			}
 		));
+		$data['carried'] = array_values(array_filter($data['carried'] ?? [],
+			static function (array $event) use ($match): bool {
+				return $match($event['hosts']);
+			}
+		));
 
 		return $data;
 	}
@@ -414,7 +433,15 @@ class PeriodAnalytics {
 			'acknowledged' => count($ack_times),
 			'ack_rate' => $total > 0 ? (int) round(count($ack_times) * 100 / $total) : null,
 			'mtta_avg' => $ack_times ? (int) round(array_sum($ack_times) / count($ack_times)) : null,
-			'buckets' => self::buckets($events, $data['period'], $data['from'], $data['till']),
+			'open_start' => count(array_filter($data['carried'] ?? [], static function (array $p) use ($data): bool {
+				return $p['resolved'] === null || $p['resolved'] > $data['from'];
+			})),
+			'open_end' => count(array_filter(array_merge($events, $data['carried'] ?? []),
+				static function (array $p) use ($data): bool {
+					return $p['resolved'] === null || $p['resolved'] > $data['till'];
+				}
+			)),
+			'buckets' => self::buckets($data),
 			'recurring' => array_values(array_filter(array_slice($triggers, 0, self::TOP), static function ($t): bool {
 				return $t['count'] > 1;
 			})),
@@ -423,35 +450,76 @@ class PeriodAnalytics {
 	}
 
 	/**
-	 * Problem count per hour (24 hours) or per day (7 and 30 days), in the PHP timezone.
+	 * Per hour (24 hours) or per day (7 and 30 days), in the PHP timezone:
+	 *   count        new problems,
+	 *   by_severity  new problems per severity,
+	 *   resolved     problems resolved in the hour/day (also those that started before the period),
+	 *   open         problems open at the end of the hour/day (at the report time for the last one).
 	 *
-	 * @return array  List of ['label' => string, 'count' => int].
+	 * @return array  List of ['label', 'start', 'end', 'count', 'by_severity', 'resolved', 'open'].
 	 */
-	private static function buckets(array $events, string $period, int $from, int $till): array {
-		$hourly = $period === self::PERIOD_24H;
-		$format = $hourly ? 'Y-m-d H' : 'Y-m-d';
+	private static function buckets(array $data): array {
+		$hourly = $data['period'] === self::PERIOD_24H;
+		$from = $data['from'];
+		$till = $data['till'];
 		$step = $hourly ? 3600 : 86400;
 		$buckets = [];
 
 		// Every hour/day touched by the period (the first and the last ones may be partial), including empty ones.
 		for ($time = $from; $time < $till + $step; $time += $step) {
-			$point = min($time, $till);
-			$key = date($format, $point);
+			$start = self::bucketStart(min($time, $till), $hourly);
 
-			if (!array_key_exists($key, $buckets)) {
-				$buckets[$key] = ['label' => date($hourly ? 'H:00' : 'd.m', $point), 'count' => 0];
+			if (!array_key_exists($start, $buckets)) {
+				$end = $hourly ? $start + 3600 : strtotime('+1 day', $start);
+
+				$buckets[$start] = [
+					'label' => date($hourly ? 'H:00' : 'd.m', $start),
+					'start' => max($start, $from),
+					'end' => min($end, $till),
+					'count' => 0,
+					'by_severity' => array_fill_keys(array_keys(Severity::NAMES), 0),
+					'resolved' => 0,
+					'open' => 0
+				];
 			}
 		}
 
-		foreach ($events as $event) {
-			$key = date($format, $event['clock']);
+		foreach ($data['events'] as $event) {
+			$start = self::bucketStart($event['clock'], $hourly);
 
-			if (array_key_exists($key, $buckets)) {
-				$buckets[$key]['count']++;
+			if (array_key_exists($start, $buckets)) {
+				$buckets[$start]['count']++;
+				$buckets[$start]['by_severity'][$event['severity']]++;
 			}
 		}
+
+		$active = array_merge($data['events'], $data['carried'] ?? []);
+
+		foreach ($active as $problem) {
+			if ($problem['resolved'] !== null && $problem['resolved'] >= $from && $problem['resolved'] <= $till) {
+				$start = self::bucketStart($problem['resolved'], $hourly);
+
+				if (array_key_exists($start, $buckets)) {
+					$buckets[$start]['resolved']++;
+				}
+			}
+		}
+
+		foreach ($buckets as &$bucket) {
+			foreach ($active as $problem) {
+				if ($problem['clock'] <= $bucket['end']
+						&& ($problem['resolved'] === null || $problem['resolved'] > $bucket['end'])) {
+					$bucket['open']++;
+				}
+			}
+		}
+		unset($bucket);
 
 		return array_values($buckets);
+	}
+
+	private static function bucketStart(int $time, bool $hourly): int {
+		return (int) strtotime(date($hourly ? 'Y-m-d H:00:00' : 'Y-m-d 00:00:00', $time));
 	}
 
 	private static function median(array $values): ?int {

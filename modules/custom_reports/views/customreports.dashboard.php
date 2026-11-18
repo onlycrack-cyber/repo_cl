@@ -228,7 +228,10 @@ if ($analytics !== null) {
 		),
 		$card($analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%', _('Acknowledged'),
 			_s('time to acknowledge: %1$s', $duration($analytics['mtta_avg']))
-		)
+		),
+		$card((string) $analytics['open_end'], _('Open problems'), (new CSpan(_s('at the start of the period: %1$s (%2$s)',
+			$analytics['open_start'], sprintf('%+d', $analytics['open_end'] - $analytics['open_start'])
+		)))->addClass($analytics['open_end'] > $analytics['open_start'] ? ZBX_STYLE_RED : ZBX_STYLE_GREEN))
 	]))->addClass('cr-kpi');
 
 	$severity_list = (new CList())->addClass('cr-severity-list');
@@ -240,23 +243,95 @@ if ($analytics !== null) {
 		);
 	}
 
-	// Bar chart of new problems per hour/day.
-	$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
-	$chart = (new CDiv())->addClass('cr-chart');
+	$unit = $analytics['period'] === PeriodAnalytics::PERIOD_24H ? _('hour') : _('day');
+	$plot = 110;
 
-	foreach ($analytics['buckets'] as $bucket) {
-		$chart->addItem(
+	// Show every n-th axis label when there are many columns (the full label is in the tooltip).
+	$label_step = (int) ceil(count($analytics['buckets']) / 16);
+	$axis_label = static function (int $index, array $bucket) use ($label_step, $analytics): string {
+		return ($index % $label_step == 0 || $index == count($analytics['buckets']) - 1) ? $bucket['label'] : '';
+	};
+
+	// Chart 1: new problems per hour/day, stacked by severity (Disaster at the bottom).
+	$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
+	$severity_chart = (new CDiv())->addClass('cr-chart');
+
+	foreach ($analytics['buckets'] as $index => $bucket) {
+		$stack = (new CDiv())->addClass('cr-stack');
+		$hint = [$bucket['label']];
+
+		foreach (array_reverse(CSeverityHelper::getSeverities()) as $severity) {
+			$count = $bucket['by_severity'][$severity['value']];
+
+			if ($count > 0) {
+				$stack->addItem(
+					(new CDiv())
+						->addClass(CSeverityHelper::getStyle((int) $severity['value']))
+						->addStyle('height: '.max(1, round($count * $plot / $max)).'px;')
+				);
+				$hint[] = $severity['label'].': '.$count;
+			}
+		}
+
+		$severity_chart->addItem(
 			(new CDiv([
 				(new CDiv($bucket['count'] > 0 ? $bucket['count'] : ''))->addClass('cr-chart-value'),
-				(new CDiv())
-					->addClass('cr-chart-bar')
-					->addStyle('height: '.round($bucket['count'] * 70 / $max).'%;'),
-				(new CDiv($bucket['label']))->addClass('cr-chart-label')
+				$stack,
+				(new CDiv($axis_label($index, $bucket)))->addClass('cr-chart-label')
 			]))
 				->addClass('cr-chart-col')
-				->setTitle($bucket['label'].': '.$bucket['count'])
+				->setTitle(implode("\n", $hint))
 		);
 	}
+
+	// Chart 2: new vs resolved per hour/day and problems open at its end.
+	$max = 1;
+
+	foreach ($analytics['buckets'] as $bucket) {
+		$max = max($max, $bucket['count'], $bucket['resolved'], $bucket['open']);
+	}
+
+	$flow_chart = (new CDiv())->addClass('cr-chart');
+
+	foreach ($analytics['buckets'] as $index => $bucket) {
+		$group = (new CDiv())->addClass('cr-group');
+
+		foreach (['count' => 'cr-bar-new', 'resolved' => 'cr-bar-resolved', 'open' => 'cr-bar-open'] as $key => $class) {
+			$group->addItem(
+				(new CDiv())
+					->addClass($class)
+					->addStyle('height: '.($bucket[$key] > 0 ? max(1, round($bucket[$key] * $plot / $max)) : 0).'px;')
+			);
+		}
+
+		$flow_chart->addItem(
+			(new CDiv([
+				$group,
+				(new CDiv([$axis_label($index, $bucket), BR(), (new CSpan($bucket['open']))->addClass('cr-chart-open')]))
+					->addClass('cr-chart-label')
+			]))
+				->addClass('cr-chart-col')
+				->setTitle(_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', $bucket['label'], $bucket['count'],
+					$bucket['resolved'], $bucket['open']
+				))
+		);
+	}
+
+	$charts = (new CDiv([
+		(new CDiv([
+			(new CDiv(_s('New problems per %1$s, by severity', $unit)))->addClass('cr-note'),
+			$severity_chart
+		]))->addClass('cr-chart-box'),
+		(new CDiv([
+			(new CDiv([
+				_s('New vs resolved per %1$s, open problems at its end', $unit),
+				(new CSpan())->addClass('cr-legend cr-bar-new'), _('New'),
+				(new CSpan())->addClass('cr-legend cr-bar-resolved'), _('Resolved'),
+				(new CSpan())->addClass('cr-legend cr-bar-open'), _('Open')
+			]))->addClass('cr-note'),
+			$flow_chart
+		]))->addClass('cr-chart-box')
+	]))->addClass('cr-charts');
 
 	$recurring = (new CTableInfo())
 		->setHeader([_('Host'), _('Recurring problem'), _('Times')])
@@ -312,9 +387,7 @@ if ($analytics !== null) {
 		)),
 		$cards,
 		$severity_list,
-		(new CDiv(_s('New problems per %1$s', $analytics['period'] === PeriodAnalytics::PERIOD_24H ? _('hour') : _('day'))))
-			->addClass('cr-note'),
-		$chart,
+		$charts,
 		(new CDiv([
 			(new CDiv($recurring))->addClass('cr-analytics-table'),
 			(new CDiv($top_new))->addClass('cr-analytics-table cr-analytics-narrow')

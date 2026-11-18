@@ -479,6 +479,7 @@ class ReportRenderer {
 		return [
 			'New problems' => self::changeText($analytics),
 			'Resolved' => $analytics['resolved'].' (still open: '.$analytics['unresolved'].')',
+			'Open problems' => self::openChangeText($analytics),
 			'Time to resolve (MTTR)' => 'median '.self::durationOrDash($analytics['mttr_median']).
 				', average '.self::durationOrDash($analytics['mttr_avg']),
 			'Acknowledged' => ($analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%').
@@ -506,24 +507,8 @@ class ReportRenderer {
 		$html .= '<tr><td style="'.$cell.'background:#f4f4f4">New by severity</td><td style="'.$cell.'">'.
 			implode('', $by_severity).'</td></tr></table>';
 
-		// Bar chart: one column per hour/day; plain table cells render in e-mail clients and in PDF.
-		$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
-		$bars = '';
-		$labels = '';
-
-		foreach ($analytics['buckets'] as $bucket) {
-			$height = (int) round($bucket['count'] * 70 / $max);
-			$bars .= '<td style="vertical-align:bottom;padding:0 1px;text-align:center;font-size:10px;color:#768d99">'.
-				($bucket['count'] > 0 ? $bucket['count'] : '').
-				'<div style="height:'.max($height, $bucket['count'] > 0 ? 2 : 0).'px;background:#4796c4"></div></td>';
-			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
-				self::e($bucket['label']).'</td>';
-		}
-
-		$html .= '<div style="margin-bottom:4px;color:#768d99">New problems per '.
-			($analytics['period'] === PeriodAnalytics::PERIOD_24H ? 'hour' : 'day').'</div>'.
-			'<table style="margin-bottom:12px;border-bottom:1px solid #dfe4e7"><tr style="height:90px">'.$bars.
-			'</tr><tr>'.$labels.'</tr></table>';
+		$html .= self::renderSeverityChartHtml($analytics, $meta);
+		$html .= self::renderFlowChartHtml($analytics);
 
 		if ($analytics['recurring']) {
 			$html .= '<h4 style="margin:6px 0 4px 0">Recurring problems</h4><table style="margin-bottom:12px">'.
@@ -557,6 +542,127 @@ class ReportRenderer {
 		return $html;
 	}
 
+	/**
+	 * "5 at the start of the period -> 19 now (+14)".
+	 */
+	public static function openChangeText(array $analytics): string {
+		$delta = $analytics['open_end'] - $analytics['open_start'];
+
+		return sprintf('%d at the start of the period -> %d at the end (%s%d)', $analytics['open_start'],
+			$analytics['open_end'], $delta > 0 ? '+' : '', $delta
+		);
+	}
+
+	private static function chartUnit(array $analytics): string {
+		return $analytics['period'] === PeriodAnalytics::PERIOD_24H ? 'hour' : 'day';
+	}
+
+	/**
+	 * Chart 1: new problems per hour/day, stacked by severity (Disaster at the bottom).
+	 * Built from table cells and blocks with fixed heights: renders in e-mail clients (incl. Outlook) and in PDF.
+	 */
+	private static function renderSeverityChartHtml(array $analytics, array $meta): string {
+		$height = 80;
+		$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
+		$bars = '';
+		$labels = '';
+
+		foreach ($analytics['buckets'] as $index => $bucket) {
+			$stack = '';
+
+			foreach (array_reverse(Severity::descending()) as $severity) {
+				$count = $bucket['by_severity'][$severity];
+
+				if ($count > 0) {
+					$stack .= '<div style="height:'.max(1, (int) round($count * $height / $max)).'px;background:#'.
+						self::e($meta[$severity]['color']).'" title="'.self::e($meta[$severity]['name'].': '.$count).
+						'"></div>';
+				}
+			}
+
+			$bars .= '<td style="vertical-align:bottom;padding:0 1px;text-align:center;font-size:9px;color:#768d99">'.
+				($bucket['count'] > 0 ? $bucket['count'] : '').$stack.'</td>';
+			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
+				self::e(self::axisLabel($analytics['buckets'], $index)).'</td>';
+		}
+
+		return '<div style="margin:6px 0 2px 0;color:#768d99">New problems per '.self::chartUnit($analytics).
+			', by severity (colors as above)</div>'.
+			'<table style="width:100%;margin-bottom:10px;border-bottom:1px solid #dfe4e7;table-layout:fixed">'.
+			'<tr style="height:'.($height + 14).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
+	}
+
+	/**
+	 * Chart 2: new vs resolved per hour/day and problems open at its end - whether problems are fixed faster
+	 * than new ones appear.
+	 */
+	private static function renderFlowChartHtml(array $analytics): string {
+		$height = 70;
+		$colors = ['count' => '4796c4', 'resolved' => '59b36a', 'open' => '9aa7b0'];
+		$max = 1;
+
+		foreach ($analytics['buckets'] as $bucket) {
+			$max = max($max, $bucket['count'], $bucket['resolved'], $bucket['open']);
+		}
+
+		$bars = '';
+		$labels = '';
+
+		foreach ($analytics['buckets'] as $index => $bucket) {
+			$group = '';
+
+			foreach ($colors as $key => $color) {
+				$value = $bucket[$key];
+				$group .= '<td style="vertical-align:bottom;padding:0;width:33%">'.
+					'<div style="height:'.($value > 0 ? max(1, (int) round($value * $height / $max)) : 0).'px;'.
+					'background:#'.$color.'" title="'.$value.'"></div></td>';
+			}
+
+			$bars .= '<td style="vertical-align:bottom;padding:0 2px">'.
+				'<table style="width:100%;border-collapse:collapse"><tr>'.$group.'</tr></table></td>';
+			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
+				self::e(self::axisLabel($analytics['buckets'], $index)).'<br><span style="color:#4f5b63">'.
+				$bucket['open'].'</span></td>';
+		}
+
+		$legend = '';
+		$names = ['count' => 'New', 'resolved' => 'Resolved', 'open' => 'Open at the end of the '.
+			self::chartUnit($analytics)
+		];
+
+		foreach ($colors as $key => $color) {
+			$legend .= '<span style="display:inline-block;width:10px;height:10px;background:#'.$color.
+				';margin:0 4px 0 10px"></span>'.self::e($names[$key]);
+		}
+
+		return '<div style="margin:6px 0 2px 0;color:#768d99">New vs resolved per '.self::chartUnit($analytics).
+			', open problems: '.self::e(self::openChangeText($analytics)).'</div>'.
+			'<div style="margin-bottom:4px;font-size:11px;color:#4f5b63">'.$legend.'</div>'.
+			'<table style="width:100%;margin-bottom:12px;border-bottom:1px solid #dfe4e7;table-layout:fixed">'.
+			'<tr style="height:'.($height + 4).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
+	}
+
+	/**
+	 * Axis label of a column: with many columns only every n-th one is labelled, so labels do not overlap
+	 * in a narrow e-mail.
+	 */
+	private static function axisLabel(array $buckets, int $index): string {
+		$step = (int) ceil(count($buckets) / 12);
+
+		return ($index % $step == 0 || $index == count($buckets) - 1) ? $buckets[$index]['label'] : '';
+	}
+
+	private static function sparkline(array $values): string {
+		$max = max(1, max($values ?: [0]));
+		$spark = '';
+
+		foreach ($values as $value) {
+			$spark .= self::SPARK[(int) floor($value * (count(self::SPARK) - 1) / $max)];
+		}
+
+		return $spark;
+	}
+
 	private static function renderAnalyticsText(array $analytics, callable $b, callable $e): array {
 		$lines = [$b("\u{1F4C8} ".$e(PeriodAnalytics::LABELS[$analytics['period']]))];
 
@@ -564,15 +670,11 @@ class ReportRenderer {
 			$lines[] = $e($label.': '.$value);
 		}
 
-		$counts = array_column($analytics['buckets'], 'count');
-		$max = max(1, max($counts ?: [0]));
-		$spark = '';
-
-		foreach ($counts as $count) {
-			$spark .= self::SPARK[(int) floor($count * (count(self::SPARK) - 1) / $max)];
-		}
-
-		$lines[] = $e('Per '.($analytics['period'] === PeriodAnalytics::PERIOD_24H ? 'hour' : 'day').': ').$spark;
+		$unit = self::chartUnit($analytics);
+		$lines[] = $e('New per '.$unit.': ').self::sparkline(array_column($analytics['buckets'], 'count'));
+		$lines[] = $e('Open at the end of the '.$unit.': ').
+			self::sparkline(array_column($analytics['buckets'], 'open')).
+			$e(' ('.$analytics['open_start'].' -> '.$analytics['open_end'].')');
 
 		if ($analytics['recurring']) {
 			$lines[] = $b('Recurring:');
