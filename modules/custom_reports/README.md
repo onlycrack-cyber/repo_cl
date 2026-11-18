@@ -25,6 +25,8 @@
 | Расписания и блок Cron job | Выгрузка HTML (то же уходит в письме) |
 | ![Получатели по хостам](docs/screenshots/5-schedule-per-host.png) | ![Получатели по группам](docs/screenshots/6-schedule-per-group.png) |
 | Форма расписания: разбивка по хостам, свои получатели | Разбивка по группам хостов, свои получатели |
+| ![Сортировка и фильтр](docs/screenshots/7-dashboard-sort-filter.png) | ![Фильтры и сортировка в расписании](docs/screenshots/8-schedule-filters.png) |
+| Фильтр «nginx» + неподтверждённые, сортировка по Time | Те же фильтры и «Sort by» в форме расписания |
 
 ## Дерево файлов
 
@@ -99,6 +101,19 @@ Zabbix API (JSON-RPC, API token) и отправляет его. Результ�
 | Webhook Telegram | Telegram Bot API | параметр `Token`/`api_token` (и `HTTPProxy`/`api_proxy`) media type; chat ID из «Send to» пользователя |
 | Script | `AlertScriptsPath/<exec_path>` | параметры media type, `{ALERT.SENDTO}`, `{ALERT.SUBJECT}`, `{ALERT.MESSAGE}` |
 | Прочие webhook, SMS | не поддерживаются | JavaScript webhook-а исполняется только внутри Zabbix server |
+
+**Фильтры и сортировка.** На дашборде и в расписаниях одинаковые условия отбора:
+
+- *Host groups*, *Hosts*, *Severity*;
+- *Age* — время возникновения: все активные, за последние 24 ч / 7 / 30 дней, старше 1 / 7 дней;
+- *Problem* — часть названия проблемы (без учёта регистра, `problem.get` с `search`);
+- *Acknowledgement status* — все / неподтверждённые / подтверждённые;
+- *Show suppressed problems*.
+
+Таблицу на дашборде можно сортировать кликом по заголовку колонки: Time, Duration, Severity, Host, Problem,
+Ack (повторный клик меняет направление, выбор запоминается в профиле пользователя). Выгрузки CSV / HTML / PDF
+идут с тем же фильтром и в том же порядке. В расписании порядок задаётся полем *Sort by* (+ по возрастанию /
+по убыванию) и действует на все форматы. При равенстве значений проблемы упорядочены по важности, затем по времени.
 
 **Разбивка (Send separately):**
 

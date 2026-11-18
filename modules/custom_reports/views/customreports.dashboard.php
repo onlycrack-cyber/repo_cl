@@ -11,6 +11,7 @@
 
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 
@@ -65,6 +66,11 @@ $filter_column_left = (new CFormList())
 				]
 			]
 		]))->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
+	)
+	->addRow(_('Problem'),
+		(new CTextBox('filter_problem_name', $filter['problem_name']))
+			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
+			->setAttribute('placeholder', _('part of the problem name'))
 	);
 
 $period_radio = (new CRadioButtonList('filter_period', $filter['period']))->setModern(true);
@@ -84,6 +90,13 @@ $filter_column_right = (new CFormList())
 	->addRow(_('Age'), $period_radio)
 	->addRow(_('Show suppressed problems'),
 		(new CCheckBox('filter_show_suppressed'))->setChecked($filter['show_suppressed'] == 1)
+	)
+	->addRow(_('Acknowledgement status'),
+		(new CRadioButtonList('filter_acknowledged', $filter['acknowledged']))
+			->addValue(_('All'), ReportBuilder::ACK_ALL)
+			->addValue(_('Unacknowledged'), ReportBuilder::ACK_NO)
+			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
+			->setModern(true)
 	);
 
 $filter_form = (new CFilter())
@@ -189,13 +202,19 @@ if ($data['can_send']) {
 }
 
 // Problems table.
+// Clickable column headers: sorting is applied to the table and to exports.
+$sort_url = (new CUrl('zabbix.php'))->setArgument('action', 'customreports.dashboard')->getUrl();
+$sort_header = static function (string $label, string $field) use ($filter, $sort_url) {
+	return make_sorting_header($label, $field, $filter['sortfield'], $filter['sortorder'], $sort_url);
+};
+
 $table = (new CTableInfo())->setHeader([
-	_('Time'),
-	_('Duration'),
-	_('Severity'),
-	_('Host'),
-	_('Problem'),
-	_('Ack')
+	$sort_header(_('Time'), ReportBuilder::SORT_TIME),
+	$sort_header(_('Duration'), ReportBuilder::SORT_DURATION),
+	$sort_header(_('Severity'), ReportBuilder::SORT_SEVERITY),
+	$sort_header(_('Host'), ReportBuilder::SORT_HOST),
+	$sort_header(_('Problem'), ReportBuilder::SORT_PROBLEM),
+	$sort_header(_('Ack'), ReportBuilder::SORT_ACK)
 ]);
 
 foreach ($report['problems'] as $problem) {

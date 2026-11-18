@@ -34,9 +34,16 @@ class ScheduleStorage {
 	 * @return array  scheduleid => schedule
 	 */
 	public function getAll(): array {
-		return $this->withLock(LOCK_SH, function (): array {
+		$schedules = $this->withLock(LOCK_SH, function (): array {
 			return $this->read(self::SCHEDULES_FILE);
 		});
+
+		// Fill in fields added by later module versions (schedules saved by an older version lack them).
+		foreach ($schedules as $scheduleid => $schedule) {
+			$schedules[$scheduleid] = ScheduleHelper::normalize(['scheduleid' => (string) $scheduleid] + $schedule);
+		}
+
+		return $schedules;
 	}
 
 	public function get(string $scheduleid): ?array {

@@ -11,6 +11,7 @@
 
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
@@ -108,6 +109,36 @@ $form_list = (new CFormList('schedule_form_list'))
 	->addRow(_('Include suppressed problems'),
 		(new CCheckBox('show_suppressed'))->setChecked($schedule['show_suppressed'] == 1)
 	)
+	->addRow(_('Problem'),
+		(new CTextBox('problem_name', $schedule['problem_name'], false, 255))
+			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+			->setAttribute('placeholder', _('part of the problem name'))
+	)
+	->addRow(_('Acknowledgement status'),
+		(new CRadioButtonList('acknowledged', $schedule['acknowledged']))
+			->addValue(_('All'), ReportBuilder::ACK_ALL)
+			->addValue(_('Unacknowledged'), ReportBuilder::ACK_NO)
+			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
+			->setModern(true)
+	)
+	->addRow(new CLabel(_('Sort by'), 'label-sortfield'), [
+		(new CSelect('sortfield'))
+			->setFocusableElementId('label-sortfield')
+			->addOptions(CSelect::createOptionsFromArray([
+				ReportBuilder::SORT_SEVERITY => _('Severity'),
+				ReportBuilder::SORT_TIME => _('Time'),
+				ReportBuilder::SORT_DURATION => _('Duration'),
+				ReportBuilder::SORT_HOST => _('Host'),
+				ReportBuilder::SORT_PROBLEM => _('Problem'),
+				ReportBuilder::SORT_ACK => _('Ack')
+			]))
+			->setValue($schedule['sortfield']),
+		(new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN),
+		(new CRadioButtonList('sortorder', $schedule['sortorder']))
+			->addValue(_('Descending'), ReportBuilder::SORT_DESC)
+			->addValue(_('Ascending'), ReportBuilder::SORT_ASC)
+			->setModern(true)
+	])
 
 	// Schedule.
 	->addRow(new CTag('h4', true, _('Schedule')))

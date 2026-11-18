@@ -35,6 +35,10 @@ class Dashboard extends CController {
 			'filter_severities' =>		'array',
 			'filter_period' =>			'in '.implode(',', array_keys(Period::LABELS)),
 			'filter_show_suppressed' =>	'in 0,1',
+			'filter_problem_name' =>	'string',
+			'filter_acknowledged' =>	'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
+			'sort' =>					'in '.implode(',', ReportBuilder::SORT_FIELDS),
+			'sortorder' =>				'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'filter_set' =>				'in 1',
 			'filter_rst' =>				'in 1'
 		];
@@ -59,11 +63,17 @@ class Dashboard extends CController {
 				'hostids' => $this->getInput('filter_hostids', []),
 				'severities' => $this->getInput('filter_severities', []),
 				'period' => $this->getInput('filter_period', Period::ALL),
-				'show_suppressed' => $this->getInput('filter_show_suppressed', 0)
+				'show_suppressed' => $this->getInput('filter_show_suppressed', 0),
+				'problem_name' => $this->getInput('filter_problem_name', ''),
+				'acknowledged' => $this->getInput('filter_acknowledged', ReportBuilder::ACK_ALL)
 			]);
 		}
 		elseif ($this->hasInput('filter_rst')) {
 			FrontendHelper::resetFilter();
+		}
+
+		if ($this->hasInput('sort')) {
+			FrontendHelper::updateSort($this->getInput('sort'), $this->getInput('sortorder', ReportBuilder::SORT_DESC));
 		}
 
 		$filter = FrontendHelper::getFilter();

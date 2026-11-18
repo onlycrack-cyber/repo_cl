@@ -54,6 +54,14 @@ class ReportRenderer {
 		$parts[] = 'Period: '.(Period::LABELS[$info['period']] ?? $info['period']);
 		$parts[] = 'Severity: '.($info['severities'] ? implode(', ', $info['severities']) : 'all');
 
+		if (($info['problem_name'] ?? '') !== '') {
+			$parts[] = 'Problem: *'.$info['problem_name'].'*';
+		}
+
+		if (($info['acknowledged'] ?? ReportBuilder::ACK_ALL) != ReportBuilder::ACK_ALL) {
+			$parts[] = $info['acknowledged'] == ReportBuilder::ACK_YES ? 'Acknowledged only' : 'Unacknowledged only';
+		}
+
 		if ($info['groups']) {
 			$parts[] = 'Host groups: '.implode(', ', $info['groups']);
 		}

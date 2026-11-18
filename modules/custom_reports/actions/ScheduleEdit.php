@@ -18,6 +18,7 @@ use Exception;
 use Modules\CustomReports\Lib\Dispatcher;
 use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
@@ -43,6 +44,10 @@ class ScheduleEdit extends CController {
 			'severities' =>			'array',
 			'period' =>				'in '.implode(',', array_keys(Period::LABELS)),
 			'show_suppressed' =>	'in 0,1',
+			'problem_name' =>		'string',
+			'acknowledged' =>		'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
+			'sortfield' =>			'in '.implode(',', ReportBuilder::SORT_FIELDS),
+			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'frequency' =>			'in '.ScheduleHelper::FREQUENCY_DAILY.','.ScheduleHelper::FREQUENCY_WEEKLY,
 			'weekday' =>			'in 1,2,3,4,5,6,7',
 			'time' =>				'string',

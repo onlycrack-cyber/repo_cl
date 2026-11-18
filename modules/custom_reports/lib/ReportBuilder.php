@@ -29,6 +29,26 @@ class ReportBuilder {
 
 	private const TOP_HOSTS = 5;
 
+	// Acknowledgement filter.
+	public const ACK_ALL = -1;
+	public const ACK_NO = 0;
+	public const ACK_YES = 1;
+
+	// Sortable columns.
+	public const SORT_TIME = 'time';
+	public const SORT_DURATION = 'duration';
+	public const SORT_SEVERITY = 'severity';
+	public const SORT_HOST = 'host';
+	public const SORT_PROBLEM = 'problem';
+	public const SORT_ACK = 'ack';
+
+	public const SORT_FIELDS = [self::SORT_TIME, self::SORT_DURATION, self::SORT_SEVERITY, self::SORT_HOST,
+		self::SORT_PROBLEM, self::SORT_ACK
+	];
+
+	public const SORT_ASC = 'ASC';
+	public const SORT_DESC = 'DESC';
+
 	private ApiClientInterface $api;
 	private int $limit;
 
@@ -45,7 +65,15 @@ class ReportBuilder {
 			'hostids' => self::ids($filter['hostids'] ?? []),
 			'severities' => Severity::sanitize($filter['severities'] ?? []),
 			'period' => Period::isValid($period) ? $period : Period::ALL,
-			'show_suppressed' => (int) !empty($filter['show_suppressed'])
+			'show_suppressed' => (int) !empty($filter['show_suppressed']),
+			'problem_name' => mb_substr(trim((string) ($filter['problem_name'] ?? '')), 0, 255, 'UTF-8'),
+			'acknowledged' => in_array((int) ($filter['acknowledged'] ?? self::ACK_ALL), [self::ACK_NO, self::ACK_YES], true)
+				? (int) $filter['acknowledged']
+				: self::ACK_ALL,
+			'sortfield' => in_array($filter['sortfield'] ?? '', self::SORT_FIELDS, true)
+				? $filter['sortfield']
+				: self::SORT_SEVERITY,
+			'sortorder' => ($filter['sortorder'] ?? '') === self::SORT_ASC ? self::SORT_ASC : self::SORT_DESC
 		];
 	}
 
@@ -60,7 +88,9 @@ class ReportBuilder {
 		return [
 			'generated' => time(),
 			'filter' => self::normalizeFilter($filter),
-			'filter_info' => ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => Period::ALL, 'scope' => ''],
+			'filter_info' => ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => Period::ALL, 'scope' => '',
+				'problem_name' => '', 'acknowledged' => self::ACK_ALL
+			],
 			'host_groups' => [],
 			'problems' => [],
 			'total' => 0,
@@ -109,6 +139,14 @@ class ReportBuilder {
 
 		if ($filter['severities']) {
 			$params['severities'] = $filter['severities'];
+		}
+
+		if ($filter['problem_name'] !== '') {
+			$params['search'] = ['name' => $filter['problem_name']];
+		}
+
+		if ($filter['acknowledged'] != self::ACK_ALL) {
+			$params['acknowledged'] = $filter['acknowledged'] == self::ACK_YES;
 		}
 
 		[$time_from, $time_till] = Period::toRange($filter['period'], $now);
@@ -160,9 +198,7 @@ class ReportBuilder {
 			];
 		}
 
-		usort($report['problems'], static function (array $a, array $b): int {
-			return [$b['severity'], $b['clock']] <=> [$a['severity'], $a['clock']];
-		});
+		self::sortProblems($report['problems'], $filter['sortfield'], $filter['sortorder']);
 
 		self::aggregate($report);
 
@@ -173,6 +209,40 @@ class ReportBuilder {
 		$report['filter_info'] = $this->getFilterInfo($filter, $report['severity_meta']);
 
 		return $report;
+	}
+
+	/**
+	 * Sorts problems by a column. Ties are ordered by severity (highest first), then by time (newest first).
+	 */
+	public static function sortProblems(array &$problems, string $field, string $order): void {
+		$key = static function (array $problem) use ($field) {
+			switch ($field) {
+				case self::SORT_TIME:
+					return $problem['clock'];
+
+				case self::SORT_DURATION:
+					return $problem['age'];
+
+				case self::SORT_HOST:
+					return mb_strtolower(implode(', ', array_column($problem['hosts'], 'name')), 'UTF-8');
+
+				case self::SORT_PROBLEM:
+					return mb_strtolower($problem['name'], 'UTF-8');
+
+				case self::SORT_ACK:
+					return $problem['acknowledged'];
+
+				default:
+					return $problem['severity'];
+			}
+		};
+		$direction = $order === self::SORT_ASC ? 1 : -1;
+
+		usort($problems, static function (array $a, array $b) use ($key, $direction): int {
+			$result = ($key($a) <=> $key($b)) * $direction;
+
+			return $result != 0 ? $result : [$b['severity'], $b['clock']] <=> [$a['severity'], $a['clock']];
+		});
 	}
 
 	/**
@@ -282,7 +352,9 @@ class ReportBuilder {
 	}
 
 	private function getFilterInfo(array $filter, array $severity_meta): array {
-		$info = ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => $filter['period'], 'scope' => ''];
+		$info = ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => $filter['period'], 'scope' => '',
+			'problem_name' => $filter['problem_name'], 'acknowledged' => $filter['acknowledged']
+		];
 
 		if ($filter['groupids']) {
 			$groups = $this->api->call('hostgroup.get', [
