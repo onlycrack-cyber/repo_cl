@@ -151,14 +151,11 @@ class Dispatcher {
 					$body = ReportRenderer::renderHtml($report, $title, ['frontend_url' => $frontend_url]);
 					$is_html = true;
 				}
-				elseif ($format === ReportRenderer::FORMAT_CSV) {
+				elseif ($format === ReportRenderer::FORMAT_CSV || $format === ReportRenderer::FORMAT_PDF) {
 					$body = ReportRenderer::renderText($report, $title, 0, false);
 					$is_html = false;
-					$attachments[] = [
-						'name' => ReportRenderer::fileName($title, 'csv', $report['generated']),
-						'type' => 'text/csv',
-						'content' => ReportRenderer::renderCsv($report)
-					];
+					[$name, $type, $content] = $this->makeDocument($report, $title, $format);
+					$attachments[] = ['name' => $name, 'type' => $type, 'content' => $content];
 				}
 				else {
 					$is_html = (int) ($media_type['message_format'] ?? 0) == self::MESSAGE_FORMAT_HTML;
@@ -188,15 +185,8 @@ class Dispatcher {
 				$text = ReportRenderer::renderText($report, $title, (int) $this->config['telegram_max_length'], true);
 				$document = null;
 
-				if ($format === ReportRenderer::FORMAT_HTML) {
-					$document = [ReportRenderer::fileName($title, 'html', $report['generated']), 'text/html',
-						ReportRenderer::renderHtml($report, $title, ['frontend_url' => $frontend_url])
-					];
-				}
-				elseif ($format === ReportRenderer::FORMAT_CSV) {
-					$document = [ReportRenderer::fileName($title, 'csv', $report['generated']), 'text/csv',
-						ReportRenderer::renderCsv($report)
-					];
+				if ($format !== ReportRenderer::FORMAT_SUMMARY) {
+					$document = $this->makeDocument($report, $title, $format);
 				}
 
 				return static function (string $recipient) use ($transport, $text, $document, $subject) {
@@ -226,6 +216,37 @@ class Dispatcher {
 					'Telegram webhook media types can deliver reports.', $media_type['name']
 				));
 		}
+	}
+
+	/**
+	 * Report file for e-mail attachments and Telegram documents.
+	 *
+	 * @return array  [file name, MIME type, content]
+	 */
+	private function makeDocument(array $report, string $title, string $format): array {
+		$time = $report['generated'];
+
+		if ($format === ReportRenderer::FORMAT_CSV) {
+			return [ReportRenderer::fileName($title, 'csv', $time), 'text/csv', ReportRenderer::renderCsv($report)];
+		}
+
+		$html = ReportRenderer::renderHtml($report, $title, ['frontend_url' => (string) $this->config['frontend_url']]);
+
+		if ($format === ReportRenderer::FORMAT_PDF) {
+			try {
+				return [ReportRenderer::fileName($title, 'pdf', $time), 'application/pdf',
+					(new PdfConverter($this->config))->convert($html)
+				];
+			}
+			catch (RuntimeException $e) {
+				// The report is still delivered, as HTML.
+				$this->logger->warning(sprintf('[%s] PDF is not available, sending HTML instead: %s', $title,
+					$e->getMessage()
+				));
+			}
+		}
+
+		return [ReportRenderer::fileName($title, 'html', $time), 'text/html', $html];
 	}
 
 	private function getSmtpPassword(array $media_type): ?string {

@@ -11,6 +11,7 @@
 
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\PeriodAnalytics;
 use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
@@ -97,6 +98,14 @@ $filter_column_right = (new CFormList())
 			->addValue(_('Unacknowledged'), ReportBuilder::ACK_NO)
 			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
 			->setModern(true)
+	)
+	->addRow(_('Period analytics'),
+		(new CRadioButtonList('filter_analytics', $filter['analytics']))
+			->addValue(_('Off'), PeriodAnalytics::PERIOD_NONE)
+			->addValue(_('24 hours'), PeriodAnalytics::PERIOD_24H)
+			->addValue(_('7 days'), PeriodAnalytics::PERIOD_7D)
+			->addValue(_('30 days'), PeriodAnalytics::PERIOD_30D)
+			->setModern(true)
 	);
 
 $filter_form = (new CFilter())
@@ -119,10 +128,18 @@ $controls = (new CList())
 			->addClass(ZBX_STYLE_BTN_ALT)
 	)
 	->addItem(
-		(new CSimpleButton(_('Print / PDF')))
+		(new CSimpleButton(_('Print')))
 			->addClass(ZBX_STYLE_BTN_ALT)
-			->setAttribute('data-cr-open', (clone $export_url)->setArgument('format', 'pdf')->getUrl())
+			->setAttribute('data-cr-open', (clone $export_url)->setArgument('format', 'print')->getUrl())
 	);
+
+// Server-side PDF needs Chrome/Chromium or wkhtmltopdf on the frontend server.
+if ($data['pdf_available']) {
+	$controls->addItem(
+		(new CRedirectButton(_('Download PDF'), (clone $export_url)->setArgument('format', 'pdf')->getUrl()))
+			->addClass(ZBX_STYLE_BTN_ALT)
+	);
+}
 
 // KPI cards.
 $kpi = (new CDiv())->addClass('cr-kpi');
@@ -161,6 +178,121 @@ $kpi->addItem(
 	]))->addClass('cr-kpi-card cr-kpi-hosts')
 );
 
+// How long the open problems have been open.
+$stats = $report['open_stats'];
+$open_stats = (new CDiv($stats['oldest_age'] === null
+	? _('No open problems.')
+	: _s('Oldest open: %1$s, average age: %2$s; open over 1 day: %3$s, over 7 days: %4$s; unacknowledged: %5$s',
+		ReportRenderer::formatDuration($stats['oldest_age']), ReportRenderer::formatDuration($stats['avg_age']),
+		$stats['over_1d'], $stats['over_7d'], $stats['unacknowledged']
+	)
+))->addClass('cr-note');
+
+// Period analytics.
+$analytics_block = null;
+$analytics = $report['analytics'];
+
+if ($analytics !== null) {
+	$period_labels_an = [
+		PeriodAnalytics::PERIOD_24H => _('last 24 hours'),
+		PeriodAnalytics::PERIOD_7D => _('last 7 days'),
+		PeriodAnalytics::PERIOD_30D => _('last 30 days')
+	];
+	$duration = static function (?int $seconds): string {
+		return $seconds === null ? '-' : ReportRenderer::formatDuration($seconds);
+	};
+
+	if ($analytics['change_pct'] === null) {
+		$change = (new CSpan(_s('previous period: %1$s', $analytics['prev'])))->addClass(ZBX_STYLE_GREY);
+	}
+	else {
+		// More problems than in the previous period is bad (red), fewer is good (green).
+		$change = (new CSpan(_s('%1$s%2$s%% vs previous period (%3$s)', $analytics['change_pct'] > 0 ? '+' : '',
+			$analytics['change_pct'], $analytics['prev']
+		)))->addClass($analytics['change_pct'] > 0 ? ZBX_STYLE_RED : ZBX_STYLE_GREEN);
+	}
+
+	$card = static function (string $value, string $label, $note = null) {
+		return (new CDiv([
+			(new CDiv($value))->addClass('cr-kpi-value'),
+			(new CDiv($label))->addClass('cr-kpi-label'),
+			$note !== null ? (new CDiv($note))->addClass('cr-kpi-note') : null
+		]))->addClass('cr-kpi-card cr-kpi-period');
+	};
+
+	$cards = (new CDiv([
+		$card((string) $analytics['new'], _('New problems'), $change),
+		$card((string) $analytics['resolved'], _('Resolved'), _s('still open: %1$s', $analytics['unresolved'])),
+		$card($duration($analytics['mttr_median']), _('Time to resolve (median)'),
+			_s('average: %1$s', $duration($analytics['mttr_avg']))
+		),
+		$card($analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%', _('Acknowledged'),
+			_s('time to acknowledge: %1$s', $duration($analytics['mtta_avg']))
+		)
+	]))->addClass('cr-kpi');
+
+	$severity_list = (new CList())->addClass('cr-severity-list');
+
+	foreach (array_reverse(CSeverityHelper::getSeverities()) as $severity) {
+		$severity_list->addItem(
+			(new CSpan($severity['label'].': '.$analytics['new_by_severity'][$severity['value']]))
+				->addClass(CSeverityHelper::getStyle((int) $severity['value']))
+		);
+	}
+
+	// Bar chart of new problems per hour/day.
+	$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
+	$chart = (new CDiv())->addClass('cr-chart');
+
+	foreach ($analytics['buckets'] as $bucket) {
+		$chart->addItem(
+			(new CDiv([
+				(new CDiv($bucket['count'] > 0 ? $bucket['count'] : ''))->addClass('cr-chart-value'),
+				(new CDiv())
+					->addClass('cr-chart-bar')
+					->addStyle('height: '.round($bucket['count'] * 70 / $max).'%;'),
+				(new CDiv($bucket['label']))->addClass('cr-chart-label')
+			]))
+				->addClass('cr-chart-col')
+				->setTitle($bucket['label'].': '.$bucket['count'])
+		);
+	}
+
+	$recurring = (new CTableInfo())
+		->setHeader([_('Host'), _('Recurring problem'), _('Times')])
+		->setNoDataMessage(_('No problem occurred more than once.'));
+
+	foreach ($analytics['recurring'] as $trigger) {
+		$recurring->addRow([$trigger['hosts'], $trigger['name'], $trigger['count']]);
+	}
+
+	$top_new = (new CTableInfo())
+		->setHeader([_('Host'), _('New problems')])
+		->setNoDataMessage(_('No data found'));
+
+	foreach ($analytics['top_hosts'] as $host) {
+		$top_new->addRow([$host['name'], $host['count']]);
+	}
+
+	$analytics_block = (new CDiv([
+		new CTag('h4', true, _s('Period analytics: %1$s (%2$s - %3$s)', $period_labels_an[$analytics['period']],
+			zbx_date2str(DATE_TIME_FORMAT, $analytics['from']), zbx_date2str(DATE_TIME_FORMAT, $analytics['till'])
+		)),
+		$cards,
+		$severity_list,
+		(new CDiv(_s('New problems per %1$s', $analytics['period'] === PeriodAnalytics::PERIOD_24H ? _('hour') : _('day'))))
+			->addClass('cr-note'),
+		$chart,
+		(new CDiv([
+			(new CDiv($recurring))->addClass('cr-analytics-table'),
+			(new CDiv($top_new))->addClass('cr-analytics-table cr-analytics-narrow')
+		]))->addClass('cr-analytics-tables'),
+		$analytics['truncated']
+			? (new CDiv(_('Period analytics is limited by "analytics_limit" events.')))->addClass(ZBX_STYLE_RED)
+			: null
+	]))->addClass('cr-analytics');
+}
+
 // Test delivery.
 $send_block = null;
 
@@ -181,7 +313,8 @@ if ($data['can_send']) {
 					->addOptions(CSelect::createOptionsFromArray([
 						ReportRenderer::FORMAT_SUMMARY => _('Short summary (Telegram)'),
 						ReportRenderer::FORMAT_HTML => _('Detailed HTML'),
-						ReportRenderer::FORMAT_CSV => _('CSV attachment')
+						ReportRenderer::FORMAT_CSV => _('CSV attachment'),
+						ReportRenderer::FORMAT_PDF => _('PDF attachment')
 					])),
 				(new CSelect('split'))
 					->setValue(ReportSplitter::SPLIT_NONE)
@@ -258,6 +391,16 @@ if ($data['error'] !== null) {
 }
 
 $page->addItem($kpi);
+$page->addItem($open_stats);
+
+if ($analytics_block !== null) {
+	$page->addItem($analytics_block);
+}
+elseif ($report['analytics_error'] !== null) {
+	$page->addItem(makeMessageBox(ZBX_STYLE_MSG_WARNING, [['message' => $report['analytics_error']]],
+		_('Period analytics is not available'), true, false
+	));
+}
 
 if ($send_block !== null) {
 	$page->addItem($send_block);

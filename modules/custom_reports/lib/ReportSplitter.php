@@ -48,7 +48,7 @@ class ReportSplitter {
 
 		if ($skip_empty) {
 			$parts = array_values(array_filter($parts, static function (array $part): bool {
-				return $part['report']['total'] > 0;
+				return $part['report']['total'] > 0 || ($part['report']['analytics']['new'] ?? 0) > 0;
 			}));
 		}
 
@@ -80,6 +80,15 @@ class ReportSplitter {
 			}
 		}
 
+		// Groups that had problems during the analytics period, even if nothing is open now.
+		if (!$report['filter']['groupids']) {
+			foreach ($report['analytics_data']['events'] ?? [] as $event) {
+				foreach ($event['hosts'] as $host) {
+					$groups += $report['host_groups'][$host['hostid']] ?? [];
+				}
+			}
+		}
+
 		natcasesort($groups);
 		$parts = [];
 
@@ -87,7 +96,17 @@ class ReportSplitter {
 			$parts[] = [
 				'id' => (string) $groupid,
 				'name' => $name,
-				'report' => ReportBuilder::subset($report, $problems_by_group[$groupid] ?? [], 'Host group: '.$name)
+				'report' => ReportBuilder::subset($report, $problems_by_group[$groupid] ?? [], 'Host group: '.$name,
+					static function (array $hostids) use ($report, $groupid): bool {
+						foreach ($hostids as $hostid) {
+							if (array_key_exists($groupid, $report['host_groups'][$hostid] ?? [])) {
+								return true;
+							}
+						}
+
+						return false;
+					}
+				)
 			];
 		}
 
@@ -113,6 +132,15 @@ class ReportSplitter {
 			}
 		}
 
+		// Hosts that had problems during the analytics period, even if nothing is open now.
+		if (!$report['filter']['hostids']) {
+			foreach ($report['analytics_data']['events'] ?? [] as $event) {
+				foreach ($event['hosts'] as $host) {
+					$hosts += [$host['hostid'] => $host['name']];
+				}
+			}
+		}
+
 		natcasesort($hosts);
 		$parts = [];
 
@@ -120,7 +148,11 @@ class ReportSplitter {
 			$parts[] = [
 				'id' => (string) $hostid,
 				'name' => $name,
-				'report' => ReportBuilder::subset($report, $problems_by_host[$hostid] ?? [], 'Host: '.$name)
+				'report' => ReportBuilder::subset($report, $problems_by_host[$hostid] ?? [], 'Host: '.$name,
+					static function (array $hostids) use ($hostid): bool {
+						return in_array((string) $hostid, array_map('strval', $hostids), true);
+					}
+				)
 			];
 		}
 

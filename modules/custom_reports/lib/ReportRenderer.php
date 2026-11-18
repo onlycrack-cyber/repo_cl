@@ -14,8 +14,13 @@ class ReportRenderer {
 	public const FORMAT_SUMMARY = 'summary';
 	public const FORMAT_HTML = 'html';
 	public const FORMAT_CSV = 'csv';
+	public const FORMAT_PDF = 'pdf';
 
-	public const FORMATS = [self::FORMAT_SUMMARY, self::FORMAT_HTML, self::FORMAT_CSV];
+	public const FORMATS = [self::FORMAT_SUMMARY, self::FORMAT_HTML, self::FORMAT_CSV, self::FORMAT_PDF];
+
+	private const SPARK = ["\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}",
+		"\u{2588}"
+	];
 
 	public static function formatDuration(int $seconds): string {
 		$seconds = max(0, $seconds);
@@ -119,7 +124,8 @@ class ReportRenderer {
 		$cell = 'padding:4px 8px;border:1px solid #dfe4e7;text-align:left;vertical-align:top;';
 
 		$html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.self::e($title).'</title>'.
-			'<style>@media print{.no-print{display:none}}body{font-family:Arial,Helvetica,sans-serif;'.
+			'<style>@page{size:A4 landscape;margin:12mm}@media print{.no-print{display:none}'.
+			'tr,img{page-break-inside:avoid}}body{font-family:Arial,Helvetica,sans-serif;'.
 			'font-size:13px;color:#1f2c33;margin:16px}table{border-collapse:collapse}</style></head><body>';
 
 		$html .= '<h2 style="margin:0 0 4px 0">'.self::e($title).'</h2>';
@@ -138,6 +144,15 @@ class ReportRenderer {
 		}
 
 		$html .= '</tr></table>';
+		$html .= '<div style="margin:-6px 0 12px 0">'.self::e(self::openStatsText($report)).'</div>';
+
+		if ($report['analytics'] !== null) {
+			$html .= self::renderAnalyticsHtml($report['analytics'], $meta, $cell);
+		}
+		elseif (($report['analytics_error'] ?? null) !== null) {
+			$html .= '<p style="color:#e45959">Period analytics is not available: '.
+				self::e($report['analytics_error']).'</p>';
+		}
 
 		// Top hosts.
 		if ($report['top_hosts']) {
@@ -242,6 +257,15 @@ class ReportRenderer {
 			$lines[] = implode("\n", $counters);
 		}
 
+		if ($report['problems']) {
+			$lines[] = $e(self::openStatsText($report));
+		}
+
+		if ($report['analytics'] !== null) {
+			$lines[] = '';
+			$lines = array_merge($lines, self::renderAnalyticsText($report['analytics'], $b, $e));
+		}
+
 		if ($report['top_hosts']) {
 			$lines[] = '';
 			$lines[] = $b('Top hosts:');
@@ -286,6 +310,158 @@ class ReportRenderer {
 		}
 
 		return $text;
+	}
+
+	/**
+	 * "Oldest: 13d 21h; open over 1 day: 12, over 7 days: 5; unacknowledged: 13".
+	 */
+	public static function openStatsText(array $report): string {
+		$stats = $report['open_stats'];
+
+		if ($stats['oldest_age'] === null) {
+			return 'No open problems.';
+		}
+
+		return sprintf('Oldest open: %s, average age: %s; open over 1 day: %d, over 7 days: %d; unacknowledged: %d',
+			self::formatDuration($stats['oldest_age']), self::formatDuration($stats['avg_age']), $stats['over_1d'],
+			$stats['over_7d'], $stats['unacknowledged']
+		);
+	}
+
+	public static function periodTitle(array $analytics): string {
+		return sprintf('Period analytics: %s (%s - %s)', PeriodAnalytics::LABELS[$analytics['period']],
+			date('Y-m-d H:i', $analytics['from']), date('Y-m-d H:i', $analytics['till'])
+		);
+	}
+
+	/**
+	 * "42 (+12% vs 37 in the previous period)".
+	 */
+	public static function changeText(array $analytics): string {
+		if ($analytics['change_pct'] === null) {
+			return sprintf('%d (previous period: %d)', $analytics['new'], $analytics['prev']);
+		}
+
+		return sprintf('%d (%s%d%% vs %d in the previous period)', $analytics['new'],
+			$analytics['change_pct'] > 0 ? '+' : '', $analytics['change_pct'], $analytics['prev']
+		);
+	}
+
+	private static function durationOrDash(?int $seconds): string {
+		return $seconds === null ? '-' : self::formatDuration($seconds);
+	}
+
+	/**
+	 * @return array  Label => value of the key period metrics.
+	 */
+	public static function analyticsMetrics(array $analytics): array {
+		return [
+			'New problems' => self::changeText($analytics),
+			'Resolved' => $analytics['resolved'].' (still open: '.$analytics['unresolved'].')',
+			'Time to resolve (MTTR)' => 'median '.self::durationOrDash($analytics['mttr_median']).
+				', average '.self::durationOrDash($analytics['mttr_avg']),
+			'Acknowledged' => ($analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%').
+				' (time to acknowledge, average: '.self::durationOrDash($analytics['mtta_avg']).')'
+		];
+	}
+
+	private static function renderAnalyticsHtml(array $analytics, array $meta, string $cell): string {
+		$html = '<h3 style="margin:8px 0 4px 0">'.self::e(self::periodTitle($analytics)).'</h3>';
+		$html .= '<table style="margin-bottom:8px">';
+
+		foreach (self::analyticsMetrics($analytics) as $label => $value) {
+			$html .= '<tr><td style="'.$cell.'background:#f4f4f4">'.self::e($label).'</td><td style="'.$cell.'">'.
+				self::e($value).'</td></tr>';
+		}
+
+		$by_severity = [];
+
+		foreach (Severity::descending() as $severity) {
+			$by_severity[] = '<span style="display:inline-block;padding:0 6px;margin-right:4px;background:#'.
+				self::e($meta[$severity]['color']).'">'.self::e($meta[$severity]['name']).': '.
+				$analytics['new_by_severity'][$severity].'</span>';
+		}
+
+		$html .= '<tr><td style="'.$cell.'background:#f4f4f4">New by severity</td><td style="'.$cell.'">'.
+			implode('', $by_severity).'</td></tr></table>';
+
+		// Bar chart: one column per hour/day; plain table cells render in e-mail clients and in PDF.
+		$max = max(1, max(array_column($analytics['buckets'], 'count') ?: [0]));
+		$bars = '';
+		$labels = '';
+
+		foreach ($analytics['buckets'] as $bucket) {
+			$height = (int) round($bucket['count'] * 70 / $max);
+			$bars .= '<td style="vertical-align:bottom;padding:0 1px;text-align:center;font-size:10px;color:#768d99">'.
+				($bucket['count'] > 0 ? $bucket['count'] : '').
+				'<div style="height:'.max($height, $bucket['count'] > 0 ? 2 : 0).'px;background:#4796c4"></div></td>';
+			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
+				self::e($bucket['label']).'</td>';
+		}
+
+		$html .= '<div style="margin-bottom:4px;color:#768d99">New problems per '.
+			($analytics['period'] === PeriodAnalytics::PERIOD_24H ? 'hour' : 'day').'</div>'.
+			'<table style="margin-bottom:12px;border-bottom:1px solid #dfe4e7"><tr style="height:90px">'.$bars.
+			'</tr><tr>'.$labels.'</tr></table>';
+
+		if ($analytics['recurring']) {
+			$html .= '<h4 style="margin:6px 0 4px 0">Recurring problems</h4><table style="margin-bottom:12px">'.
+				'<tr><th style="'.$cell.'background:#f4f4f4">Host</th><th style="'.$cell.'background:#f4f4f4">'.
+				'Problem</th><th style="'.$cell.'background:#f4f4f4">Times</th></tr>';
+
+			foreach ($analytics['recurring'] as $trigger) {
+				$html .= '<tr><td style="'.$cell.'">'.self::e($trigger['hosts']).'</td><td style="'.$cell.'">'.
+					self::e($trigger['name']).'</td><td style="'.$cell.'text-align:right">'.$trigger['count'].
+					'</td></tr>';
+			}
+
+			$html .= '</table>';
+		}
+
+		if ($analytics['top_hosts']) {
+			$html .= '<h4 style="margin:6px 0 4px 0">Hosts with most new problems</h4><table style="margin-bottom:12px">';
+
+			foreach ($analytics['top_hosts'] as $i => $host) {
+				$html .= '<tr><td style="'.$cell.'">'.($i + 1).'</td><td style="'.$cell.'">'.self::e($host['name']).
+					'</td><td style="'.$cell.'text-align:right">'.$host['count'].'</td></tr>';
+			}
+
+			$html .= '</table>';
+		}
+
+		if ($analytics['truncated']) {
+			$html .= '<p style="color:#e45959">Period analytics is limited by "analytics_limit" events.</p>';
+		}
+
+		return $html;
+	}
+
+	private static function renderAnalyticsText(array $analytics, callable $b, callable $e): array {
+		$lines = [$b("\u{1F4C8} ".$e(PeriodAnalytics::LABELS[$analytics['period']]))];
+
+		foreach (self::analyticsMetrics($analytics) as $label => $value) {
+			$lines[] = $e($label.': '.$value);
+		}
+
+		$counts = array_column($analytics['buckets'], 'count');
+		$max = max(1, max($counts ?: [0]));
+		$spark = '';
+
+		foreach ($counts as $count) {
+			$spark .= self::SPARK[(int) floor($count * (count(self::SPARK) - 1) / $max)];
+		}
+
+		$lines[] = $e('Per '.($analytics['period'] === PeriodAnalytics::PERIOD_24H ? 'hour' : 'day').': ').$spark;
+
+		if ($analytics['recurring']) {
+			$lines[] = $b('Recurring:');
+
+			foreach ($analytics['recurring'] as $trigger) {
+				$lines[] = $e('- '.$trigger['hosts'].': '.$trigger['name'].' x'.$trigger['count']);
+			}
+		}
+
+		return $lines;
 	}
 
 	private static function e(string $text): string {

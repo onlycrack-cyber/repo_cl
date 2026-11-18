@@ -51,10 +51,12 @@ class ReportBuilder {
 
 	private ApiClientInterface $api;
 	private int $limit;
+	private int $analytics_limit;
 
-	public function __construct(ApiClientInterface $api, int $limit = 1000) {
+	public function __construct(ApiClientInterface $api, int $limit = 1000, int $analytics_limit = 10000) {
 		$this->api = $api;
 		$this->limit = max(1, $limit);
+		$this->analytics_limit = max(1, $analytics_limit);
 	}
 
 	public static function normalizeFilter(array $filter): array {
@@ -73,7 +75,10 @@ class ReportBuilder {
 			'sortfield' => in_array($filter['sortfield'] ?? '', self::SORT_FIELDS, true)
 				? $filter['sortfield']
 				: self::SORT_SEVERITY,
-			'sortorder' => ($filter['sortorder'] ?? '') === self::SORT_ASC ? self::SORT_ASC : self::SORT_DESC
+			'sortorder' => ($filter['sortorder'] ?? '') === self::SORT_ASC ? self::SORT_ASC : self::SORT_DESC,
+			'analytics' => in_array($filter['analytics'] ?? '', PeriodAnalytics::PERIODS, true)
+				? $filter['analytics']
+				: PeriodAnalytics::PERIOD_7D
 		];
 	}
 
@@ -92,6 +97,12 @@ class ReportBuilder {
 				'problem_name' => '', 'acknowledged' => self::ACK_ALL
 			],
 			'host_groups' => [],
+			'open_stats' => ['oldest_age' => null, 'avg_age' => null, 'unacknowledged' => 0, 'over_1d' => 0,
+				'over_7d' => 0
+			],
+			'analytics_data' => null,
+			'analytics' => null,
+			'analytics_error' => null,
 			'problems' => [],
 			'total' => 0,
 			'truncated' => false,
@@ -202,8 +213,25 @@ class ReportBuilder {
 
 		self::aggregate($report);
 
+		// Period analytics: "auto" is resolved by the caller (schedule frequency); here it means 24 hours.
+		$period = PeriodAnalytics::resolvePeriod($filter['analytics']);
+
+		if ($period !== null) {
+			// Analytics is optional: the list of open problems is still sent if the event history cannot be read.
+			try {
+				$report['analytics_data'] = (new PeriodAnalytics($this->api, $this->analytics_limit))
+					->collect($filter, $period, $now);
+				$report['analytics'] = PeriodAnalytics::compute($report['analytics_data']);
+			}
+			catch (ApiException $e) {
+				$report['analytics_error'] = $e->getMessage();
+			}
+		}
+
 		if ($with_host_groups) {
-			$report['host_groups'] = $this->getHostGroups($report['problems']);
+			$report['host_groups'] = $this->getHostGroups(array_merge($report['problems'],
+				$report['analytics_data']['events'] ?? []
+			));
 		}
 
 		$report['filter_info'] = $this->getFilterInfo($filter, $report['severity_meta']);
@@ -270,6 +298,22 @@ class ReportBuilder {
 
 		$report['total'] = count($report['problems']);
 		$report['top_hosts'] = array_slice($host_counts, 0, self::TOP_HOSTS);
+
+		// How long the open problems have been open.
+		$ages = array_column($report['problems'], 'age');
+		$report['open_stats'] = [
+			'oldest_age' => $ages ? max($ages) : null,
+			'avg_age' => $ages ? (int) round(array_sum($ages) / count($ages)) : null,
+			'unacknowledged' => count(array_filter($report['problems'], static function (array $problem): bool {
+				return $problem['acknowledged'] == 0;
+			})),
+			'over_1d' => count(array_filter($ages, static function (int $age): bool {
+				return $age > 86400;
+			})),
+			'over_7d' => count(array_filter($ages, static function (int $age): bool {
+				return $age > 7 * 86400;
+			}))
+		];
 	}
 
 	/**
@@ -277,13 +321,19 @@ class ReportBuilder {
 	 *
 	 * @param array  $report
 	 * @param array  $problems
-	 * @param string $scope     Human readable scope, e.g. "Host group: Linux servers".
+	 * @param string        $scope     Human readable scope, e.g. "Host group: Linux servers".
+	 * @param callable|null $match     function (string[] $hostids): bool - events of the part, for period analytics.
 	 */
-	public static function subset(array $report, array $problems, string $scope): array {
+	public static function subset(array $report, array $problems, string $scope, ?callable $match = null): array {
 		$report['problems'] = array_values($problems);
 		$report['filter_info']['scope'] = $scope;
 		$report['truncated'] = false;
 		self::aggregate($report);
+
+		if ($report['analytics_data'] !== null && $match !== null) {
+			$report['analytics_data'] = PeriodAnalytics::subset($report['analytics_data'], $match);
+			$report['analytics'] = PeriodAnalytics::compute($report['analytics_data']);
+		}
 
 		return $report;
 	}

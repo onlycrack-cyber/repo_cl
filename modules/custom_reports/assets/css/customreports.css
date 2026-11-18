@@ -108,3 +108,89 @@
 .cr-rules td {
 	padding-bottom: 8px;
 }
+
+/* Period analytics. */
+
+.cr-analytics {
+	margin: 0 0 14px 0;
+	padding: 10px 12px;
+	border: 1px solid rgba(128, 128, 128, .3);
+}
+
+.cr-analytics h4 {
+	margin: 0 0 8px 0;
+}
+
+.cr-kpi-period {
+	min-width: 170px;
+}
+
+.cr-kpi-note {
+	margin-top: 4px;
+	font-size: 11px;
+}
+
+.cr-severity-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0 0 10px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.cr-severity-list span {
+	display: inline-block;
+	padding: 2px 8px;
+}
+
+.cr-chart {
+	display: flex;
+	align-items: stretch;
+	gap: 2px;
+	height: 120px;
+	margin: 4px 0 12px 0;
+	padding-bottom: 2px;
+	border-bottom: 1px solid rgba(128, 128, 128, .4);
+}
+
+.cr-chart-col {
+	display: flex;
+	flex: 1 1 0;
+	flex-direction: column;
+	justify-content: flex-end;
+	min-width: 0;
+	text-align: center;
+}
+
+.cr-chart-value {
+	font-size: 10px;
+	line-height: 14px;
+}
+
+.cr-chart-bar {
+	min-height: 1px;
+	background: #4796c4;
+}
+
+.cr-chart-label {
+	overflow: hidden;
+	font-size: 10px;
+	line-height: 14px;
+	white-space: nowrap;
+	opacity: .7;
+}
+
+.cr-analytics-tables {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.cr-analytics-table {
+	flex: 2 1 420px;
+}
+
+.cr-analytics-narrow {
+	flex: 1 1 220px;
+}

@@ -33,6 +33,7 @@ class FrontendHelper {
 		CProfile::update(self::PROFILE_PREFIX.'show_suppressed', $filter['show_suppressed'], PROFILE_TYPE_INT);
 		CProfile::update(self::PROFILE_PREFIX.'problem_name', $filter['problem_name'], PROFILE_TYPE_STR);
 		CProfile::update(self::PROFILE_PREFIX.'acknowledged', $filter['acknowledged'], PROFILE_TYPE_INT);
+		CProfile::update(self::PROFILE_PREFIX.'analytics', $filter['analytics'], PROFILE_TYPE_STR);
 	}
 
 	/**
@@ -44,7 +45,8 @@ class FrontendHelper {
 	}
 
 	public static function resetFilter(): void {
-		foreach (['groupids', 'hostids', 'severities', 'period', 'show_suppressed', 'problem_name', 'acknowledged'] as $key) {
+		foreach (['groupids', 'hostids', 'severities', 'period', 'show_suppressed', 'problem_name', 'acknowledged',
+				'analytics'] as $key) {
 			CProfile::deleteIdx(self::PROFILE_PREFIX.$key);
 		}
 	}
@@ -58,6 +60,7 @@ class FrontendHelper {
 			'show_suppressed' => CProfile::get(self::PROFILE_PREFIX.'show_suppressed', 0),
 			'problem_name' => CProfile::get(self::PROFILE_PREFIX.'problem_name', ''),
 			'acknowledged' => CProfile::get(self::PROFILE_PREFIX.'acknowledged', ReportBuilder::ACK_ALL),
+			'analytics' => CProfile::get(self::PROFILE_PREFIX.'analytics', PeriodAnalytics::PERIOD_7D),
 			'sortfield' => CProfile::get('web.customreports.sort', ReportBuilder::SORT_SEVERITY),
 			'sortorder' => CProfile::get('web.customreports.sortorder', ReportBuilder::SORT_DESC)
 		]);

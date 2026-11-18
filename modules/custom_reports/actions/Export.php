@@ -14,6 +14,7 @@ use Exception;
 use Modules\CustomReports\Lib\FrontendApiClient;
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\ModuleConfig;
+use Modules\CustomReports\Lib\PdfConverter;
 use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 
@@ -27,7 +28,7 @@ class Export extends CController {
 	}
 
 	protected function checkInput(): bool {
-		$ret = $this->validateInput(['format' => 'required|in csv,html,pdf']);
+		$ret = $this->validateInput(['format' => 'required|in csv,html,pdf,print']);
 
 		if (!$ret) {
 			$this->setResponse(new CControllerResponseFatal());
@@ -76,6 +77,28 @@ class Export extends CController {
 				];
 				break;
 
+			case 'pdf':
+				try {
+					$pdf = (new PdfConverter(ModuleConfig::get()))->convert(
+						ReportRenderer::renderHtml($report, $title, $options)
+					);
+				}
+				catch (Exception $e) {
+					error($e->getMessage());
+					$this->setResponse(new CControllerResponseFatal());
+
+					return;
+				}
+
+				$data = [
+					'main_block' => $pdf,
+					'content_type' => 'application/pdf',
+					'disposition' => 'attachment',
+					'filename' => ReportRenderer::fileName('problem_report', 'pdf', $report['generated'])
+				];
+				break;
+
+			// Printable HTML: the browser opens the print dialog ("Save as PDF").
 			default:
 				$data = [
 					'main_block' => ReportRenderer::renderHtml($report, $title, $options + ['print' => true]),

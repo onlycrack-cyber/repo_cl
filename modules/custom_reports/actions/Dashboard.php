@@ -16,7 +16,10 @@ use Exception;
 use Modules\CustomReports\Lib\Dispatcher;
 use Modules\CustomReports\Lib\FrontendApiClient;
 use Modules\CustomReports\Lib\FrontendHelper;
+use Modules\CustomReports\Lib\ModuleConfig;
+use Modules\CustomReports\Lib\PdfConverter;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\PeriodAnalytics;
 use Modules\CustomReports\Lib\ReportBuilder;
 
 /**
@@ -37,6 +40,9 @@ class Dashboard extends CController {
 			'filter_show_suppressed' =>	'in 0,1',
 			'filter_problem_name' =>	'string',
 			'filter_acknowledged' =>	'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
+			'filter_analytics' =>		'in '.implode(',', [PeriodAnalytics::PERIOD_NONE, PeriodAnalytics::PERIOD_24H,
+				PeriodAnalytics::PERIOD_7D, PeriodAnalytics::PERIOD_30D
+			]),
 			'sort' =>					'in '.implode(',', ReportBuilder::SORT_FIELDS),
 			'sortorder' =>				'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'filter_set' =>				'in 1',
@@ -65,7 +71,8 @@ class Dashboard extends CController {
 				'period' => $this->getInput('filter_period', Period::ALL),
 				'show_suppressed' => $this->getInput('filter_show_suppressed', 0),
 				'problem_name' => $this->getInput('filter_problem_name', ''),
-				'acknowledged' => $this->getInput('filter_acknowledged', ReportBuilder::ACK_ALL)
+				'acknowledged' => $this->getInput('filter_acknowledged', ReportBuilder::ACK_ALL),
+				'analytics' => $this->getInput('filter_analytics', PeriodAnalytics::PERIOD_7D)
 			]);
 		}
 		elseif ($this->hasInput('filter_rst')) {
@@ -113,7 +120,8 @@ class Dashboard extends CController {
 			'error' => $error,
 			'can_send' => $can_send,
 			'send_media_types' => $can_send ? $this->getSendMediaTypes() : [],
-			'is_super_admin' => $this->getUserType() == USER_TYPE_SUPER_ADMIN
+			'is_super_admin' => $this->getUserType() == USER_TYPE_SUPER_ADMIN,
+			'pdf_available' => (new PdfConverter(ModuleConfig::get()))->isAvailable()
 		];
 
 		$response = new CControllerResponseData($data);

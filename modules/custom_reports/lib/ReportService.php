@@ -27,8 +27,19 @@ class ReportService {
 	}
 
 	public function buildReport(array $filter, string $split = ReportSplitter::SPLIT_NONE): array {
-		return (new ReportBuilder($this->api, (int) $this->config['problem_limit']))
-			->build($filter, null, $split === ReportSplitter::SPLIT_GROUP);
+		return (new ReportBuilder($this->api, (int) $this->config['problem_limit'],
+			(int) $this->config['analytics_limit']
+		))->build($filter, null, $split === ReportSplitter::SPLIT_GROUP);
+	}
+
+	/**
+	 * Report filter of a schedule: "auto" analytics period follows the schedule frequency.
+	 */
+	private static function getScheduleFilter(array $schedule): array {
+		$schedule['analytics'] = PeriodAnalytics::resolvePeriod($schedule['analytics'], $schedule['frequency'])
+			?? PeriodAnalytics::PERIOD_NONE;
+
+		return $schedule;
 	}
 
 	/**
@@ -53,7 +64,7 @@ class ReportService {
 				));
 			}
 
-			$report = $this->buildReport($schedule, $schedule['split']);
+			$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
 
 			return $this->deliver($media_type, static function () use ($common): array {
 				return $common;
@@ -88,7 +99,7 @@ class ReportService {
 			return array_values(array_unique($sendto));
 		};
 
-		$report = $this->buildReport($schedule, $schedule['split']);
+		$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
 
 		return $this->deliver($media_type, $recipients, $report, $schedule['format'], $schedule['name'],
 			$schedule['split'], (bool) $schedule['skip_empty']

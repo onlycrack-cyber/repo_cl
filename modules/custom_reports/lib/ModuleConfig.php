@@ -35,6 +35,15 @@ class ModuleConfig {
 		// Maximum number of problems placed into one report.
 		'problem_limit' => 1000,
 
+		// Maximum number of events read for period analytics (per period).
+		'analytics_limit' => 10000,
+
+		// PDF: "auto" (Chrome/Chromium, then wkhtmltopdf), "chrome", "wkhtmltopdf" or "none".
+		'pdf_converter' => 'auto',
+		'chrome_binary' => '',
+		'wkhtmltopdf_binary' => '',
+		'pdf_timeout' => 60,
+
 		// A missed schedule (cron was down) is still sent if no more than this many seconds passed.
 		'grace_period' => 3600,
 

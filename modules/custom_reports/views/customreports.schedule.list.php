@@ -18,7 +18,8 @@ use Modules\CustomReports\Lib\ScheduleHelper;
 $format_labels = [
 	ReportRenderer::FORMAT_SUMMARY => _('Short summary'),
 	ReportRenderer::FORMAT_HTML => _('Detailed HTML'),
-	ReportRenderer::FORMAT_CSV => _('CSV')
+	ReportRenderer::FORMAT_CSV => _('CSV'),
+	ReportRenderer::FORMAT_PDF => _('PDF')
 ];
 
 $split_labels = [

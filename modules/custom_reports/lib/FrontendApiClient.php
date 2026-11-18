@@ -29,6 +29,10 @@ class FrontendApiClient implements ApiClientInterface {
 				$service = API::Trigger();
 				break;
 
+			case 'event':
+				$service = API::Event();
+				break;
+
 			case 'host':
 				$service = API::Host();
 				break;

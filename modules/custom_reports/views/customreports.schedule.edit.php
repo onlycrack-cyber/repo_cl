@@ -11,6 +11,7 @@
 
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
+use Modules\CustomReports\Lib\PeriodAnalytics;
 use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
@@ -121,6 +122,17 @@ $form_list = (new CFormList('schedule_form_list'))
 			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
 			->setModern(true)
 	)
+	->addRow(_('Period analytics'), [
+		(new CRadioButtonList('analytics', $schedule['analytics']))
+			->addValue(_('Auto'), PeriodAnalytics::PERIOD_AUTO)
+			->addValue(_('Off'), PeriodAnalytics::PERIOD_NONE)
+			->addValue(_('24 hours'), PeriodAnalytics::PERIOD_24H)
+			->addValue(_('7 days'), PeriodAnalytics::PERIOD_7D)
+			->addValue(_('30 days'), PeriodAnalytics::PERIOD_30D)
+			->setModern(true),
+		(new CDiv(_('New, resolved and acknowledged problems of the period compared with the previous period, MTTR, MTTA, problems per day, recurring problems. Auto: 24 hours for daily, 7 days for weekly schedules.')))
+			->addClass(ZBX_STYLE_GREY)
+	])
 	->addRow(new CLabel(_('Sort by'), 'label-sortfield'), [
 		(new CSelect('sortfield'))
 			->setFocusableElementId('label-sortfield')
@@ -211,6 +223,7 @@ $form_list = (new CFormList('schedule_form_list'))
 			->addValue(_('Short summary'), ReportRenderer::FORMAT_SUMMARY)
 			->addValue(_('Detailed HTML'), ReportRenderer::FORMAT_HTML)
 			->addValue(_('CSV'), ReportRenderer::FORMAT_CSV)
+			->addValue(_('PDF'), ReportRenderer::FORMAT_PDF)
 			->setModern(true)
 	)
 	->addRow(_('Send separately'),
@@ -234,7 +247,9 @@ $form_list = (new CFormList('schedule_form_list'))
 			BR(),
 			_('Detailed HTML: full table in the e-mail body; for Telegram it is sent as an .html document.'),
 			BR(),
-			_('CSV: short summary plus a CSV attachment (document for Telegram).')
+			_('CSV: short summary plus a CSV attachment (document for Telegram).'),
+			BR(),
+			_('PDF: short summary plus the detailed report as a PDF attachment (document for Telegram). Needs Chrome/Chromium or wkhtmltopdf on the server; without them HTML is attached.')
 		]))->addClass(ZBX_STYLE_GREY)
 	);
 

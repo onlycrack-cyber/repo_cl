@@ -30,6 +30,16 @@ return [
 	'frontend_url' => '',
 
 	'problem_limit' => 1000,
+
+	// Events read for period analytics ("Period analytics" section), per period.
+	'analytics_limit' => 10000,
+
+	// PDF reports: "auto" uses headless Chrome/Chromium (google-chrome, chromium) and falls back to wkhtmltopdf;
+	// set an explicit binary if it is not in a standard location. "none" sends HTML instead of PDF.
+	'pdf_converter' => 'auto',
+	'chrome_binary' => '',
+	'wkhtmltopdf_binary' => '',
+	'pdf_timeout' => 60,
 	'grace_period' => 3600,
 
 	// AlertScriptsPath from zabbix_server.conf (for media types of type "Script").
