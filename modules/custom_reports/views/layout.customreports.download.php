@@ -5,7 +5,8 @@
 
 
 /**
- * Layout for file downloads (CSV, HTML, printable HTML).
+ * Layout for file downloads (CSV, HTML, printable HTML). Used by an action without a view, so $data is the
+ * controller data: main_block, content_type, disposition, filename.
  *
  * @var CView $this
  * @var array $data

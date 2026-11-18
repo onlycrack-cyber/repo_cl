@@ -60,7 +60,7 @@ class Export extends CController {
 		switch ($format) {
 			case 'csv':
 				$data = [
-					'content' => ReportRenderer::renderCsv($report),
+					'main_block' => ReportRenderer::renderCsv($report),
 					'content_type' => 'text/csv; charset=UTF-8',
 					'disposition' => 'attachment',
 					'filename' => ReportRenderer::fileName('problem_report', 'csv', $report['generated'])
@@ -69,7 +69,7 @@ class Export extends CController {
 
 			case 'html':
 				$data = [
-					'content' => ReportRenderer::renderHtml($report, $title, $options),
+					'main_block' => ReportRenderer::renderHtml($report, $title, $options),
 					'content_type' => 'text/html; charset=UTF-8',
 					'disposition' => 'attachment',
 					'filename' => ReportRenderer::fileName('problem_report', 'html', $report['generated'])
@@ -78,13 +78,14 @@ class Export extends CController {
 
 			default:
 				$data = [
-					'content' => ReportRenderer::renderHtml($report, $title, $options + ['print' => true]),
+					'main_block' => ReportRenderer::renderHtml($report, $title, $options + ['print' => true]),
 					'content_type' => 'text/html; charset=UTF-8',
 					'disposition' => 'inline',
 					'filename' => ReportRenderer::fileName('problem_report', 'html', $report['generated'])
 				];
 		}
 
+		// The action has no view: without a view Zabbix passes the controller data to the layout as is.
 		$response = new CControllerResponseData($data);
 		$response->setFileName($data['filename']);
 		$this->setResponse($response);

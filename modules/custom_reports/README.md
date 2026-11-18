@@ -13,6 +13,19 @@
   Там же блок **Cron job**: статус рассыльщика и кнопка создания/удаления задания cron.
 - **`bin/send_reports.php`**: CLI-рассыльщик для cron (раз в минуту).
 
+## Скриншоты
+
+Сняты на Zabbix 7.0.33 с тестовыми данными.
+
+| | |
+|---|---|
+| ![Дашборд](docs/screenshots/1-dashboard.png) | ![Фильтр по группам и важности](docs/screenshots/2-dashboard-filtered.png) |
+| Дашборд: KPI, топ хостов, тестовая отправка, таблица проблем | Фильтр: группы Databases + Web servers, Average и выше |
+| ![Расписания и cron](docs/screenshots/4-schedules.png) | ![HTML-отчёт](docs/screenshots/3-html-report.png) |
+| Расписания и блок Cron job | Выгрузка HTML (то же уходит в письме) |
+| ![Получатели по хостам](docs/screenshots/5-schedule-per-host.png) | ![Получатели по группам](docs/screenshots/6-schedule-per-group.png) |
+| Форма расписания: разбивка по хостам, свои получатели | Разбивка по группам хостов, свои получатели |
+
 ## Дерево файлов
 
 ```
@@ -33,8 +46,7 @@ custom_reports/
 │   ├── customreports.dashboard.php
 │   ├── customreports.schedule.list.php
 │   ├── customreports.schedule.edit.php
-│   ├── customreports.download.php    # тело выгружаемого файла
-│   └── layout.customreports.download.php  # layout: заголовки Content-Type/Disposition
+│   └── layout.customreports.download.php  # layout выгрузок: Content-Type/Disposition
 ├── lib/                              # общий код фронтенда и CLI
 │   ├── ApiClientInterface.php
 │   ├── ApiException.php

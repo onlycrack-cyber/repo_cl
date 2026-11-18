@@ -2,7 +2,7 @@
 	"manifest_version": 2.0,
 	"id": "custom_reports",
 	"name": "Custom Problem Reports",
-	"version": "1.3.0",
+	"version": "1.3.1",
 	"namespace": "CustomReports",
 	"author": "Custom",
 	"url": "",
@@ -15,7 +15,6 @@
 		},
 		"customreports.export": {
 			"class": "Export",
-			"view": "customreports.download",
 			"layout": "layout.customreports.download"
 		},
 		"customreports.send": {
