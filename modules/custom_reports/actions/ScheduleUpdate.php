@@ -44,7 +44,9 @@ class ScheduleUpdate extends CController {
 			'mediatypeid' =>		'required|id',
 			'format' =>				'required|in '.implode(',', ReportRenderer::FORMATS),
 			'split' =>				'required|in '.implode(',', ReportSplitter::MODES),
-			'skip_empty' =>			'in 0,1'
+			'skip_empty' =>			'in 0,1',
+			'group_recipients' =>	'array',
+			'common_recipients' =>	'in '.ScheduleHelper::COMMON_ALL.','.ScheduleHelper::COMMON_FALLBACK
 		];
 
 		$ret = $this->validateInput($fields);
@@ -72,7 +74,7 @@ class ScheduleUpdate extends CController {
 			'created_by' => CWebUser::$data['userid']
 		];
 		$this->getInputs($input, ['name', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
-			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split'
+			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split', 'group_recipients', 'common_recipients'
 		]);
 
 		$schedule = ScheduleHelper::normalize($input);

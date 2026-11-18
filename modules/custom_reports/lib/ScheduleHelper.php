@@ -17,6 +17,10 @@ class ScheduleHelper {
 	public const FREQUENCY_DAILY = 'daily';
 	public const FREQUENCY_WEEKLY = 'weekly';
 
+	// Common recipients get every part / only parts of groups without own recipients.
+	public const COMMON_ALL = 'all';
+	public const COMMON_FALLBACK = 'fallback';
+
 	public const WEEKDAYS = [
 		1 => 'Monday',
 		2 => 'Tuesday',
@@ -47,6 +51,8 @@ class ScheduleHelper {
 			'format' => ReportRenderer::FORMAT_SUMMARY,
 			'split' => ReportSplitter::SPLIT_NONE,
 			'skip_empty' => 0,
+			'group_recipients' => [],
+			'common_recipients' => self::COMMON_ALL,
 			'created_by' => '0',
 			'updated_at' => 0
 		];
@@ -85,9 +91,66 @@ class ScheduleHelper {
 				? (string) $schedule['split']
 				: ReportSplitter::SPLIT_NONE,
 			'skip_empty' => (int) !empty($schedule['skip_empty']),
+			'group_recipients' => self::normalizeGroupRecipients($schedule['group_recipients']),
+			'common_recipients' => $schedule['common_recipients'] === self::COMMON_FALLBACK
+				? self::COMMON_FALLBACK
+				: self::COMMON_ALL,
 			'created_by' => (string) $schedule['created_by'],
 			'updated_at' => (int) $schedule['updated_at']
 		];
+	}
+
+	/**
+	 * Recipient rules for "Per host group" reports: a part of a host group is sent to the recipients of every
+	 * rule that lists this group.
+	 *
+	 * @param mixed $rules       List of ['groupids' => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => ...].
+	 * @param bool  $keep_empty  Keep rules without data (rows of the edit form).
+	 *
+	 * @return array
+	 */
+	public static function normalizeGroupRecipients($rules, bool $keep_empty = false): array {
+		if (!is_array($rules)) {
+			return [];
+		}
+
+		$result = [];
+
+		foreach ($rules as $rule) {
+			if (!is_array($rule)) {
+				continue;
+			}
+
+			$extra_sendto = $rule['extra_sendto'] ?? [];
+
+			if (!is_array($extra_sendto)) {
+				$extra_sendto = preg_split('/[\r\n,;]+/', (string) $extra_sendto);
+			}
+
+			$rule = [
+				'groupids' => ReportBuilder::ids($rule['groupids'] ?? []),
+				'userids' => ReportBuilder::ids($rule['userids'] ?? []),
+				'usrgrpids' => ReportBuilder::ids($rule['usrgrpids'] ?? []),
+				'extra_sendto' => RecipientResolver::normalizeSendto($extra_sendto)
+			];
+
+			if ($keep_empty || $rule['groupids'] || self::hasRecipients($rule)) {
+				$result[] = $rule;
+			}
+		}
+
+		return $result;
+	}
+
+	public static function hasRecipients(array $recipients): bool {
+		return $recipients['userids'] || $recipients['usrgrpids'] || $recipients['extra_sendto'];
+	}
+
+	/**
+	 * Whether group recipient rules are used: only for reports split per host group.
+	 */
+	public static function usesGroupRecipients(array $schedule): bool {
+		return $schedule['split'] === ReportSplitter::SPLIT_GROUP && $schedule['group_recipients'];
 	}
 
 	/**
@@ -111,18 +174,52 @@ class ScheduleHelper {
 			$errors[] = 'Incorrect value for field "Media type": a media type must be selected.';
 		}
 
-		if (!$schedule['userids'] && !$schedule['usrgrpids'] && !$schedule['extra_sendto']) {
+		$has_group_recipients = self::usesGroupRecipients($schedule);
+
+		if (!self::hasRecipients($schedule) && !$has_group_recipients) {
 			$errors[] = 'At least one recipient (user, user group or additional address) is required.';
 		}
 
-		foreach ($schedule['extra_sendto'] as $sendto) {
-			if (mb_strlen($sendto, 'UTF-8') > 1024 || preg_match('/[\x00-\x1F]/', $sendto)) {
-				$errors[] = 'Incorrect value for field "Additional recipients".';
-				break;
+		if (!self::isValidSendto($schedule['extra_sendto'])) {
+			$errors[] = 'Incorrect value for field "Additional recipients".';
+		}
+
+		if ($has_group_recipients) {
+			foreach ($schedule['group_recipients'] as $index => $rule) {
+				$row = $index + 1;
+
+				if (!$rule['groupids']) {
+					$errors[] = sprintf('Recipients per host group, row %d: host groups must be selected.', $row);
+				}
+
+				if (!self::hasRecipients($rule)) {
+					$errors[] = sprintf('Recipients per host group, row %d: at least one recipient is required.', $row);
+				}
+
+				if (!self::isValidSendto($rule['extra_sendto'])) {
+					$errors[] = sprintf('Recipients per host group, row %d: incorrect additional recipients.', $row);
+				}
+
+				// With a group filter only the filtered groups become report parts.
+				if ($schedule['groupids'] && array_diff($rule['groupids'], $schedule['groupids'])) {
+					$errors[] = sprintf('Recipients per host group, row %d: every host group must also be selected '.
+						'in the report filter "Host groups" (or leave the filter empty).', $row
+					);
+				}
 			}
 		}
 
 		return $errors;
+	}
+
+	private static function isValidSendto(array $sendto_list): bool {
+		foreach ($sendto_list as $sendto) {
+			if (mb_strlen($sendto, 'UTF-8') > 1024 || preg_match('/[\x00-\x1F]/', $sendto)) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

@@ -52,7 +52,11 @@ class ScheduleEdit extends CController {
 			'mediatypeid' =>		'id',
 			'format' =>				'in '.implode(',', ReportRenderer::FORMATS),
 			'split' =>				'in '.implode(',', ReportSplitter::MODES),
-			'skip_empty' =>			'in 0,1'
+			'skip_empty' =>			'in 0,1',
+			'group_recipients' =>	'array',
+			'common_recipients' =>	'in '.ScheduleHelper::COMMON_ALL.','.ScheduleHelper::COMMON_FALLBACK,
+			'add_group_recipient' =>	'in 1',
+			'remove_group_recipient' =>	'int32'
 		];
 
 		$ret = $this->validateInput($fields);
@@ -107,10 +111,44 @@ class ScheduleEdit extends CController {
 			$schedule = ScheduleHelper::normalize(array_replace($schedule, $input));
 		}
 
+		// Rows of the "Recipients per host group" table, including rows that are not filled in yet.
+		$rules = $this->hasInput('form_refresh')
+			? ScheduleHelper::normalizeGroupRecipients($this->getInput('group_recipients', []), true)
+			: $schedule['group_recipients'];
+
+		if ($this->hasInput('remove_group_recipient')) {
+			unset($rules[$this->getInput('remove_group_recipient')]);
+			$rules = array_values($rules);
+		}
+
+		if ($this->hasInput('add_group_recipient')) {
+			$rules[] = ['groupids' => [], 'userids' => [], 'usrgrpids' => [], 'extra_sendto' => []];
+		}
+
+		$schedule['group_recipients'] = $rules;
 		$schedule['scheduleid'] = $scheduleid;
+
+		$rule_ids = ['groupids' => [], 'userids' => [], 'usrgrpids' => []];
+
+		foreach ($rules as $rule) {
+			foreach ($rule_ids as $key => $ids) {
+				$rule_ids[$key] = array_merge($ids, $rule[$key]);
+			}
+		}
 
 		$response = new CControllerResponseData([
 			'schedule' => $schedule,
+			'rule_names' => [
+				'groupids' => array_column($this->getMultiselectData('hostgroup', array_unique($rule_ids['groupids'])),
+					null, 'id'
+				),
+				'userids' => array_column($this->getMultiselectData('user', array_unique($rule_ids['userids'])), null,
+					'id'
+				),
+				'usrgrpids' => array_column($this->getMultiselectData('usergroup', array_unique($rule_ids['usrgrpids'])),
+					null, 'id'
+				)
+			],
 			'groups' => $this->getMultiselectData('hostgroup', $schedule['groupids']),
 			'hosts' => $this->getMultiselectData('host', $schedule['hostids']),
 			'users' => $this->getMultiselectData('user', $schedule['userids']),

@@ -24,25 +24,78 @@
 		}
 	});
 
-	function toggleWeekday() {
-		const row = document.getElementById('cr-weekday-row');
-		const checked = document.querySelector('input[name="frequency"]:checked');
+	function setRowVisible(id, visible) {
+		const row = document.getElementById(id);
 
-		if (row !== null && checked !== null) {
-			row.style.display = checked.value === 'weekly' ? '' : 'none';
+		if (row !== null) {
+			row.style.display = visible ? '' : 'none';
+		}
+	}
+
+	function checkedValue(name) {
+		const checked = document.querySelector('input[name="' + name + '"]:checked');
+
+		return checked !== null ? checked.value : null;
+	}
+
+	// Schedule form: show fields that depend on "Frequency" and "Send separately".
+	function toggleScheduleRows() {
+		if (checkedValue('frequency') !== null) {
+			setRowVisible('cr-weekday-row', checkedValue('frequency') === 'weekly');
+		}
+
+		if (checkedValue('split') !== null) {
+			setRowVisible('cr-group-recipients-row', checkedValue('split') === 'group');
+			setRowVisible('cr-common-recipients-row', checkedValue('split') === 'group');
 		}
 	}
 
 	document.addEventListener('change', function(e) {
-		if (e.target.name === 'frequency') {
-			toggleWeekday();
+		if (e.target.name === 'frequency' || e.target.name === 'split') {
+			toggleScheduleRows();
 		}
 	});
 
+	// "Recipients per host group": rows are added and removed by re-rendering the form with its current values.
+	document.addEventListener('click', function(e) {
+		const add = e.target.closest('.js-cr-rule-add');
+		const remove = e.target.closest('.js-cr-rule-remove');
+		const button = add || remove;
+
+		if (button === null) {
+			return;
+		}
+
+		e.preventDefault();
+
+		const form = button.closest('form');
+		const vars = {form_refresh: '1'};
+
+		if (add !== null) {
+			vars.add_group_recipient = '1';
+		}
+		else {
+			vars.remove_group_recipient = remove.dataset.index;
+		}
+
+		form.querySelector('input[name="action"]').value = 'customreports.schedule.edit';
+
+		for (const [name, value] of Object.entries(vars)) {
+			const input = document.createElement('input');
+
+			input.type = 'hidden';
+			input.name = name;
+			input.value = value;
+			form.appendChild(input);
+		}
+
+		form.submit();
+	});
+
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', toggleWeekday);
+		document.addEventListener('DOMContentLoaded', toggleScheduleRows);
 	}
 	else {
-		toggleWeekday();
+		toggleScheduleRows();
 	}
 })();

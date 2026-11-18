@@ -104,3 +104,7 @@
 .cr-cron h4 {
 	margin: 0 0 6px 0;
 }
+
+.cr-rules td {
+	padding-bottom: 8px;
+}

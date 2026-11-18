@@ -29,7 +29,8 @@ class ReportSplitter {
 	 * @param string $mode        SPLIT_*.
 	 * @param bool   $skip_empty  Do not return parts without problems.
 	 *
-	 * @return array  List of ['name' => string, 'report' => array]; 'name' is empty for SPLIT_NONE.
+	 * @return array  List of ['id' => string, 'name' => string, 'report' => array]; 'id' is a groupid or a hostid,
+	 *                'id' and 'name' are empty for SPLIT_NONE.
 	 */
 	public static function split(array $report, string $mode, bool $skip_empty): array {
 		switch ($mode) {
@@ -42,7 +43,7 @@ class ReportSplitter {
 				break;
 
 			default:
-				$parts = [['name' => '', 'report' => $report]];
+				$parts = [['id' => '', 'name' => '', 'report' => $report]];
 		}
 
 		if ($skip_empty) {
@@ -84,6 +85,7 @@ class ReportSplitter {
 
 		foreach ($groups as $groupid => $name) {
 			$parts[] = [
+				'id' => (string) $groupid,
 				'name' => $name,
 				'report' => ReportBuilder::subset($report, $problems_by_group[$groupid] ?? [], 'Host group: '.$name)
 			];
@@ -116,6 +118,7 @@ class ReportSplitter {
 
 		foreach ($hosts as $hostid => $name) {
 			$parts[] = [
+				'id' => (string) $hostid,
 				'name' => $name,
 				'report' => ReportBuilder::subset($report, $problems_by_host[$hostid] ?? [], 'Host: '.$name)
 			];

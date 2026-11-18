@@ -41,23 +41,65 @@ class ReportService {
 	 */
 	public function runSchedule(array $schedule): array {
 		$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
+		$resolver = new RecipientResolver($this->api);
+		$common = $this->resolveRecipients($resolver, $schedule, $schedule['mediatypeid']);
 
-		$sendto = (new RecipientResolver($this->api))->resolve($schedule['userids'], $schedule['usrgrpids'],
-			$schedule['mediatypeid']
-		);
-		$sendto = array_values(array_unique(array_merge($sendto, $schedule['extra_sendto'])));
+		if (!ScheduleHelper::usesGroupRecipients($schedule)) {
+			if (!$common) {
+				throw new RuntimeException(sprintf('No recipients: selected users have no active media of type "%s".',
+					$media_type['name']
+				));
+			}
 
-		if (!$sendto) {
-			throw new RuntimeException(sprintf('No recipients: selected users have no active media of type "%s".',
-				$media_type['name']
-			));
+			$report = $this->buildReport($schedule, $schedule['split']);
+
+			return $this->deliver($media_type, static function () use ($common): array {
+				return $common;
+			}, $report, $schedule['format'], $schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
 		}
 
-		$report = $this->buildReport($schedule, $schedule['split']);
+		// Per host group with own recipients: groupid => addresses of all rules that list the group.
+		$by_group = [];
 
-		return $this->deliver($media_type, $sendto, $report, $schedule['format'], $schedule['name'],
-			$schedule['split'], (bool) $schedule['skip_empty']
+		foreach ($schedule['group_recipients'] as $rule) {
+			$sendto = $this->resolveRecipients($resolver, $rule, $schedule['mediatypeid']);
+
+			foreach ($rule['groupids'] as $groupid) {
+				$by_group[$groupid] = array_merge($by_group[$groupid] ?? [], $sendto);
+			}
+		}
+
+		$fallback_only = $schedule['common_recipients'] === ScheduleHelper::COMMON_FALLBACK;
+		$has_common = ScheduleHelper::hasRecipients($schedule);
+
+		$recipients = static function (array $part) use ($by_group, $common, $fallback_only, $has_common): ?array {
+			$has_rule = array_key_exists($part['id'], $by_group);
+
+			// The group is not addressed by any rule and there are no common recipients.
+			if (!$has_rule && !$has_common) {
+				return null;
+			}
+
+			$own = $by_group[$part['id']] ?? [];
+			$sendto = ($has_rule && $fallback_only) ? $own : array_merge($own, $common);
+
+			return array_values(array_unique($sendto));
+		};
+
+		$report = $this->buildReport($schedule, ReportSplitter::SPLIT_GROUP);
+
+		return $this->deliver($media_type, $recipients, $report, $schedule['format'], $schedule['name'],
+			ReportSplitter::SPLIT_GROUP, (bool) $schedule['skip_empty']
 		);
+	}
+
+	/**
+	 * Addresses of users, user groups and additional addresses of a schedule or of a group recipient rule.
+	 */
+	private function resolveRecipients(RecipientResolver $resolver, array $recipients, string $mediatypeid): array {
+		$sendto = $resolver->resolve($recipients['userids'], $recipients['usrgrpids'], $mediatypeid);
+
+		return array_values(array_unique(array_merge($sendto, $recipients['extra_sendto'])));
 	}
 
 	/**
@@ -71,15 +113,38 @@ class ReportService {
 			throw new RuntimeException(sprintf('No recipients for media type "%s".', $media_type['name']));
 		}
 
-		return $this->deliver($media_type, $sendto, $report, $format, $title, $split, $skip_empty);
+		return $this->deliver($media_type, static function () use ($sendto): array {
+			return $sendto;
+		}, $report, $format, $title, $split, $skip_empty);
 	}
 
-	private function deliver(array $media_type, array $sendto, array $report, string $format, string $title,
+	/**
+	 * @param callable $recipients  function (array $part): ?string[] - addresses for a report part,
+	 *                              null if nobody is meant to receive this part.
+	 */
+	private function deliver(array $media_type, callable $recipients, array $report, string $format, string $title,
 			string $split, bool $skip_empty): array {
 		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0];
 
 		foreach (ReportSplitter::split($report, $split, $skip_empty) as $part) {
 			$part_title = $part['name'] === '' ? $title : $title.' - '.$part['name'];
+			$sendto = $recipients($part);
+
+			if ($sendto === null) {
+				$this->logger->info(sprintf('[%s] no recipients are configured for this part, skipped.', $part_title));
+				continue;
+			}
+
+			if (!$sendto) {
+				$message = sprintf('[%s] no recipients with an active "%s" media, the report is not sent.', $part_title,
+					$media_type['name']
+				);
+				$this->logger->warning($message);
+				$result['errors'][] = $message;
+				$result['failed']++;
+				continue;
+			}
+
 			$part_result = $this->dispatcher->dispatch($media_type, $sendto, $part['report'], $format, $part_title);
 
 			$result['parts']++;

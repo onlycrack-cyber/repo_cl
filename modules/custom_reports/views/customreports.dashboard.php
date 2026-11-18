@@ -157,7 +157,7 @@ if ($data['can_send']) {
 			->setName('customreports_send')
 			->addClass('cr-send')
 			->addVar('action', 'customreports.send')
-			->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, CCsrfTokenHelper::get('customreports'))
+			->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, CCsrfTokenHelper::get('customreports.send'))
 			->addItem([
 				new CLabel(_('Test delivery to my media'), 'label-cr-mediatypeid'),
 				(new CSelect('mediatypeid'))

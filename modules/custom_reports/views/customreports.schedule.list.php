@@ -31,7 +31,12 @@ $weekdays = [1 => _('Monday'), 2 => _('Tuesday'), 3 => _('Wednesday'), 4 => _('T
 	6 => _('Saturday'), 7 => _('Sunday')
 ];
 
-$csrf_token = CCsrfTokenHelper::get('customreports');
+// Module controllers check the CSRF token against the full action name.
+$csrf_tokens = [];
+
+foreach (['customreports.schedule.run', 'customreports.schedule.delete', 'customreports.cron.update'] as $action) {
+	$csrf_tokens[$action] = CCsrfTokenHelper::get($action);
+}
 $edit_url = (new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.edit');
 
 $table = (new CTableInfo())->setHeader([
@@ -68,6 +73,10 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		$recipients[] = _n('%1$s address', '%1$s addresses', count($schedule['extra_sendto']));
 	}
 
+	if (($schedule['split'] ?? '') === ReportSplitter::SPLIT_GROUP && !empty($schedule['group_recipients'])) {
+		$recipients[] = _n('%1$s host group rule', '%1$s host group rules', count($schedule['group_recipients']));
+	}
+
 	$last_run = max((int) ($state['last_run'] ?? 0), (int) ($state['last_manual_run'] ?? 0));
 	$result = '';
 
@@ -81,7 +90,7 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		->addClass('cr-inline-form')
 		->addVar('action', 'customreports.schedule.run')
 		->addVar('scheduleid', $scheduleid)
-		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_token)
+		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.schedule.run'])
 		->setAttribute('data-confirm', _s('Send report "%1$s" to all its recipients now?', $schedule['name']))
 		->addItem((new CSubmit('run', _('Send now')))->addClass(ZBX_STYLE_BTN_LINK));
 
@@ -89,7 +98,7 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		->addClass('cr-inline-form')
 		->addVar('action', 'customreports.schedule.delete')
 		->addVar('scheduleid', $scheduleid)
-		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_token)
+		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.schedule.delete'])
 		->setAttribute('data-confirm', _s('Delete schedule "%1$s"?', $schedule['name']))
 		->addItem((new CSubmit('delete', _('Delete')))->addClass(ZBX_STYLE_BTN_LINK));
 
@@ -147,7 +156,7 @@ else {
 $cron_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
 	->addClass('cr-inline-form')
 	->addVar('action', 'customreports.cron.update')
-	->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_token);
+	->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.cron.update']);
 
 if ($cron['user_installed']) {
 	$cron_form
