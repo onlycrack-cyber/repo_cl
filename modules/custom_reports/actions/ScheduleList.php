@@ -10,6 +10,7 @@ use API;
 use CController;
 use CControllerResponseData;
 use Exception;
+use Modules\CustomReports\Lib\CronManager;
 use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\ScheduleStorage;
 
@@ -58,7 +59,27 @@ class ScheduleList extends CController {
 			])
 			: [];
 
+		$cron = new CronManager($config);
+
+		try {
+			$cron_user_installed = $cron->isUserCrontabInstalled();
+			$cron_error = null;
+		}
+		catch (Exception $e) {
+			$cron_user_installed = false;
+			$cron_error = $e->getMessage();
+		}
+
 		$response = new CControllerResponseData([
+			'cron' => [
+				'user' => CronManager::getCurrentUser(),
+				'heartbeat' => $cron->getHeartbeat(),
+				'user_installed' => $cron_user_installed,
+				'cron_d_installed' => $cron->isCronDInstalled(),
+				'cron_d_file' => CronManager::CRON_D_FILE,
+				'cron_d_line' => $cron->getCronDLine(),
+				'error' => $cron_error
+			],
 			'schedules' => $schedules,
 			'state' => $state,
 			'media_types' => $media_types,

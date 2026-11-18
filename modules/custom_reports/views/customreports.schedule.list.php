@@ -10,13 +10,21 @@
  */
 
 use Modules\CustomReports\Lib\FrontendHelper;
+use Modules\CustomReports\Lib\CronManager;
 use Modules\CustomReports\Lib\ReportRenderer;
+use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 
 $format_labels = [
 	ReportRenderer::FORMAT_SUMMARY => _('Short summary'),
 	ReportRenderer::FORMAT_HTML => _('Detailed HTML'),
 	ReportRenderer::FORMAT_CSV => _('CSV')
+];
+
+$split_labels = [
+	ReportSplitter::SPLIT_NONE => _('One report'),
+	ReportSplitter::SPLIT_GROUP => _('Per host group'),
+	ReportSplitter::SPLIT_HOST => _('Per host')
 ];
 
 $weekdays = [1 => _('Monday'), 2 => _('Tuesday'), 3 => _('Wednesday'), 4 => _('Thursday'), 5 => _('Friday'),
@@ -31,6 +39,7 @@ $table = (new CTableInfo())->setHeader([
 	_('Schedule'),
 	_('Media type'),
 	_('Format'),
+	_('Send separately'),
 	_('Recipients'),
 	_('Status'),
 	_('Last run'),
@@ -91,6 +100,7 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 			? $data['media_types'][$schedule['mediatypeid']]['name']
 			: (new CSpan(_('Inaccessible media type')))->addClass(ZBX_STYLE_RED),
 		$format_labels[$schedule['format']] ?? $schedule['format'],
+		$split_labels[$schedule['split'] ?? ReportSplitter::SPLIT_NONE],
 		implode(', ', $recipients),
 		$schedule['enabled']
 			? (new CSpan(_('Enabled')))->addClass(ZBX_STYLE_GREEN)
@@ -116,9 +126,74 @@ if ($data['error'] !== null) {
 	));
 }
 
+// Cron job of the sender.
+$cron = $data['cron'];
+$heartbeat = $cron['heartbeat'];
+
+if ($heartbeat === null) {
+	$cron_status = (new CSpan(_('Never run: the sender is not scheduled in cron yet')))->addClass(ZBX_STYLE_RED);
+}
+elseif (time() - (int) $heartbeat['time'] <= CronManager::HEARTBEAT_MAX_AGE) {
+	$cron_status = (new CSpan(_s('Running: last run %1$s ago as user "%2$s"', zbx_date2age((int) $heartbeat['time']),
+		$heartbeat['user'] ?? '?'
+	)))->addClass(ZBX_STYLE_GREEN);
+}
+else {
+	$cron_status = (new CSpan(_s('Not running: last run %1$s ago (%2$s)', zbx_date2age((int) $heartbeat['time']),
+		zbx_date2str(DATE_TIME_FORMAT_SECONDS, (int) $heartbeat['time'])
+	)))->addClass(ZBX_STYLE_RED);
+}
+
+$cron_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
+	->addClass('cr-inline-form')
+	->addVar('action', 'customreports.cron.update')
+	->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_token);
+
+if ($cron['user_installed']) {
+	$cron_form
+		->addVar('operation', 'remove')
+		->setAttribute('data-confirm', _('Remove the cron job? Scheduled reports will stop being sent.'))
+		->addItem((new CSubmit('cron', _('Remove cron job')))->addClass(ZBX_STYLE_BTN_ALT));
+	$user_status = (new CSpan(_('Installed')))->addClass(ZBX_STYLE_GREEN);
+}
+else {
+	$cron_form
+		->addVar('operation', 'install')
+		->addItem(new CSubmit('cron', _('Create cron job')));
+	$user_status = (new CSpan(_('Not installed')))->addClass(ZBX_STYLE_GREY);
+}
+
+$user_row = [$user_status, ' ', $cron_form];
+
+if ($cron['error'] !== null) {
+	$user_row[] = (new CDiv(_s('Cannot read crontab: %1$s', $cron['error'])))->addClass(ZBX_STYLE_RED);
+}
+
+$cron_list = (new CFormList('cron_form_list'))
+	->addRow(_('Sender status'), $cron_status)
+	->addRow(_s('Crontab of user "%1$s"', $cron['user']), $user_row)
+	->addRow($cron['cron_d_file'], [
+		$cron['cron_d_installed']
+			? (new CSpan(_('Found')))->addClass(ZBX_STYLE_GREEN)
+			: (new CSpan(_('Not found')))->addClass(ZBX_STYLE_GREY),
+		(new CDiv(_s('Alternative to the button above: as root, put this line into %1$s', $cron['cron_d_file'])))
+			->addClass(ZBX_STYLE_GREY),
+		(new CTextArea('cron_d_line', $cron['cron_d_line']))
+			->setReadonly(true)
+			->setRows(2)
+			->setWidth(ZBX_TEXTAREA_BIG_WIDTH)
+	]);
+
+if ($cron['user_installed'] && $cron['cron_d_installed']) {
+	$cron_list->addRow('', (new CDiv(_s('The sender is scheduled twice (crontab of "%1$s" and %2$s). Reports are not duplicated thanks to locking, but one of the entries should be removed.',
+		$cron['user'], $cron['cron_d_file']
+	)))->addClass(ZBX_STYLE_ORANGE));
+}
+
 $page
 	->addItem((new CDiv(_s('Schedule times are evaluated in the "%1$s" timezone by the cron job bin/send_reports.php. Storage: %2$s',
 		$data['timezone'], $data['data_dir']
 	)))->addClass('cr-note'))
 	->addItem($table)
+	->addItem((new CDiv([new CTag('h4', true, _('Cron job')), $cron_list]))->addClass('cr-cron'))
 	->show();

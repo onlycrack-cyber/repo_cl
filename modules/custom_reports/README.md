@@ -8,7 +8,9 @@
   и тестовая отправка «Send now» на свои media.
 - **Вкладка «Schedules and delivery»** (только Super admin): расписания рассылок (ежедневно или еженедельно
   в заданный день и время), фильтр отчёта, получатели (пользователи, группы пользователей, дополнительные адреса),
-  media type (Email, Telegram webhook, Script), формат (краткая сводка, подробный HTML, CSV).
+  media type (Email, Telegram webhook, Script), формат (краткая сводка, подробный HTML, CSV),
+  разбивка: одним отчётом, **отдельно по группам хостов** или **отдельно по хостам**, опция «не отправлять пустые».
+  Там же блок **Cron job**: статус рассыльщика и кнопка создания/удаления задания cron.
 - **`bin/send_reports.php`**: CLI-рассыльщик для cron (раз в минуту).
 
 ## Дерево файлов
@@ -25,7 +27,8 @@ custom_reports/
 │   ├── ScheduleEdit.php              # customreports.schedule.edit: форма
 │   ├── ScheduleUpdate.php            # customreports.schedule.update: сохранение (POST + CSRF)
 │   ├── ScheduleDelete.php            # customreports.schedule.delete (POST + CSRF)
-│   └── ScheduleRun.php               # customreports.schedule.run: «Send now» для расписания
+│   ├── ScheduleRun.php               # customreports.schedule.run: «Send now» для расписания
+│   └── CronUpdate.php                # customreports.cron.update: создать/удалить задание cron
 ├── views/
 │   ├── customreports.dashboard.php
 │   ├── customreports.schedule.list.php
@@ -38,12 +41,14 @@ custom_reports/
 │   ├── FrontendApiClient.php         # API::Problem(), API::Trigger(), API::Host(), ... от имени пользователя
 │   ├── JsonRpcApiClient.php          # api_jsonrpc.php + API token (CLI)
 │   ├── ReportBuilder.php             # problem.get + trigger.get → агрегаты
+│   ├── ReportSplitter.php            # разбивка отчёта по группам хостов / по хостам
 │   ├── ReportRenderer.php            # CSV, HTML (inline-стили для почты), текст для Telegram
 │   ├── RecipientResolver.php         # пользователи/группы → «Send to» выбранного media type
 │   ├── Dispatcher.php                # выбор транспорта по media type
 │   ├── ReportService.php
 │   ├── ScheduleHelper.php            # нормализация, валидация, расчёт времени запуска
 │   ├── ScheduleStorage.php           # schedules.json / state.json с flock и атомарной записью
+│   ├── CronManager.php               # crontab пользователя веб-сервера, heartbeat, строка для /etc/cron.d
 │   ├── DbSecretResolver.php          # пароль SMTP из БД (CLI), API его не отдаёт
 │   ├── FrontendHelper.php            # фильтр в профиле пользователя, вкладки, media текущего пользователя
 │   ├── ModuleConfig.php, Logger.php, Period.php, Severity.php
@@ -82,6 +87,18 @@ Zabbix API (JSON-RPC, API token) и отправляет его. Результ�
 | Webhook Telegram | Telegram Bot API | параметр `Token`/`api_token` (и `HTTPProxy`/`api_proxy`) media type; chat ID из «Send to» пользователя |
 | Script | `AlertScriptsPath/<exec_path>` | параметры media type, `{ALERT.SENDTO}`, `{ALERT.SUBJECT}`, `{ALERT.MESSAGE}` |
 | Прочие webhook, SMS | не поддерживаются | JavaScript webhook-а исполняется только внутри Zabbix server |
+
+**Разбивка (Send separately):**
+
+- *One report*: один отчёт по всему фильтру.
+- *Per host group*: отдельное сообщение на каждую выбранную в фильтре группу; если группы не выбраны, то на
+  каждую группу, в которой есть проблемы. Группы хостов берутся через `host.get` с `selectHostGroups`.
+- *Per host*: отдельное сообщение на каждый выбранный хост; если хосты не выбраны, то на каждый хост с проблемами.
+- Проблема триггера с несколькими хостами (или хоста из нескольких групп) попадает во все подходящие части.
+  Заголовок части: «<название> - <группа/хост>».
+- *Do not send empty reports*: части без проблем не отправляются (без разбивки: не отправлять, если проблем нет).
+
+Получатели у всех частей одни и те же. Список проблем читается из API один раз и делится в памяти.
 
 **Форматы:**
 
@@ -164,14 +181,26 @@ Zabbix API (JSON-RPC, API token) и отправляет его. Результ�
 
    `scheduleid` видно в `--list`. Опция `--dry-run` показывает, что было бы отправлено сейчас.
 
-9. Добавьте задание cron (файл `/etc/cron.d/zabbix-custom-reports`):
+9. Создайте задание cron. Есть два способа, нужен один.
 
-   ```cron
-   * * * * * www-data /usr/bin/php /usr/share/zabbix/modules/custom_reports/bin/send_reports.php >/dev/null 2>&1
+   **Из интерфейса модуля:** *Reports → Custom Problem Reports → Schedules and delivery*, блок **Cron job**,
+   кнопка **Create cron job**. Модуль добавит строку с меткой `# zabbix-custom-reports` в crontab пользователя
+   веб-сервера (`crontab -l` / `crontab -`), не трогая остальные строки. Кнопка **Remove cron job** её удаляет.
+   Условия: установлен `cron`, пользователь веб-сервера не запрещён в `/etc/cron.deny`, `proc_open` не в
+   `disable_functions`. На RHEL с SELinux httpd по умолчанию не может запускать `crontab`, там используйте
+   второй способ. Путь к PHP CLI определяется автоматически (`/usr/bin/php`), при необходимости задайте
+   `php_binary` в конфиге.
+
+   **Вручную через `/etc/cron.d`** (от root). Готовая строка с вашими путями показана в том же блоке:
+
+   ```bash
+   echo '* * * * * www-data /usr/bin/php /usr/share/zabbix/modules/custom_reports/bin/send_reports.php >/dev/null 2>&1' > /etc/cron.d/zabbix-custom-reports
    ```
 
-   Или через `crontab -u www-data -e` та же строка без поля пользователя. Запускайте от того же пользователя,
-   что и веб-сервер: оба пишут в один каталог данных.
+   В блоке **Cron job** видно, работает ли рассыльщик: при каждом плановом запуске он пишет
+   `heartbeat.json` в каталог данных. Если запусков нет больше 3 минут, статус станет красным. Если задание
+   есть в обоих местах, модуль предупредит; дублей отправки не будет (блокировка и учёт времени последнего
+   запуска), но одну запись лучше удалить. Запускайте от того же пользователя, что и веб-сервер.
 
 10. Лог: `/var/lib/zabbix-custom-reports/logs/custom_reports.log`. Ротация:
 

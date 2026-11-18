@@ -47,6 +47,10 @@ class ReportRenderer {
 		$info = $report['filter_info'];
 		$parts = [];
 
+		if (($info['scope'] ?? '') !== '') {
+			$parts[] = $info['scope'];
+		}
+
 		$parts[] = 'Period: '.(Period::LABELS[$info['period']] ?? $info['period']);
 		$parts[] = 'Severity: '.($info['severities'] ? implode(', ', $info['severities']) : 'all');
 

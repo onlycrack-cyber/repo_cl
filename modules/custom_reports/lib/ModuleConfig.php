@@ -53,7 +53,13 @@ class ModuleConfig {
 		'telegram_max_length' => 4096,
 
 		// HTTP proxy for Telegram, if the media type does not define one.
-		'proxy' => ''
+		'proxy' => '',
+
+		// PHP CLI binary used in the cron job created from the UI; empty = autodetect.
+		'php_binary' => '',
+
+		// "crontab" command used by the "Create cron job" button; empty = autodetect.
+		'crontab_binary' => ''
 	];
 
 	private static ?array $config = null;

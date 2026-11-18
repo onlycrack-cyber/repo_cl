@@ -12,6 +12,7 @@
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\ReportRenderer;
+use Modules\CustomReports\Lib\ReportSplitter;
 
 $this->addJsFile('multiselect.js');
 
@@ -169,6 +170,14 @@ if ($data['can_send']) {
 						ReportRenderer::FORMAT_HTML => _('Detailed HTML'),
 						ReportRenderer::FORMAT_CSV => _('CSV attachment')
 					])),
+				(new CSelect('split'))
+					->setValue(ReportSplitter::SPLIT_NONE)
+					->addOptions(CSelect::createOptionsFromArray([
+						ReportSplitter::SPLIT_NONE => _('One report'),
+						ReportSplitter::SPLIT_GROUP => _('Separately per host group'),
+						ReportSplitter::SPLIT_HOST => _('Separately per host')
+					])),
+				(new CCheckBox('skip_empty'))->setChecked(true)->setLabel(_('Skip empty')),
 				new CSubmit('send', _('Send now'))
 			]);
 	}

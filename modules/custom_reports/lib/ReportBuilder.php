@@ -18,6 +18,7 @@ namespace Modules\CustomReports\Lib;
  *   truncated      bool   True if the limit was reached.
  *   by_severity    array  severity => count.
  *   top_hosts      array  List of [hostid, name, count], max 5.
+ *   host_groups    array  hostid => [groupid => name], only if requested.
  *   severity_meta  array  severity => [name, color].
  */
 class ReportBuilder {
@@ -59,7 +60,8 @@ class ReportBuilder {
 		return [
 			'generated' => time(),
 			'filter' => self::normalizeFilter($filter),
-			'filter_info' => ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => Period::ALL],
+			'filter_info' => ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => Period::ALL, 'scope' => ''],
+			'host_groups' => [],
 			'problems' => [],
 			'total' => 0,
 			'truncated' => false,
@@ -70,9 +72,13 @@ class ReportBuilder {
 	}
 
 	/**
+	 * @param array    $filter
+	 * @param int|null $now
+	 * @param bool     $with_host_groups  Load host groups of the hosts with problems (needed to split by group).
+	 *
 	 * @throws ApiException
 	 */
-	public function build(array $filter, ?int $now = null): array {
+	public function build(array $filter, ?int $now = null, bool $with_host_groups = false): array {
 		$now = $now ?? time();
 		$filter = self::normalizeFilter($filter);
 		$report = self::emptyReport($filter);
@@ -133,8 +139,6 @@ class ReportBuilder {
 			]);
 		}
 
-		$host_counts = [];
-
 		foreach ($problems as $problem) {
 			$hosts = [];
 
@@ -144,22 +148,44 @@ class ReportBuilder {
 				}
 			}
 
-			$severity = (int) $problem['severity'];
-
 			$report['problems'][] = [
 				'eventid' => $problem['eventid'],
 				'triggerid' => $problem['objectid'],
 				'clock' => (int) $problem['clock'],
 				'age' => max(0, $now - (int) $problem['clock']),
-				'severity' => $severity,
+				'severity' => (int) $problem['severity'],
 				'name' => $problem['name'],
 				'acknowledged' => (int) $problem['acknowledged'],
 				'hosts' => $hosts
 			];
+		}
 
-			$report['by_severity'][$severity]++;
+		usort($report['problems'], static function (array $a, array $b): int {
+			return [$b['severity'], $b['clock']] <=> [$a['severity'], $a['clock']];
+		});
 
-			foreach ($hosts as $host) {
+		self::aggregate($report);
+
+		if ($with_host_groups) {
+			$report['host_groups'] = $this->getHostGroups($report['problems']);
+		}
+
+		$report['filter_info'] = $this->getFilterInfo($filter, $report['severity_meta']);
+
+		return $report;
+	}
+
+	/**
+	 * Recalculates totals, severity counters and top hosts from $report['problems'].
+	 */
+	public static function aggregate(array &$report): void {
+		$report['by_severity'] = array_fill_keys(array_keys(Severity::NAMES), 0);
+		$host_counts = [];
+
+		foreach ($report['problems'] as $problem) {
+			$report['by_severity'][$problem['severity']]++;
+
+			foreach ($problem['hosts'] as $host) {
 				if (!array_key_exists($host['hostid'], $host_counts)) {
 					$host_counts[$host['hostid']] = ['hostid' => $host['hostid'], 'name' => $host['name'], 'count' => 0];
 				}
@@ -168,19 +194,59 @@ class ReportBuilder {
 			}
 		}
 
-		usort($report['problems'], static function (array $a, array $b): int {
-			return [$b['severity'], $b['clock']] <=> [$a['severity'], $a['clock']];
-		});
-
 		usort($host_counts, static function (array $a, array $b): int {
 			return [$b['count'], $a['name']] <=> [$a['count'], $b['name']];
 		});
 
 		$report['total'] = count($report['problems']);
 		$report['top_hosts'] = array_slice($host_counts, 0, self::TOP_HOSTS);
-		$report['filter_info'] = $this->getFilterInfo($filter, $report['severity_meta']);
+	}
+
+	/**
+	 * A copy of the report limited to the given problems (used to split a report by host or host group).
+	 *
+	 * @param array  $report
+	 * @param array  $problems
+	 * @param string $scope     Human readable scope, e.g. "Host group: Linux servers".
+	 */
+	public static function subset(array $report, array $problems, string $scope): array {
+		$report['problems'] = array_values($problems);
+		$report['filter_info']['scope'] = $scope;
+		$report['truncated'] = false;
+		self::aggregate($report);
 
 		return $report;
+	}
+
+	/**
+	 * @return array  hostid => [groupid => name]
+	 */
+	private function getHostGroups(array $problems): array {
+		$hostids = [];
+
+		foreach ($problems as $problem) {
+			foreach ($problem['hosts'] as $host) {
+				$hostids[$host['hostid']] = true;
+			}
+		}
+
+		if (!$hostids) {
+			return [];
+		}
+
+		$hosts = $this->api->call('host.get', [
+			'output' => ['hostid'],
+			'hostids' => array_keys($hostids),
+			'selectHostGroups' => ['groupid', 'name']
+		]);
+
+		$result = [];
+
+		foreach ($hosts as $host) {
+			$result[$host['hostid']] = array_column($host['hostgroups'], 'name', 'groupid');
+		}
+
+		return $result;
 	}
 
 	/**
@@ -216,24 +282,24 @@ class ReportBuilder {
 	}
 
 	private function getFilterInfo(array $filter, array $severity_meta): array {
-		$info = ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => $filter['period']];
+		$info = ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => $filter['period'], 'scope' => ''];
 
 		if ($filter['groupids']) {
 			$groups = $this->api->call('hostgroup.get', [
-				'output' => ['name'],
+				'output' => ['groupid', 'name'],
 				'groupids' => $filter['groupids']
 			]);
-			$info['groups'] = array_column($groups, 'name');
-			sort($info['groups']);
+			$info['groups'] = array_column($groups, 'name', 'groupid');
+			natcasesort($info['groups']);
 		}
 
 		if ($filter['hostids']) {
 			$hosts = $this->api->call('host.get', [
-				'output' => ['name'],
+				'output' => ['hostid', 'name'],
 				'hostids' => $filter['hostids']
 			]);
-			$info['hosts'] = array_column($hosts, 'name');
-			sort($info['hosts']);
+			$info['hosts'] = array_column($hosts, 'name', 'hostid');
+			natcasesort($info['hosts']);
 		}
 
 		foreach ($filter['severities'] as $severity) {

@@ -52,12 +52,19 @@ class ScheduleRun extends CController {
 			$storage->updateState($schedule['scheduleid'], [
 				'last_manual_run' => time(),
 				'last_status' => $result['failed'] == 0 ? 'ok' : 'error',
-				'last_message' => $result['errors'] ? implode('; ', $result['errors']) : _s('Sent: %1$s', $result['sent'])
+				'last_message' => $result['errors']
+					? implode('; ', $result['errors'])
+					: _s('Reports: %1$s, messages sent: %2$s', $result['parts'], $result['sent'])
 			]);
 
-			if ($result['failed'] == 0) {
-				CMessageHelper::setSuccessTitle(_s('Report "%1$s" sent to %2$s recipient(s)', $schedule['name'],
-					$result['sent']
+			if ($result['parts'] == 0) {
+				CMessageHelper::setSuccessTitle(_s('Report "%1$s": nothing to send, no problems match the filter',
+					$schedule['name']
+				));
+			}
+			elseif ($result['failed'] == 0) {
+				CMessageHelper::setSuccessTitle(_s('Report "%1$s": %2$s report(s), %3$s message(s) delivered',
+					$schedule['name'], $result['parts'], $result['sent']
 				));
 			}
 			else {

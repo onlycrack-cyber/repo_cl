@@ -47,6 +47,7 @@ spl_autoload_register(static function (string $class) use ($module_dir): void {
 	}
 });
 
+use Modules\CustomReports\Lib\CronManager;
 use Modules\CustomReports\Lib\DbSecretResolver;
 use Modules\CustomReports\Lib\JsonRpcApiClient;
 use Modules\CustomReports\Lib\Logger;
@@ -109,6 +110,11 @@ if (isset($options['list'])) {
 }
 
 // Only one instance at a time: a slow SMTP server must not cause duplicate deliveries.
+if (!is_dir($config['data_dir']) && !@mkdir($config['data_dir'], 0770, true)) {
+	$logger->error(sprintf('Cannot create data directory "%s".', $config['data_dir']));
+	exit(CR_EXIT_CONFIG);
+}
+
 $lock_file = rtrim($config['data_dir'], '/').'/.send_reports.lock';
 $lock = @fopen($lock_file, 'c');
 
@@ -120,6 +126,11 @@ if ($lock === false) {
 if (!flock($lock, LOCK_EX | LOCK_NB)) {
 	$logger->warning('Another instance is still running, exiting.');
 	exit(CR_EXIT_LOCKED);
+}
+
+// Scheduled runs report that cron works (shown on the "Schedules and delivery" tab).
+if (!isset($options['run']) && !isset($options['dry-run'])) {
+	CronManager::writeHeartbeat($config['data_dir'], ['php' => PHP_BINARY]);
 }
 
 try {
@@ -189,8 +200,8 @@ foreach ($due as $scheduleid => $schedule) {
 	try {
 		$result = $service->runSchedule($schedule);
 		$status = $result['failed'] == 0 ? 'ok' : 'error';
-		$message = sprintf('Problems: %d, sent: %d, failed: %d.', $result['problems'], $result['sent'],
-			$result['failed']
+		$message = sprintf('Problems: %d, messages: %d, sent: %d, failed: %d.', $result['problems'], $result['parts'],
+			$result['sent'], $result['failed']
 		);
 
 		if ($result['errors']) {

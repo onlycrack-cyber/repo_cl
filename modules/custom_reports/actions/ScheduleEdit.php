@@ -19,6 +19,7 @@ use Modules\CustomReports\Lib\Dispatcher;
 use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\ReportRenderer;
+use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
 
@@ -49,7 +50,9 @@ class ScheduleEdit extends CController {
 			'usrgrpids' =>			'array_id',
 			'extra_sendto' =>		'string',
 			'mediatypeid' =>		'id',
-			'format' =>				'in '.implode(',', ReportRenderer::FORMATS)
+			'format' =>				'in '.implode(',', ReportRenderer::FORMATS),
+			'split' =>				'in '.implode(',', ReportSplitter::MODES),
+			'skip_empty' =>			'in 0,1'
 		];
 
 		$ret = $this->validateInput($fields);
@@ -95,6 +98,7 @@ class ScheduleEdit extends CController {
 			$input = $this->getInputAll();
 			$input['enabled'] = $this->getInput('enabled', 0);
 			$input['show_suppressed'] = $this->getInput('show_suppressed', 0);
+			$input['skip_empty'] = $this->getInput('skip_empty', 0);
 
 			foreach (['groupids', 'hostids', 'severities', 'userids', 'usrgrpids'] as $key) {
 				$input[$key] = $this->getInput($key, []);

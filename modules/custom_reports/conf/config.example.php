@@ -44,5 +44,11 @@ return [
 
 	'telegram_api_url' => 'https://api.telegram.org',
 	'telegram_max_length' => 4096,
-	'proxy' => ''
+	'proxy' => '',
+
+	// PHP CLI binary for the cron job created from the module UI; empty = autodetect (/usr/bin/php).
+	'php_binary' => '',
+
+	// "crontab" command used by the "Create cron job" button; empty = autodetect (/usr/bin/crontab).
+	'crontab_binary' => ''
 ];

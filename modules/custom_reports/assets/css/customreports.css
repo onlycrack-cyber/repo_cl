@@ -96,3 +96,11 @@
 	display: inline-block;
 	margin-right: 10px;
 }
+
+.cr-cron {
+	margin-top: 20px;
+}
+
+.cr-cron h4 {
+	margin: 0 0 6px 0;
+}

@@ -16,6 +16,7 @@ use Exception;
 use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\ReportRenderer;
+use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
 
@@ -41,7 +42,9 @@ class ScheduleUpdate extends CController {
 			'usrgrpids' =>			'array_id',
 			'extra_sendto' =>		'string',
 			'mediatypeid' =>		'required|id',
-			'format' =>				'required|in '.implode(',', ReportRenderer::FORMATS)
+			'format' =>				'required|in '.implode(',', ReportRenderer::FORMATS),
+			'split' =>				'required|in '.implode(',', ReportSplitter::MODES),
+			'skip_empty' =>			'in 0,1'
 		];
 
 		$ret = $this->validateInput($fields);
@@ -65,10 +68,11 @@ class ScheduleUpdate extends CController {
 			'scheduleid' => $scheduleid,
 			'enabled' => $this->getInput('enabled', 0),
 			'show_suppressed' => $this->getInput('show_suppressed', 0),
+			'skip_empty' => $this->getInput('skip_empty', 0),
 			'created_by' => CWebUser::$data['userid']
 		];
 		$this->getInputs($input, ['name', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
-			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format'
+			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split'
 		]);
 
 		$schedule = ScheduleHelper::normalize($input);

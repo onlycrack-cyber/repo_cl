@@ -12,6 +12,7 @@
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\ReportRenderer;
+use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 
 $this->addJsFile('multiselect.js');
@@ -181,6 +182,21 @@ $form_list = (new CFormList('schedule_form_list'))
 			->addValue(_('CSV'), ReportRenderer::FORMAT_CSV)
 			->setModern(true)
 	)
+	->addRow(_('Send separately'),
+		(new CRadioButtonList('split', $schedule['split']))
+			->addValue(_('One report'), ReportSplitter::SPLIT_NONE)
+			->addValue(_('Per host group'), ReportSplitter::SPLIT_GROUP)
+			->addValue(_('Per host'), ReportSplitter::SPLIT_HOST)
+			->setModern(true)
+	)
+	->addRow('',
+		(new CDiv([
+			_('Per host group: a separate report for every selected host group (or for every group with problems if no group is selected).'),
+			BR(),
+			_('Per host: a separate report for every selected host (or for every host with problems if no host is selected).')
+		]))->addClass(ZBX_STYLE_GREY)
+	)
+	->addRow(_('Do not send empty reports'), (new CCheckBox('skip_empty'))->setChecked($schedule['skip_empty'] == 1))
 	->addRow('',
 		(new CDiv([
 			_('Short summary: text with HTML markup, limited to the Telegram message size (4096 characters).'),

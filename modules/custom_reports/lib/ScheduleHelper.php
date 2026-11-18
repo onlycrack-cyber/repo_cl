@@ -45,6 +45,8 @@ class ScheduleHelper {
 			'extra_sendto' => [],
 			'mediatypeid' => '0',
 			'format' => ReportRenderer::FORMAT_SUMMARY,
+			'split' => ReportSplitter::SPLIT_NONE,
+			'skip_empty' => 0,
 			'created_by' => '0',
 			'updated_at' => 0
 		];
@@ -79,6 +81,10 @@ class ScheduleHelper {
 			'format' => in_array($schedule['format'], ReportRenderer::FORMATS, true)
 				? $schedule['format']
 				: ReportRenderer::FORMAT_SUMMARY,
+			'split' => ReportSplitter::isValid((string) $schedule['split'])
+				? (string) $schedule['split']
+				: ReportSplitter::SPLIT_NONE,
+			'skip_empty' => (int) !empty($schedule['skip_empty']),
 			'created_by' => (string) $schedule['created_by'],
 			'updated_at' => (int) $schedule['updated_at']
 		];
