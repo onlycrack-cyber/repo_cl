@@ -38,7 +38,7 @@ $summary = (new CFormList())
 
 // Runs, newest first; recipients of a run are shown by "Details".
 $table = (new CTableInfo())
-	->setHeader([cr_t('Time'), cr_t('Type'), cr_t('Status'), cr_t('Reports'), cr_t('Sent'), cr_t('Failed'), cr_t('Duration'), cr_t('Details')])
+	->setHeader([cr_t('Time'), cr_t('Type'), cr_t('Status'), cr_t('Reports'), cr_t('Sent'), cr_t('Failures'), cr_t('Duration'), cr_t('Details')])
 	->setNoDataMessage(cr_t('No deliveries yet.'));
 
 foreach ($data['history'] as $index => $run) {
