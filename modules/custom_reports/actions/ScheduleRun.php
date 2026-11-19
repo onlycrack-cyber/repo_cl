@@ -58,7 +58,7 @@ class ScheduleRun extends CController {
 			$schedule = $storage->get($this->getInput('scheduleid'));
 
 			if ($schedule === null) {
-				throw new Exception(_('No permissions to referred object or it does not exist!'));
+				throw new Exception(cr_t('No permissions to referred object or it does not exist!'));
 			}
 
 			$service = FrontendHelper::createService();
@@ -69,7 +69,7 @@ class ScheduleRun extends CController {
 		}
 		catch (Exception $e) {
 			if ($schedule === null) {
-				CMessageHelper::setErrorTitle(_('Cannot send report'));
+				CMessageHelper::setErrorTitle(cr_t('Cannot send report'));
 				CMessageHelper::addError($e->getMessage());
 				$this->redirect();
 
@@ -92,28 +92,28 @@ class ScheduleRun extends CController {
 			}
 		}
 		catch (Exception $e) {
-			CMessageHelper::addError(_s('Cannot save the delivery history: %1$s', $e->getMessage()));
+			CMessageHelper::addError(cr_s('Cannot save the delivery history: %1$s', $e->getMessage()));
 		}
 
-		$name = $test ? _s('Test of "%1$s"', $schedule['name']) : _s('Report "%1$s"', $schedule['name']);
+		$name = $test ? cr_s('Test of "%1$s"', $schedule['name']) : cr_s('Report "%1$s"', $schedule['name']);
 
 		switch ($run['status']) {
 			case ScheduleHelper::STATUS_OK:
-				CMessageHelper::setSuccessTitle(_s('%1$s: %2$s report(s), %3$s message(s) delivered', $name,
+				CMessageHelper::setSuccessTitle(cr_s('%1$s: %2$s report(s), %3$s message(s) delivered', $name,
 					$run['parts'], $run['sent']
 				));
 				break;
 
 			case ScheduleHelper::STATUS_EMPTY:
-				CMessageHelper::setSuccessTitle(_s('%1$s: nothing to send, no problems match the filter', $name));
+				CMessageHelper::setSuccessTitle(cr_s('%1$s: nothing to send, no problems match the filter', $name));
 				break;
 
 			default:
 				CMessageHelper::setErrorTitle($run['status'] === ScheduleHelper::STATUS_PARTIAL
-					? _s('%1$s: delivered partially, %2$s of %3$s message(s) failed', $name, $run['failed'],
+					? cr_s('%1$s: delivered partially, %2$s of %3$s message(s) failed', $name, $run['failed'],
 						$run['sent'] + $run['failed']
 					)
-					: _s('%1$s: delivery failed', $name)
+					: cr_s('%1$s: delivery failed', $name)
 				);
 
 				if ($run['message'] !== '') {

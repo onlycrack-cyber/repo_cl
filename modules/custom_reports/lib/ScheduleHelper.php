@@ -208,56 +208,62 @@ class ScheduleHelper {
 		$errors = [];
 
 		if ($schedule['name'] === '') {
-			$errors[] = 'Incorrect value for field "Name": cannot be empty.';
+			$errors[] = I18n::t('Incorrect value for field "Name": cannot be empty.');
 		}
 		elseif (mb_strlen($schedule['name'], 'UTF-8') > 255) {
-			$errors[] = 'Incorrect value for field "Name": value is too long.';
+			$errors[] = I18n::t('Incorrect value for field "Name": value is too long.');
 		}
 
 		if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $schedule['time'])) {
-			$errors[] = 'Incorrect value for field "Time": expected format is hh:mm (00:00-23:59).';
+			$errors[] = I18n::t('Incorrect value for field "Time": expected format is hh:mm (00:00-23:59).');
 		}
 
 		if (!ctype_digit($schedule['mediatypeid']) || $schedule['mediatypeid'] === '0') {
-			$errors[] = 'Incorrect value for field "Media type": a media type must be selected.';
+			$errors[] = I18n::t('Incorrect value for field "Media type": a media type must be selected.');
 		}
 
 		$active_rules = self::getActiveRecipientRules($schedule);
 
 		if (!self::hasRecipients($schedule) && $active_rules === null) {
-			$errors[] = 'At least one recipient (user, user group or additional address) is required.';
+			$errors[] = I18n::t('At least one recipient (user, user group or additional address) is required.');
 		}
 
 		if (!self::isValidSendto($schedule['extra_sendto'])) {
-			$errors[] = 'Incorrect value for field "Additional recipients".';
+			$errors[] = I18n::t('Incorrect value for field "Additional recipients".');
 		}
 
 		if ($active_rules !== null) {
 			$key = $active_rules['key'];
-			[$table, $objects, $filter_field] = $key === 'groupids'
-				? ['Recipients per host group', 'host groups', 'Host groups']
-				: ['Recipients per host', 'hosts', 'Hosts'];
+			[$table, $not_selected, $not_in_filter] = $key === 'groupids'
+				? [
+					I18n::t('Recipients per host group'),
+					I18n::t('host groups must be selected'),
+					I18n::t('all host groups must also be selected in the report filter "Host groups" (or leave the filter empty)')
+				]
+				: [
+					I18n::t('Recipients per host'),
+					I18n::t('hosts must be selected'),
+					I18n::t('all hosts must also be selected in the report filter "Hosts" (or leave the filter empty)')
+				];
 
 			foreach ($active_rules['rules'] as $index => $rule) {
 				$row = $index + 1;
 
 				if (!$rule[$key]) {
-					$errors[] = sprintf('%s, row %d: %s must be selected.', $table, $row, $objects);
+					$errors[] = I18n::s('%1$s, row %2$s: %3$s.', $table, $row, $not_selected);
 				}
 
 				if (!self::hasRecipients($rule)) {
-					$errors[] = sprintf('%s, row %d: at least one recipient is required.', $table, $row);
+					$errors[] = I18n::s('%1$s, row %2$s: at least one recipient is required.', $table, $row);
 				}
 
 				if (!self::isValidSendto($rule['extra_sendto'])) {
-					$errors[] = sprintf('%s, row %d: incorrect additional recipients.', $table, $row);
+					$errors[] = I18n::s('%1$s, row %2$s: incorrect additional recipients.', $table, $row);
 				}
 
 				// With a filter only the filtered objects become report parts.
 				if ($schedule[$key] && array_diff($rule[$key], $schedule[$key])) {
-					$errors[] = sprintf('%s, row %d: all %s must also be selected in the report filter "%s" '.
-						'(or leave the filter empty).', $table, $row, $objects, $filter_field
-					);
+					$errors[] = I18n::s('%1$s, row %2$s: %3$s.', $table, $row, $not_in_filter);
 				}
 			}
 		}
@@ -360,7 +366,7 @@ class ScheduleHelper {
 			return $run['message'];
 		}
 
-		$text = sprintf('Problems: %d, reports: %d, sent: %d, failed: %d.', $run['problems'], $run['parts'],
+		$text = I18n::s('Problems: %1$s, reports: %2$s, sent: %3$s, failed: %4$s.', $run['problems'], $run['parts'],
 			$run['sent'], $run['failed']
 		);
 
@@ -398,9 +404,9 @@ class ScheduleHelper {
 
 	public static function describe(array $schedule): string {
 		if ($schedule['frequency'] === self::FREQUENCY_WEEKLY) {
-			return sprintf('Weekly on %s at %s', self::WEEKDAYS[$schedule['weekday']], $schedule['time']);
+			return I18n::s('Weekly on %1$s at %2$s', I18n::t(self::WEEKDAYS[$schedule['weekday']]), $schedule['time']);
 		}
 
-		return sprintf('Daily at %s', $schedule['time']);
+		return I18n::s('Daily at %1$s', $schedule['time']);
 	}
 }

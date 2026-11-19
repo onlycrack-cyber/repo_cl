@@ -126,7 +126,7 @@ class Dashboard extends CController {
 		];
 
 		$response = new CControllerResponseData($data);
-		$response->setTitle(_('Custom problem reports'));
+		$response->setTitle(cr_t('Custom problem reports'));
 		$this->setResponse($response);
 	}
 

@@ -64,7 +64,7 @@ class ReportService {
 
 		if ($active_rules === null) {
 			if (!$common) {
-				throw new RuntimeException(sprintf('No recipients: selected users have no active media of type "%s".',
+				throw new RuntimeException(I18n::s('No recipients: selected users have no active media of type "%1$s".',
 					$media_type['name']
 				));
 			}
@@ -130,7 +130,7 @@ class ReportService {
 		$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
 
 		if (!$sendto) {
-			throw new RuntimeException(sprintf('You have no active media of type "%s": add it in User settings -> '.
+			throw new RuntimeException(I18n::s('You have no active media of type "%1$s": add it in User settings -> '.
 				'Profile -> Media.', $media_type['name']
 			));
 		}
@@ -139,7 +139,7 @@ class ReportService {
 
 		return $this->deliver($media_type, static function () use ($sendto): array {
 			return $sendto;
-		}, $report, $schedule['format'], '[Test] '.$schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
+		}, $report, $schedule['format'], '['.I18n::t('Test').'] '.$schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
 	}
 
 	/**
@@ -150,7 +150,7 @@ class ReportService {
 		$media_type = $this->dispatcher->getMediaType($mediatypeid);
 
 		if (!$sendto) {
-			throw new RuntimeException(sprintf('No recipients for media type "%s".', $media_type['name']));
+			throw new RuntimeException(I18n::s('No recipients for media type "%1$s".', $media_type['name']));
 		}
 
 		return $this->deliver($media_type, static function () use ($sendto): array {
@@ -178,14 +178,14 @@ class ReportService {
 			}
 
 			if (!$sendto) {
-				$message = sprintf('[%s] no recipients with an active "%s" media, the report is not sent.', $part_title,
+				$message = I18n::s('[%1$s] no recipients with an active "%2$s" media, the report is not sent.', $part_title,
 					$media_type['name']
 				);
 				$this->logger->warning($message);
 				$result['errors'][] = $message;
 				$result['failed']++;
 				$result['deliveries'][] = ['part' => $part['name'], 'recipient' => '', 'status' => 'failed',
-					'error' => sprintf('No recipients with an active "%s" media.', $media_type['name']), 'time' => time()
+					'error' => I18n::s('No recipients with an active "%1$s" media.', $media_type['name']), 'time' => time()
 				];
 				continue;
 			}

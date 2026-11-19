@@ -89,7 +89,7 @@ class ScheduleList extends CController {
 			'data_dir' => $config['data_dir'],
 			'error' => $error
 		]);
-		$response->setTitle(_('Report schedules'));
+		$response->setTitle(cr_t('Report schedules'));
 		$this->setResponse($response);
 	}
 }

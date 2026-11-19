@@ -98,7 +98,7 @@ class ReportBuilder {
 		$severity_meta = [];
 
 		foreach (Severity::NAMES as $severity => $name) {
-			$severity_meta[$severity] = ['name' => $name, 'color' => Severity::COLORS[$severity]];
+			$severity_meta[$severity] = ['name' => I18n::t($name), 'color' => Severity::COLORS[$severity]];
 		}
 
 		return [
@@ -428,7 +428,9 @@ class ReportBuilder {
 
 		foreach (array_keys(Severity::NAMES) as $severity) {
 			if (!empty($settings['severity_name_'.$severity])) {
-				$meta[$severity]['name'] = $settings['severity_name_'.$severity];
+				// Default (English) names are translated, custom names are kept as they are.
+				$name = $settings['severity_name_'.$severity];
+				$meta[$severity]['name'] = $name === Severity::NAMES[$severity] ? I18n::t($name) : $name;
 			}
 
 			if (!empty($settings['severity_color_'.$severity])) {

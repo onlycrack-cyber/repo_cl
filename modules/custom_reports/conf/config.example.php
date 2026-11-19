@@ -21,6 +21,10 @@ return [
 	// different PHP default timezones. Empty = UTC (a warning is shown on the "Schedules and delivery" tab).
 	'timezone' => '',
 
+	// Language of the module interface and of the reports (e-mail, PDF, CSV, Telegram):
+	// "ru" (default), "en", or "auto" (follows the Zabbix user language in the web interface, English in cron).
+	'language' => 'ru',
+
 	// Schedules, delivery state and logs. Must be writable by the web server user and must NOT be
 	// reachable over HTTP (empty = <module>/data, protected only by .htaccess on Apache).
 	'data_dir' => '/var/lib/zabbix-custom-reports',

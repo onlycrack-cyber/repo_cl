@@ -75,7 +75,7 @@ class Dispatcher {
 		]);
 
 		if (!$media_types) {
-			throw new RuntimeException(sprintf('Media type with ID "%s" does not exist or is not accessible.',
+			throw new RuntimeException(I18n::s('Media type with ID "%1$s" does not exist or is not accessible.',
 				$mediatypeid
 			));
 		}
@@ -83,7 +83,7 @@ class Dispatcher {
 		$media_type = reset($media_types);
 
 		if ((int) $media_type['status'] != self::MEDIA_TYPE_STATUS_ACTIVE) {
-			throw new RuntimeException(sprintf('Media type "%s" is disabled.', $media_type['name']));
+			throw new RuntimeException(I18n::s('Media type "%1$s" is disabled.', $media_type['name']));
 		}
 
 		return $media_type;
@@ -150,7 +150,7 @@ class Dispatcher {
 	private function createSender(array $media_type, string $channel, array $report, string $format,
 			string $title): callable {
 		$timeout = (int) $this->config['timeout'];
-		$subject = sprintf('%s: %d active problem(s)', $title, $report['total']);
+		$subject = I18n::s('%1$s: %2$s active problem(s)', $title, $report['total']);
 		$frontend_url = (string) $this->config['frontend_url'];
 
 		switch ($channel) {
@@ -180,7 +180,7 @@ class Dispatcher {
 
 				return static function (string $recipient) use ($transport, $subject, $body, $is_html, $attachments) {
 					if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-						throw new RuntimeException('Invalid e-mail address.');
+						throw new RuntimeException(I18n::t('Invalid e-mail address.'));
 					}
 
 					$transport->send($recipient, $subject, $body, $is_html, $attachments);
@@ -202,7 +202,7 @@ class Dispatcher {
 
 				return static function (string $recipient) use ($transport, $text, $document, $subject) {
 					if (!preg_match('/^-?\d+$|^@[A-Za-z0-9_]{5,}$/', $recipient)) {
-						throw new RuntimeException('Invalid Telegram chat ID.');
+						throw new RuntimeException(I18n::t('Invalid Telegram chat ID.'));
 					}
 
 					$transport->sendMessage($recipient, $text);
@@ -223,7 +223,7 @@ class Dispatcher {
 				};
 
 			default:
-				throw new RuntimeException(sprintf('Media type "%s" is not supported: only Email, Script and '.
+				throw new RuntimeException(I18n::s('Media type "%1$s" is not supported: only Email, Script and '.
 					'Telegram webhook media types can deliver reports.', $media_type['name']
 				));
 		}

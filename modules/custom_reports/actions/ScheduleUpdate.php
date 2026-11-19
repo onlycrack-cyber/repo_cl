@@ -99,7 +99,7 @@ class ScheduleUpdate extends CController {
 					$stored = $storage->get($scheduleid);
 
 					if ($stored === null) {
-						throw new Exception(_('No permissions to referred object or it does not exist!'));
+						throw new Exception(cr_t('No permissions to referred object or it does not exist!'));
 					}
 
 					$schedule['created_by'] = $stored['created_by'];
@@ -113,7 +113,7 @@ class ScheduleUpdate extends CController {
 		}
 
 		if ($errors) {
-			CMessageHelper::setErrorTitle($scheduleid === '' ? _('Cannot add schedule') : _('Cannot update schedule'));
+			CMessageHelper::setErrorTitle($scheduleid === '' ? cr_t('Cannot add schedule') : cr_t('Cannot update schedule'));
 
 			foreach ($errors as $error) {
 				CMessageHelper::addError($error);
@@ -128,7 +128,7 @@ class ScheduleUpdate extends CController {
 			return;
 		}
 
-		CMessageHelper::setSuccessTitle($scheduleid === '' ? _('Schedule added') : _('Schedule updated'));
+		CMessageHelper::setSuccessTitle($scheduleid === '' ? cr_t('Schedule added') : cr_t('Schedule updated'));
 		$this->setResponse(new CControllerResponseRedirect(
 			(new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.list')
 		));

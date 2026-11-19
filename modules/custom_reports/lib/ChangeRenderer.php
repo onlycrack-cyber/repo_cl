@@ -21,8 +21,24 @@ class ChangeRenderer {
 		ChangeAnalytics::GROUP_BY_TRIGGER => 'Trigger'
 	];
 
+	/**
+	 * "By host group: previous period -> current period" (separate texts for proper translation).
+	 */
+	public static function compareTitle(string $grouping): string {
+		switch ($grouping) {
+			case ChangeAnalytics::GROUP_BY_HOST:
+				return I18n::t('By host: previous period -> current period');
+
+			case ChangeAnalytics::GROUP_BY_TRIGGER:
+				return I18n::t('By trigger: previous period -> current period');
+
+			default:
+				return I18n::t('By host group: previous period -> current period');
+		}
+	}
+
 	public static function periodText(array $changes): string {
-		return sprintf('%s - %s compared with %s - %s', date('Y-m-d H:i', $changes['from']),
+		return I18n::s('%1$s - %2$s compared with %3$s - %4$s', date('Y-m-d H:i', $changes['from']),
 			date('Y-m-d H:i', $changes['till']), date('Y-m-d H:i', $changes['prev_from']),
 			date('Y-m-d H:i', $changes['from'])
 		);
@@ -55,7 +71,7 @@ class ChangeRenderer {
 		$prev = $changes['totals']['prev'];
 		$pct = $prev['new'] > 0 ? (int) round(($cur['new'] - $prev['new']) * 100 / $prev['new']) : null;
 
-		return sprintf('New problems: %d (previous period: %d, %s); median time to resolve: %s (previous: %s)',
+		return I18n::s('New problems: %1$s (previous period: %2$s, %3$s); median time to resolve: %4$s (previous: %5$s)',
 			$cur['new'], $prev['new'], self::deltaText($cur['new'] - $prev['new'], $pct), self::duration($cur['mttr']),
 			self::duration($prev['mttr'])
 		);
@@ -65,12 +81,12 @@ class ChangeRenderer {
 	 * Section for HTML reports and PDF.
 	 */
 	public static function renderSection(array $changes, array $meta): string {
-		$label = self::GROUPING_LABELS[$changes['grouping']];
-		$html = '<h3 style="margin:14px 0 4px 0">Changes: '.self::e(self::periodText($changes)).'</h3>'.
+		$label = I18n::t(self::GROUPING_LABELS[$changes['grouping']]);
+		$html = '<h3 style="margin:14px 0 4px 0">'.self::e(I18n::t('Changes')).': '.self::e(self::periodText($changes)).'</h3>'.
 			'<div style="margin-bottom:8px">'.self::e(self::totalsText($changes)).'</div>';
 
 		// 1. Previous -> current.
-		$html .= self::title('By '.mb_strtolower($label).': previous period -> current period');
+		$html .= self::title(self::compareTitle($changes['grouping']));
 		$rows = [];
 
 		foreach ($changes['compare'] as $row) {
@@ -87,7 +103,7 @@ class ChangeRenderer {
 		);
 
 		if ($changes['compare_total'] > count($changes['compare'])) {
-			$html .= self::note(sprintf('Top %d of %d.', count($changes['compare']), $changes['compare_total']));
+			$html .= self::note(I18n::s('Top %1$s of %2$s.', count($changes['compare']), $changes['compare_total']));
 		}
 
 		// 2. Growth / decline.
@@ -100,7 +116,7 @@ class ChangeRenderer {
 				$rows[] = [self::e($row['name']), $row['prev'], $row['cur'], self::deltaHtml($row['delta'], $row['delta_pct'])];
 			}
 
-			$movers[] = self::title($title).self::table([$label, 'Was', 'Now', 'Change'], $rows, 'None.');
+			$movers[] = self::title(I18n::t($title)).self::table([$label, 'Was', 'Now', 'Change'], $rows, 'None.');
 		}
 
 		$html .= self::twoColumns($movers[0], $movers[1]);
@@ -118,7 +134,7 @@ class ChangeRenderer {
 				];
 			}
 
-			$lists[] = self::title($title.': '.$changes[$key]['total']).
+			$lists[] = self::title(I18n::t($title).': '.$changes[$key]['total']).
 				self::table(['Severity', 'Host', 'Problem', 'Times', $time_label], $rows, 'None.');
 		}
 
@@ -146,11 +162,11 @@ class ChangeRenderer {
 			];
 		}
 
-		$html .= self::title('Median time to resolve by severity (number of resolved problems)').
+		$html .= self::title(I18n::t('Median time to resolve by severity (number of resolved problems)')).
 			self::table(['Severity', 'Previous period', 'Current period', 'Change'], $rows, 'No resolved problems.');
 
 		// 5. Heatmap.
-		$html .= self::title('When problems start: day of week x hour (current period)').self::heatmapHtml($changes['heatmap']);
+		$html .= self::title(I18n::t('When problems start: day of week x hour (current period)')).self::heatmapHtml($changes['heatmap']);
 
 		// 6. Noisy triggers.
 		$rows = [];
@@ -162,7 +178,9 @@ class ChangeRenderer {
 			];
 		}
 
-		$html .= self::title('Noisy triggers: frequent or short-lived (< '.(ChangeAnalytics::SHORT_PROBLEM / 60).' min) problems').
+		$html .= self::title(I18n::s('Noisy triggers: frequent or short-lived (< %1$s min) problems',
+				ChangeAnalytics::SHORT_PROBLEM / 60
+			)).
 			self::table(['Severity', 'Host', 'Trigger', 'Problems', 'Short-lived', 'Median duration', 'Previous period'],
 				$rows, 'No noisy triggers.'
 			);
@@ -178,20 +196,21 @@ class ChangeRenderer {
 			];
 		}
 
-		$html .= self::title('Time with an open High or Disaster problem (% of the period)').
+		$html .= self::title(I18n::t('Time with an open High or Disaster problem (% of the period)')).
 			self::table([$changes['grouping'] === ChangeAnalytics::GROUP_BY_HOST ? 'Host' : 'Host group', 'Previous period',
 				'Current period', 'Change'], $rows, 'No High or Disaster problems.'
 			);
 
 		if ($changes['truncated']) {
-			$html .= '<p style="color:#e45959">The analysis is limited by "analytics_limit": the numbers may be lower than in reality.</p>';
+			$html .= '<p style="color:#e45959">'.self::e(I18n::t('The analysis is limited by "analytics_limit": the numbers '.
+				'may be lower than in reality.')).'</p>';
 		}
 
 		return $html;
 	}
 
 	public static function renderHtml(array $changes, array $meta, string $title, bool $print = false): string {
-		return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.self::e($title).'</title><style>'.
+		return '<!DOCTYPE html><html lang="'.I18n::lang().'"><head><meta charset="UTF-8"><title>'.self::e($title).'</title><style>'.
 			'@page{size:A4 landscape;margin:12mm}@media print{tr{page-break-inside:avoid}}'.
 			'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2c33;margin:16px}'.
 			'table{border-collapse:collapse}</style></head><body><h2 style="margin:0 0 4px 0">'.self::e($title).'</h2>'.
@@ -206,66 +225,72 @@ class ChangeRenderer {
 		$put = static function (array $row) use ($fh): void {
 			fputcsv($fh, array_map([ReportRenderer::class, 'csvCell'], $row), ',', '"', '');
 		};
+		// Header rows and section names are translated, data rows are not.
+		$head = static function (array $row) use ($put): void {
+			$put(array_map(static function ($cell) {
+				return is_string($cell) ? I18n::t($cell) : $cell;
+			}, $row));
+		};
 		$label = self::GROUPING_LABELS[$changes['grouping']];
 
-		$put(['Changes', self::periodText($changes)]);
+		$put([I18n::t('Changes'), self::periodText($changes)]);
 		$put([self::totalsText($changes)]);
 		$put([]);
-		$put(['Section', $label, 'New (prev)', 'New (now)', 'Change', 'MTTR prev (s)', 'MTTR now (s)']);
+		$head(['Section', $label, 'New (prev)', 'New (now)', 'Change', 'MTTR prev (s)', 'MTTR now (s)']);
 
 		foreach ($changes['compare'] as $row) {
-			$put(['Previous -> current', $row['name'], $row['prev'], $row['cur'], $row['delta'], $row['mttr_prev'],
+			$put([I18n::t('Previous -> current'), $row['name'], $row['prev'], $row['cur'], $row['delta'], $row['mttr_prev'],
 				$row['mttr_cur']
 			]);
 		}
 
 		foreach (['growth' => 'Growth', 'decline' => 'Decline'] as $key => $section) {
 			foreach ($changes[$key] as $row) {
-				$put([$section, $row['name'], $row['prev'], $row['cur'], $row['delta']]);
+				$put([I18n::t($section), $row['name'], $row['prev'], $row['cur'], $row['delta']]);
 			}
 		}
 
 		$put([]);
-		$put(['Section', 'Severity', 'Host', 'Problem', 'Times', 'First/last']);
+		$head(['Section', 'Severity', 'Host', 'Problem', 'Times', 'First/last']);
 
 		foreach (['appeared' => 'Appeared', 'disappeared' => 'Disappeared'] as $key => $section) {
 			foreach ($changes[$key]['list'] as $t) {
-				$put([$section, $meta[$t['severity']]['name'], $t['hosts'], $t['name'], $t['count'],
+				$put([I18n::t($section), $meta[$t['severity']]['name'], $t['hosts'], $t['name'], $t['count'],
 					date('Y-m-d H:i', $key === 'appeared' ? $t['first'] : $t['last'])
 				]);
 			}
 		}
 
 		$put([]);
-		$put(['MTTR by severity', 'Severity', 'Previous (s)', 'Resolved (prev)', 'Current (s)', 'Resolved (now)']);
+		$head(['MTTR by severity', 'Severity', 'Previous (s)', 'Resolved (prev)', 'Current (s)', 'Resolved (now)']);
 
 		foreach ($changes['mttr_by_severity'] as $severity => $row) {
-			$put(['MTTR by severity', $meta[$severity]['name'], $row['prev'], $row['prev_count'], $row['cur'],
+			$put([I18n::t('MTTR by severity'), $meta[$severity]['name'], $row['prev'], $row['prev_count'], $row['cur'],
 				$row['cur_count']
 			]);
 		}
 
 		$put([]);
-		$put(array_merge(['Heatmap', 'Day'], range(0, 23)));
+		$head(array_merge(['Heatmap', 'Day'], range(0, 23)));
 
 		foreach ($changes['heatmap']['cells'] as $day => $hours) {
-			$put(array_merge(['Heatmap', ScheduleHelper::WEEKDAYS[$day]], $hours));
+			$put(array_merge([I18n::t('Heatmap'), I18n::t(ScheduleHelper::WEEKDAYS[$day])], $hours));
 		}
 
 		$put([]);
-		$put(['Noisy triggers', 'Severity', 'Host', 'Trigger', 'Problems', 'Short-lived', 'Median (s)', 'Previous']);
+		$head(['Noisy triggers', 'Severity', 'Host', 'Trigger', 'Problems', 'Short-lived', 'Median (s)', 'Previous']);
 
 		foreach ($changes['noisy'] as $t) {
-			$put(['Noisy triggers', $meta[$t['severity']]['name'], $t['hosts'], $t['name'], $t['count'], $t['short'],
+			$put([I18n::t('Noisy triggers'), $meta[$t['severity']]['name'], $t['hosts'], $t['name'], $t['count'], $t['short'],
 				$t['median'], $t['prev']
 			]);
 		}
 
 		$put([]);
-		$put(['Time in problem', 'Name', 'Previous (s)', 'Previous %', 'Current (s)', 'Current %']);
+		$head(['Time in problem', 'Name', 'Previous (s)', 'Previous %', 'Current (s)', 'Current %']);
 
 		foreach ($changes['problem_time'] as $row) {
-			$put(['Time in problem', $row['name'], $row['prev'], $row['prev_pct'], $row['cur'], $row['cur_pct']]);
+			$put([I18n::t('Time in problem'), $row['name'], $row['prev'], $row['prev_pct'], $row['cur'], $row['cur_pct']]);
 		}
 
 		rewind($fh);
@@ -279,7 +304,7 @@ class ChangeRenderer {
 	 * A few lines for the short summary (Telegram).
 	 */
 	public static function renderText(array $changes): array {
-		$lines = ["\u{1F504} Changes vs previous period", self::totalsText($changes)];
+		$lines = ["\u{1F504} ".I18n::t('Changes vs previous period'), self::totalsText($changes)];
 		$names = static function (array $rows): string {
 			return implode(', ', array_map(static function (array $row): string {
 				return $row['name'].' '.sprintf('%+d', $row['delta']);
@@ -287,20 +312,20 @@ class ChangeRenderer {
 		};
 
 		if ($changes['growth']) {
-			$lines[] = 'Growth: '.$names($changes['growth']);
+			$lines[] = I18n::t('Growth').': '.$names($changes['growth']);
 		}
 
 		if ($changes['decline']) {
-			$lines[] = 'Decline: '.$names($changes['decline']);
+			$lines[] = I18n::t('Decline').': '.$names($changes['decline']);
 		}
 
-		$lines[] = sprintf('New problems (not seen before): %d, disappeared: %d', $changes['appeared']['total'],
+		$lines[] = I18n::s('New problems (not seen before): %1$s, disappeared: %2$s', $changes['appeared']['total'],
 			$changes['disappeared']['total']
 		);
 
 		if ($changes['noisy']) {
 			$top = $changes['noisy'][0];
-			$lines[] = sprintf('Noisiest trigger: %s: %s (%d problems, %d short-lived)', $top['hosts'], $top['name'],
+			$lines[] = I18n::s('Noisiest trigger: %1$s: %2$s (%3$s problems, %4$s short-lived)', $top['hosts'], $top['name'],
 				$top['count'], $top['short']
 			);
 		}
@@ -319,7 +344,7 @@ class ChangeRenderer {
 
 		foreach ($heatmap['cells'] as $day => $hours) {
 			$html .= '<tr><td style="padding:1px 4px;color:#768d99;white-space:nowrap">'.
-				substr(ScheduleHelper::WEEKDAYS[$day], 0, 3).'</td>';
+				self::e(I18n::t(substr(ScheduleHelper::WEEKDAYS[$day], 0, 3))).'</td>';
 
 			foreach ($hours as $count) {
 				$html .= '<td style="padding:2px;text-align:center;border:1px solid #fff;background:#'.
@@ -355,13 +380,13 @@ class ChangeRenderer {
 
 	private static function table(array $headers, array $rows, string $empty): string {
 		if (!$rows) {
-			return '<div style="margin-bottom:10px;color:#768d99">'.self::e($empty).'</div>';
+			return '<div style="margin-bottom:10px;color:#768d99">'.self::e(I18n::t($empty)).'</div>';
 		}
 
 		$html = '<table style="margin-bottom:10px"><tr>';
 
 		foreach ($headers as $header) {
-			$html .= '<th style="'.self::HEAD.'">'.self::e($header).'</th>';
+			$html .= '<th style="'.self::HEAD.'">'.self::e(I18n::t($header)).'</th>';
 		}
 
 		$html .= '</tr>';

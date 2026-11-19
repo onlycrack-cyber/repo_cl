@@ -55,7 +55,7 @@ class Export extends CController {
 			return;
 		}
 
-		$title = _('Problem report');
+		$title = cr_t('Problem report');
 		$format = $this->getInput('format');
 		$options = ['frontend_url' => ModuleConfig::get()['frontend_url']];
 

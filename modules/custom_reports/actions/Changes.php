@@ -89,7 +89,7 @@ class Changes extends CController {
 			'pdf_available' => (new PdfConverter(ModuleConfig::get()))->isAvailable(),
 			'is_super_admin' => $this->getUserType() == USER_TYPE_SUPER_ADMIN
 		]);
-		$response->setTitle(_('Changes'));
+		$response->setTitle(cr_t('Changes'));
 		$this->setResponse($response);
 	}
 }

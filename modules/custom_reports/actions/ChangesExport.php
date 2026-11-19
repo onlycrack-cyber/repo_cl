@@ -50,7 +50,7 @@ class ChangesExport extends CController {
 		}
 
 		$changes = $result['changes'];
-		$title = _('Changes');
+		$title = cr_t('Changes');
 		$format = $this->getInput('format');
 		$name = ReportRenderer::fileName('problem_changes', $format === 'csv' ? 'csv' : ($format === 'pdf' ? 'pdf' : 'html'),
 			time()

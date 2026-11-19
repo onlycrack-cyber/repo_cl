@@ -106,7 +106,7 @@ class ReportSplitter {
 			$parts[] = [
 				'id' => (string) $groupid,
 				'name' => $name,
-				'report' => ReportBuilder::subset($report, $problems_by_group[$groupid] ?? [], 'Host group: '.$name,
+				'report' => ReportBuilder::subset($report, $problems_by_group[$groupid] ?? [], I18n::t('Host group').': '.$name,
 					static function (array $hostids) use ($report, $groupid): bool {
 						foreach ($hostids as $hostid) {
 							if (array_key_exists($groupid, $report['host_groups'][$hostid] ?? [])) {
@@ -158,7 +158,7 @@ class ReportSplitter {
 			$parts[] = [
 				'id' => (string) $hostid,
 				'name' => $name,
-				'report' => ReportBuilder::subset($report, $problems_by_host[$hostid] ?? [], 'Host: '.$name,
+				'report' => ReportBuilder::subset($report, $problems_by_host[$hostid] ?? [], I18n::t('Host').': '.$name,
 					static function (array $hostids) use ($hostid): bool {
 						return in_array((string) $hostid, array_map('strval', $hostids), true);
 					}

@@ -97,7 +97,7 @@ class ScheduleEdit extends CController {
 			}
 
 			if ($stored === null) {
-				CMessageHelper::setErrorTitle(_('No permissions to referred object or it does not exist!'));
+				CMessageHelper::setErrorTitle(cr_t('No permissions to referred object or it does not exist!'));
 				$this->setResponse(new CControllerResponseRedirect(
 					(new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.list')
 				));
@@ -177,7 +177,7 @@ class ScheduleEdit extends CController {
 			'timezone' => ModuleConfig::timezone(),
 			'timezone_problem' => ModuleConfig::timezoneProblem()
 		]);
-		$response->setTitle($scheduleid === '' ? _('New report schedule') : _('Report schedule'));
+		$response->setTitle($scheduleid === '' ? cr_t('New report schedule') : cr_t('Report schedule'));
 		$this->setResponse($response);
 	}
 

@@ -97,6 +97,17 @@
 	margin-right: 10px;
 }
 
+/* Action links of a schedule: each link stays on one line, the links wrap as a whole (long Russian labels). */
+.cr-actions {
+	min-width: 220px;
+}
+
+.cr-actions .cr-inline-form,
+.cr-actions .cr-action-link {
+	white-space: nowrap;
+	margin-right: 10px;
+}
+
 .cr-cron {
 	margin-top: 20px;
 }

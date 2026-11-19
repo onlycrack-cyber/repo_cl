@@ -43,19 +43,19 @@ class CronUpdate extends CController {
 		try {
 			if ($this->getInput('operation') === 'install') {
 				$cron->installUserCrontab();
-				CMessageHelper::setSuccessTitle(_s('Cron job added to the crontab of user "%1$s"', $user));
+				CMessageHelper::setSuccessTitle(cr_s('Cron job added to the crontab of user "%1$s"', $user));
 				$logger->info(sprintf('Cron job installed for "%s": %s', $user, $cron->getUserCrontabLine()));
 			}
 			else {
 				$cron->removeUserCrontab();
-				CMessageHelper::setSuccessTitle(_s('Cron job removed from the crontab of user "%1$s"', $user));
+				CMessageHelper::setSuccessTitle(cr_s('Cron job removed from the crontab of user "%1$s"', $user));
 				$logger->info(sprintf('Cron job removed for "%s".', $user));
 			}
 		}
 		catch (Exception $e) {
-			CMessageHelper::setErrorTitle(_('Cannot update cron job'));
+			CMessageHelper::setErrorTitle(cr_t('Cannot update cron job'));
 			CMessageHelper::addError($e->getMessage());
-			CMessageHelper::addError(_s('Add the line to %1$s manually (see the "Cron job" section).',
+			CMessageHelper::addError(cr_s('Add the line to %1$s manually (see the "Cron job" section).',
 				CronManager::CRON_D_FILE
 			));
 			$logger->error('Cron job update failed: '.$e->getMessage());

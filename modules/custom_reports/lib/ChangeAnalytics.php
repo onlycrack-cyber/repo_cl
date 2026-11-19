@@ -98,18 +98,18 @@ class ChangeAnalytics {
 
 		if ($from === false || $to === false || $from->format('Y-m-d') !== $filter['date_from']
 				|| $to->format('Y-m-d') !== $filter['date_to']) {
-			return $fallback + ['error' => 'Enter both dates as YYYY-MM-DD.'];
+			return $fallback + ['error' => I18n::t('Enter both dates as YYYY-MM-DD.')];
 		}
 
 		$from_ts = $from->getTimestamp();
 		$till_ts = min($to->modify('+1 day')->getTimestamp(), $now);
 
 		if ($from_ts >= $till_ts) {
-			return $fallback + ['error' => 'The start date must be before the end date and not in the future.'];
+			return $fallback + ['error' => I18n::t('The start date must be before the end date and not in the future.')];
 		}
 
 		if ($till_ts - $from_ts > self::MAX_DAYS * 86400) {
-			return $fallback + ['error' => sprintf('The period cannot be longer than %d days.', self::MAX_DAYS)];
+			return $fallback + ['error' => I18n::s('The period cannot be longer than %1$s days.', self::MAX_DAYS)];
 		}
 
 		return ['from' => $from_ts, 'till' => $till_ts, 'error' => null];

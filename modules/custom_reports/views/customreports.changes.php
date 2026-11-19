@@ -24,19 +24,19 @@ $changes = $data['changes'];
 $meta = $data['meta'];
 
 $grouping_labels = [
-	ChangeAnalytics::GROUP_BY_GROUP => _('Host groups'),
-	ChangeAnalytics::GROUP_BY_HOST => _('Hosts'),
-	ChangeAnalytics::GROUP_BY_TRIGGER => _('Triggers')
+	ChangeAnalytics::GROUP_BY_GROUP => cr_t('Host groups'),
+	ChangeAnalytics::GROUP_BY_HOST => cr_t('Hosts'),
+	ChangeAnalytics::GROUP_BY_TRIGGER => cr_t('Triggers')
 ];
 $name_header = [
-	ChangeAnalytics::GROUP_BY_GROUP => _('Host group'),
-	ChangeAnalytics::GROUP_BY_HOST => _('Host'),
-	ChangeAnalytics::GROUP_BY_TRIGGER => _('Trigger')
+	ChangeAnalytics::GROUP_BY_GROUP => cr_t('Host group'),
+	ChangeAnalytics::GROUP_BY_HOST => cr_t('Host'),
+	ChangeAnalytics::GROUP_BY_TRIGGER => cr_t('Trigger')
 ][$filter['grouping']];
 
 // Filter.
 $left = (new CFormList())
-	->addRow(new CLabel(_('Host groups'), 'filter_groupids__ms'),
+	->addRow(new CLabel(cr_t('Host groups'), 'filter_groupids__ms'),
 		(new CMultiSelect([
 			'name' => 'filter_groupids[]',
 			'object_name' => 'hostGroup',
@@ -46,7 +46,7 @@ $left = (new CFormList())
 			]]
 		]))->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
 	)
-	->addRow(new CLabel(_('Hosts'), 'filter_hostids__ms'),
+	->addRow(new CLabel(cr_t('Hosts'), 'filter_hostids__ms'),
 		(new CMultiSelect([
 			'name' => 'filter_hostids[]',
 			'object_name' => 'hosts',
@@ -59,42 +59,42 @@ $left = (new CFormList())
 			]
 		]))->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
 	)
-	->addRow(_('Problem'),
+	->addRow(cr_t('Problem'),
 		(new CTextBox('filter_problem_name', $filter['problem_name']))
 			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
-			->setAttribute('placeholder', _('part of the problem name'))
+			->setAttribute('placeholder', cr_t('part of the problem name'))
 	);
 
 $right = (new CFormList())
-	->addRow(_('Severity'),
+	->addRow(cr_t('Severity'),
 		(new CCheckBoxList('filter_severities'))
-			->setOptions(CSeverityHelper::getSeverities())
+			->setOptions(FrontendHelper::getSeverities())
 			->setChecked($filter['severities'])
 			->setColumns(3)
 			->setVertical()
 	)
-	->addRow(_('Period'),
+	->addRow(cr_t('Period'),
 		(new CRadioButtonList('filter_period', $filter['period']))
-			->addValue(_('24 hours'), PeriodAnalytics::PERIOD_24H)
-			->addValue(_('7 days'), PeriodAnalytics::PERIOD_7D)
-			->addValue(_('30 days'), PeriodAnalytics::PERIOD_30D)
-			->addValue(_('Custom dates'), ChangeAnalytics::PERIOD_CUSTOM)
+			->addValue(cr_t('24 hours'), PeriodAnalytics::PERIOD_24H)
+			->addValue(cr_t('7 days'), PeriodAnalytics::PERIOD_7D)
+			->addValue(cr_t('30 days'), PeriodAnalytics::PERIOD_30D)
+			->addValue(cr_t('Custom dates'), ChangeAnalytics::PERIOD_CUSTOM)
 			->setModern(true)
 	)
-	->addRow(_('From - to'), [
+	->addRow(cr_t('From - to'), [
 		(new CDateSelector('filter_date_from', $filter['date_from']))
 			->setDateFormat(ZBX_DATE)
-			->setPlaceholder(_('YYYY-MM-DD')),
+			->setPlaceholder(cr_t('YYYY-MM-DD')),
 		(new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN),
 		(new CDateSelector('filter_date_to', $filter['date_to']))
 			->setDateFormat(ZBX_DATE)
-			->setPlaceholder(_('YYYY-MM-DD'))
+			->setPlaceholder(cr_t('YYYY-MM-DD'))
 	], 'cr-changes-dates')
-	->addRow(_('Group by'),
+	->addRow(cr_t('Group by'),
 		(new CRadioButtonList('filter_grouping', $filter['grouping']))
-			->addValue(_('Host groups'), ChangeAnalytics::GROUP_BY_GROUP)
-			->addValue(_('Hosts'), ChangeAnalytics::GROUP_BY_HOST)
-			->addValue(_('Triggers'), ChangeAnalytics::GROUP_BY_TRIGGER)
+			->addValue(cr_t('Host groups'), ChangeAnalytics::GROUP_BY_GROUP)
+			->addValue(cr_t('Hosts'), ChangeAnalytics::GROUP_BY_HOST)
+			->addValue(cr_t('Triggers'), ChangeAnalytics::GROUP_BY_TRIGGER)
 			->setModern(true)
 	);
 
@@ -103,38 +103,38 @@ $filter_form = (new CFilter())
 	->setProfile('web.customreports.changes.filter')
 	->setActiveTab(CProfile::get('web.customreports.changes.filter.active', 1))
 	->addVar('action', 'customreports.changes')
-	->addFilterTab(_('Filter'), [$left, $right]);
+	->addFilterTab(cr_t('Filter'), [$left, $right]);
 
 // Export.
 $export_url = (new CUrl('zabbix.php'))->setArgument('action', 'customreports.changes.export');
 $controls = (new CList())
-	->addItem((new CRedirectButton(_('Download CSV'), (clone $export_url)->setArgument('format', 'csv')->getUrl()))
+	->addItem((new CRedirectButton(cr_t('Download CSV'), (clone $export_url)->setArgument('format', 'csv')->getUrl()))
 		->addClass(ZBX_STYLE_BTN_ALT)
 	)
-	->addItem((new CRedirectButton(_('Download HTML'), (clone $export_url)->setArgument('format', 'html')->getUrl()))
+	->addItem((new CRedirectButton(cr_t('Download HTML'), (clone $export_url)->setArgument('format', 'html')->getUrl()))
 		->addClass(ZBX_STYLE_BTN_ALT)
 	)
-	->addItem((new CSimpleButton(_('Print')))
+	->addItem((new CSimpleButton(cr_t('Print')))
 		->addClass(ZBX_STYLE_BTN_ALT)
 		->setAttribute('data-cr-open', (clone $export_url)->setArgument('format', 'print')->getUrl())
 	);
 
 if ($data['pdf_available']) {
 	$controls->addItem(
-		(new CRedirectButton(_('Download PDF'), (clone $export_url)->setArgument('format', 'pdf')->getUrl()))
+		(new CRedirectButton(cr_t('Download PDF'), (clone $export_url)->setArgument('format', 'pdf')->getUrl()))
 			->addClass(ZBX_STYLE_BTN_ALT)
 	);
 }
 
 $page = (new CHtmlPage())
-	->setTitle(_('Custom Problem Reports'))
-	->setControls((new CTag('nav', true, $controls))->setAttribute('aria-label', _('Content controls')))
+	->setTitle(cr_t('Custom Problem Reports'))
+	->setControls((new CTag('nav', true, $controls))->setAttribute('aria-label', cr_t('Content controls')))
 	->addItem(FrontendHelper::makeTabs('customreports.changes', $data['is_super_admin']))
 	->addItem($filter_form);
 
 if ($data['error'] !== null) {
 	$page->addItem(makeMessageBox($changes === null ? ZBX_STYLE_MSG_BAD : ZBX_STYLE_MSG_WARNING,
-		[['message' => $data['error']]], $changes === null ? _('Cannot load data') : _('Check the period'), true, false
+		[['message' => $data['error']]], $changes === null ? cr_t('Cannot load data') : cr_t('Check the period'), true, false
 	));
 }
 
@@ -181,18 +181,18 @@ $severity = static function (int $value) {
 $cur = $changes['totals']['cur'];
 $prev = $changes['totals']['prev'];
 $summary = (new CDiv([
-	(new CDiv(_s('%1$s - %2$s compared with %3$s - %4$s', zbx_date2str(DATE_TIME_FORMAT, $changes['from']),
+	(new CDiv(cr_s('%1$s - %2$s compared with %3$s - %4$s', zbx_date2str(DATE_TIME_FORMAT, $changes['from']),
 		zbx_date2str(DATE_TIME_FORMAT, $changes['till']), zbx_date2str(DATE_TIME_FORMAT, $changes['prev_from']),
 		zbx_date2str(DATE_TIME_FORMAT, $changes['from'])
 	)))->addClass('cr-changes-period'),
 	(new CDiv([
-		_s('New problems: %1$s (previous: %2$s)', $cur['new'], $prev['new']), ' ',
+		cr_s('New problems: %1$s (previous: %2$s)', $cur['new'], $prev['new']), ' ',
 		$delta($cur['new'] - $prev['new'], $prev['new'] > 0
 			? (int) round(($cur['new'] - $prev['new']) * 100 / $prev['new'])
 			: null
 		),
 		'; ',
-		_s('median time to resolve: %1$s (previous: %2$s)', ChangeRenderer::duration($cur['mttr']),
+		cr_s('median time to resolve: %1$s (previous: %2$s)', ChangeRenderer::duration($cur['mttr']),
 			ChangeRenderer::duration($prev['mttr'])
 		), ' ', $duration_delta($prev['mttr'], $cur['mttr'])
 	]))
@@ -200,10 +200,10 @@ $summary = (new CDiv([
 
 // 1. Previous -> current.
 $compare = (new CTableInfo())
-	->setHeader([$name_header, _('New (prev)'), _('New (now)'), _('Change'), _('MTTR (prev)'), _('MTTR (now)'),
-		_('Change')
+	->setHeader([$name_header, cr_t('New (prev)'), cr_t('New (now)'), cr_t('Change'), cr_t('MTTR (prev)'), cr_t('MTTR (now)'),
+		cr_t('Change')
 	])
-	->setNoDataMessage(_('No problems in either period.'));
+	->setNoDataMessage(cr_t('No problems in either period.'));
 
 foreach ($changes['compare'] as $row) {
 	$compare->addRow([$row['name'], $row['prev'], $row['cur'], $delta($row['delta'], $row['delta_pct']),
@@ -215,10 +215,10 @@ foreach ($changes['compare'] as $row) {
 // 2. Growth / decline.
 $movers = [];
 
-foreach (['growth' => _('Biggest growth'), 'decline' => _('Biggest decline')] as $key => $title) {
+foreach (['growth' => cr_t('Biggest growth'), 'decline' => cr_t('Biggest decline')] as $key => $title) {
 	$table = (new CTableInfo())
-		->setHeader([$name_header, _('Was'), _('Now'), _('Change')])
-		->setNoDataMessage(_('None'));
+		->setHeader([$name_header, cr_t('Was'), cr_t('Now'), cr_t('Change')])
+		->setNoDataMessage(cr_t('None'));
 
 	foreach ($changes[$key] as $row) {
 		$table->addRow([$row['name'], $row['prev'], $row['cur'], $delta($row['delta'], $row['delta_pct'])]);
@@ -230,12 +230,12 @@ foreach (['growth' => _('Biggest growth'), 'decline' => _('Biggest decline')] as
 // 3. Appeared / disappeared.
 $lists = [];
 
-foreach (['appeared' => [_('New problems'), _('Triggers with problems in this period and none in the previous one'), _('First')],
-		'disappeared' => [_('Disappeared problems'), _('Triggers with problems in the previous period and none now'), _('Last')]]
+foreach (['appeared' => [cr_t('New problems'), cr_t('Triggers with problems in this period and none in the previous one'), cr_t('First')],
+		'disappeared' => [cr_t('Disappeared problems'), cr_t('Triggers with problems in the previous period and none now'), cr_t('Last')]]
 		as $key => [$title, $hint, $time_label]) {
 	$table = (new CTableInfo())
-		->setHeader([_('Severity'), _('Host'), _('Problem'), _('Times'), $time_label])
-		->setNoDataMessage(_('None'));
+		->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Problem'), cr_t('Times'), $time_label])
+		->setNoDataMessage(cr_t('None'));
 
 	foreach ($changes[$key]['list'] as $trigger) {
 		$table->addRow([$severity($trigger['severity']), $trigger['hosts'], $trigger['name'], $trigger['count'],
@@ -255,8 +255,8 @@ foreach ($changes['mttr_by_severity'] as $row) {
 }
 
 $mttr = (new CTableInfo())
-	->setHeader([_('Severity'), _('Previous period'), _('Current period'), _('Change')])
-	->setNoDataMessage(_('No resolved problems.'));
+	->setHeader([cr_t('Severity'), cr_t('Previous period'), cr_t('Current period'), cr_t('Change')])
+	->setNoDataMessage(cr_t('No resolved problems.'));
 
 foreach ($changes['mttr_by_severity'] as $sev => $row) {
 	if ($row['cur_count'] == 0 && $row['prev_count'] == 0) {
@@ -279,7 +279,7 @@ for ($hour = 0; $hour < 24; $hour++) {
 }
 
 $heatmap->setHeader($header);
-$weekdays = [1 => _('Mon'), 2 => _('Tue'), 3 => _('Wed'), 4 => _('Thu'), 5 => _('Fri'), 6 => _('Sat'), 7 => _('Sun')];
+$weekdays = [1 => cr_t('Mon'), 2 => cr_t('Tue'), 3 => cr_t('Wed'), 4 => cr_t('Thu'), 5 => cr_t('Fri'), 6 => cr_t('Sat'), 7 => cr_t('Sun')];
 
 foreach ($changes['heatmap']['cells'] as $day => $hours) {
 	$cells = [(new CCol($weekdays[$day]))->addClass('cr-heatmap-day')];
@@ -289,7 +289,7 @@ foreach ($changes['heatmap']['cells'] as $day => $hours) {
 			->addStyle('background: #'.ChangeRenderer::heatColor($count, $changes['heatmap']['max']).';'
 				.($count > 0 && $count * 2 > $changes['heatmap']['max'] ? ' color: #fff;' : '')
 			)
-			->setTitle(_s('%1$s %2$s:00 - %3$s problem(s)', $weekdays[$day], sprintf('%02d', $hour), $count));
+			->setTitle(cr_s('%1$s %2$s:00 - %3$s problem(s)', $weekdays[$day], sprintf('%02d', $hour), $count));
 	}
 
 	$heatmap->addRow($cells);
@@ -297,10 +297,10 @@ foreach ($changes['heatmap']['cells'] as $day => $hours) {
 
 // 6. Noisy triggers.
 $noisy = (new CTableInfo())
-	->setHeader([_('Severity'), _('Host'), _('Trigger'), _('Problems'), _('Short-lived'), _('Median duration'),
-		_('Previous period')
+	->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Trigger'), cr_t('Problems'), cr_t('Short-lived'), cr_t('Median duration'),
+		cr_t('Previous period')
 	])
-	->setNoDataMessage(_('No noisy triggers.'));
+	->setNoDataMessage(cr_t('No noisy triggers.'));
 
 foreach ($changes['noisy'] as $trigger) {
 	$noisy->addRow([$severity($trigger['severity']), $trigger['hosts'], $trigger['name'], $trigger['count'],
@@ -313,10 +313,10 @@ foreach ($changes['noisy'] as $trigger) {
 
 // 7. Time in problem.
 $time = (new CTableInfo())
-	->setHeader([$filter['grouping'] === ChangeAnalytics::GROUP_BY_HOST ? _('Host') : _('Host group'),
-		_('Previous period'), _('Current period'), _('Change')
+	->setHeader([$filter['grouping'] === ChangeAnalytics::GROUP_BY_HOST ? cr_t('Host') : cr_t('Host group'),
+		cr_t('Previous period'), cr_t('Current period'), cr_t('Change')
 	])
-	->setNoDataMessage(_('No High or Disaster problems.'));
+	->setNoDataMessage(cr_t('No High or Disaster problems.'));
 
 foreach ($changes['problem_time'] as $row) {
 	$time->addRow([$row['name'],
@@ -327,9 +327,9 @@ foreach ($changes['problem_time'] as $row) {
 }
 
 $grid = (new CDiv([
-	$panel(_s('By %1$s: previous period -> current period', mb_strtolower($grouping_labels[$filter['grouping']])),
+	$panel(ChangeRenderer::compareTitle($filter['grouping']),
 		$compare, $changes['compare_total'] > count($changes['compare'])
-			? _s('Top %1$s of %2$s.', count($changes['compare']), $changes['compare_total'])
+			? cr_s('Top %1$s of %2$s.', count($changes['compare']), $changes['compare_total'])
 			: '',
 		true
 	),
@@ -337,23 +337,23 @@ $grid = (new CDiv([
 	$movers['decline'],
 	$lists['appeared'],
 	$lists['disappeared'],
-	$panel(_('Median time to resolve by severity'), $mttr, _('Number of resolved problems in brackets.')),
-	$panel(_('When problems start'), $heatmap, _('New problems of the current period by day of week and hour.')),
-	$panel(_('Noisy triggers'), $noisy,
-		_s('Triggers with frequent problems or problems resolved within %1$s minutes: candidates for hysteresis or other thresholds.',
+	$panel(cr_t('Median time to resolve by severity'), $mttr, cr_t('Number of resolved problems in brackets.')),
+	$panel(cr_t('When problems start'), $heatmap, cr_t('New problems of the current period by day of week and hour.')),
+	$panel(cr_t('Noisy triggers'), $noisy,
+		cr_s('Triggers with frequent problems or problems resolved within %1$s minutes: candidates for hysteresis or other thresholds.',
 			ChangeAnalytics::SHORT_PROBLEM / 60
 		),
 		true
 	),
-	$panel(_('Time in problem'), $time,
-		_('Time with at least one open High or Disaster problem, overlapping problems counted once.'), true
+	$panel(cr_t('Time in problem'), $time,
+		cr_t('Time with at least one open High or Disaster problem, overlapping problems counted once.'), true
 	)
 ]))->addClass('cr-panels');
 
 $page->addItem($summary)->addItem($grid);
 
 if ($changes['truncated']) {
-	$page->addItem((new CDiv(_('The analysis is limited by "analytics_limit": the numbers may be lower than in reality.')))
+	$page->addItem((new CDiv(cr_t('The analysis is limited by "analytics_limit": the numbers may be lower than in reality.')))
 		->addClass(ZBX_STYLE_RED)
 	);
 }

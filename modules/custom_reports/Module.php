@@ -11,7 +11,10 @@ namespace Modules\CustomReports;
 
 use APP;
 use CMenuItem;
+use Modules\CustomReports\Lib\I18n;
 use Zabbix\Core\CModule;
+
+require_once __DIR__.'/lib/i18n_functions.php';
 
 /**
  * Module entry point: registers the menu item under "Reports".
@@ -23,7 +26,7 @@ class Module extends CModule {
 			->findOrAdd(_('Reports'))
 			->getSubmenu()
 			->add(
-				(new CMenuItem(_('Custom Problem Reports')))
+				(new CMenuItem(I18n::t('Custom Problem Reports')))
 					->setAction('customreports.dashboard')
 					->setAliases([
 						'customreports.changes',

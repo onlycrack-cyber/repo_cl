@@ -20,26 +20,26 @@ $list_url = (new CUrl('zabbix.php'))->setArgument('action', 'customreports.sched
 
 // Summary of the schedule.
 $summary = (new CFormList())
-	->addRow(_('Schedule'), new CLink($schedule['name'],
+	->addRow(cr_t('Schedule'), new CLink($schedule['name'],
 		(new CUrl('zabbix.php'))
 			->setArgument('action', 'customreports.schedule.edit')
 			->setArgument('scheduleid', $schedule['scheduleid'])
 			->getUrl()
 	))
-	->addRow(_('Media type'), $data['media_type'] ?? (new CSpan(_('Inaccessible media type')))->addClass(ZBX_STYLE_RED))
-	->addRow(_('Last delivery'), FrontendHelper::makeStatus($data['state']['last_status'] ?? null))
-	->addRow(_('Next run'), $data['next_run'] !== null
+	->addRow(cr_t('Media type'), $data['media_type'] ?? (new CSpan(cr_t('Inaccessible media type')))->addClass(ZBX_STYLE_RED))
+	->addRow(cr_t('Last delivery'), FrontendHelper::makeStatus($data['state']['last_status'] ?? null))
+	->addRow(cr_t('Next run'), $data['next_run'] !== null
 		? zbx_date2str(DATE_TIME_FORMAT, $data['next_run'])
-		: (new CSpan(_('Disabled')))->addClass(ZBX_STYLE_RED)
+		: (new CSpan(cr_t('Disabled')))->addClass(ZBX_STYLE_RED)
 	)
-	->addRow('', (new CDiv(_('"OK" means that the mail server or Telegram accepted the message. If a mailbox rejects it later (bounce), the module does not know about it.')))
+	->addRow('', (new CDiv(cr_t('"OK" means that the mail server or Telegram accepted the message. If a mailbox rejects it later (bounce), the module does not know about it.')))
 		->addClass(ZBX_STYLE_GREY)
 	);
 
 // Runs, newest first; recipients of a run are shown by "Details".
 $table = (new CTableInfo())
-	->setHeader([_('Time'), _('Type'), _('Status'), _('Reports'), _('Sent'), _('Failed'), _('Duration'), _('Details')])
-	->setNoDataMessage(_('No deliveries yet.'));
+	->setHeader([cr_t('Time'), cr_t('Type'), cr_t('Status'), cr_t('Reports'), cr_t('Sent'), cr_t('Failed'), cr_t('Duration'), cr_t('Details')])
+	->setNoDataMessage(cr_t('No deliveries yet.'));
 
 foreach ($data['history'] as $index => $run) {
 	$type = FrontendHelper::triggerLabel($run['trigger']);
@@ -55,9 +55,9 @@ foreach ($data['history'] as $index => $run) {
 		$run['parts'],
 		$run['sent'],
 		$run['failed'] > 0 ? (new CSpan($run['failed']))->addClass(ZBX_STYLE_RED) : 0,
-		$run['duration'] < 60 ? $run['duration'].'s' : ReportRenderer::formatDuration($run['duration']),
+		$run['duration'] < 60 ? $run['duration'].cr_t('s') : ReportRenderer::formatDuration($run['duration']),
 		($run['deliveries'] || $run['message'] !== '')
-			? (new CLinkAction(_('Details')))
+			? (new CLinkAction(cr_t('Details')))
 				->addClass('js-cr-history-toggle')
 				->setAttribute('data-target', 'cr-run-'.$index)
 			: ''
@@ -73,15 +73,15 @@ foreach ($data['history'] as $index => $run) {
 	if ($run['deliveries']) {
 		$recipients = (new CTable())
 			->addClass('cr-history-recipients')
-			->setHeader([_('Report part'), _('Recipient'), _('Status'), _('Time'), _('Error')]);
+			->setHeader([cr_t('Report part'), cr_t('Recipient'), cr_t('Status'), cr_t('Time'), cr_t('Error')]);
 
 		foreach ($run['deliveries'] as $delivery) {
 			$recipients->addRow([
 				$delivery['part'] !== '' ? $delivery['part'] : '-',
-				$delivery['recipient'] !== '' ? $delivery['recipient'] : (new CSpan(_('no recipients')))->addClass(ZBX_STYLE_GREY),
+				$delivery['recipient'] !== '' ? $delivery['recipient'] : (new CSpan(cr_t('no recipients')))->addClass(ZBX_STYLE_GREY),
 				$delivery['status'] === 'sent'
-					? (new CSpan(_('Sent')))->addClass(ZBX_STYLE_GREEN)
-					: (new CSpan(_('Failed')))->addClass(ZBX_STYLE_RED),
+					? (new CSpan(cr_t('Sent')))->addClass(ZBX_STYLE_GREEN)
+					: (new CSpan(cr_t('Failed')))->addClass(ZBX_STYLE_RED),
 				zbx_date2str(DATE_TIME_FORMAT_SECONDS, $delivery['time']),
 				(new CSpan($delivery['error']))->addClass(ZBX_STYLE_RED)
 			]);
@@ -90,7 +90,7 @@ foreach ($data['history'] as $index => $run) {
 		$details[] = $recipients;
 
 		if ($run['deliveries_total'] > count($run['deliveries'])) {
-			$details[] = (new CDiv(_s('Only the first %1$s of %2$s recipients are kept.', count($run['deliveries']),
+			$details[] = (new CDiv(cr_s('Only the first %1$s of %2$s recipients are kept.', count($run['deliveries']),
 				$run['deliveries_total']
 			)))->addClass(ZBX_STYLE_GREY);
 		}
@@ -107,14 +107,14 @@ foreach ($data['history'] as $index => $run) {
 }
 
 (new CHtmlPage())
-	->setTitle(_s('Delivery history: %1$s', $schedule['name']))
+	->setTitle(cr_s('Delivery history: %1$s', $schedule['name']))
 	->setControls(
-		(new CTag('nav', true, (new CList())->addItem(new CRedirectButton(_('Back to schedules'), $list_url))))
-			->setAttribute('aria-label', _('Content controls'))
+		(new CTag('nav', true, (new CList())->addItem(new CRedirectButton(cr_t('Back to schedules'), $list_url))))
+			->setAttribute('aria-label', cr_t('Content controls'))
 	)
 	->addItem(FrontendHelper::makeTabs('customreports.schedule.list', true))
 	->addItem($summary)
-	->addItem((new CDiv(_s('Last %1$s runs are kept: scheduled (cron), "Send now" and "Test to me".',
+	->addItem((new CDiv(cr_s('Last %1$s runs are kept: scheduled (cron), "Send now" and "Test to me".',
 		ScheduleHelper::HISTORY_RUNS
 	)))->addClass('cr-note'))
 	->addItem($table)

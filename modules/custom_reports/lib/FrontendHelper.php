@@ -10,6 +10,7 @@ use CLink;
 use CList;
 use CSpan;
 use CProfile;
+use CSeverityHelper;
 use CTag;
 use CUrl;
 use CWebUser;
@@ -18,6 +19,25 @@ use CWebUser;
  * Helpers that depend on the Zabbix frontend (never loaded by the CLI sender).
  */
 class FrontendHelper {
+
+	/**
+	 * CSeverityHelper::getSeverities() with the default (English) severity names translated; custom names
+	 * from Administration -> General are kept as they are.
+	 */
+	public static function getSeverities(): array {
+		$severities = CSeverityHelper::getSeverities();
+
+		foreach ($severities as &$severity) {
+			$default = Severity::NAMES[(int) $severity['value']] ?? null;
+
+			if ($default !== null && ($severity['label'] === $default || $severity['label'] === _($default))) {
+				$severity['label'] = I18n::t($default);
+			}
+		}
+		unset($severity);
+
+		return $severities;
+	}
 
 	private const PROFILE_PREFIX = 'web.customreports.filter.';
 
@@ -176,32 +196,32 @@ class FrontendHelper {
 	public static function makeStatus(?string $status): CSpan {
 		switch ($status) {
 			case ScheduleHelper::STATUS_OK:
-				return (new CSpan(_('OK')))->addClass(ZBX_STYLE_GREEN);
+				return (new CSpan(cr_t('OK')))->addClass(ZBX_STYLE_GREEN);
 
 			case ScheduleHelper::STATUS_PARTIAL:
-				return (new CSpan(_('Partially')))->addClass(ZBX_STYLE_ORANGE);
+				return (new CSpan(cr_t('Partially')))->addClass(ZBX_STYLE_ORANGE);
 
 			case ScheduleHelper::STATUS_ERROR:
-				return (new CSpan(_('Error')))->addClass(ZBX_STYLE_RED);
+				return (new CSpan(cr_t('Error')))->addClass(ZBX_STYLE_RED);
 
 			case ScheduleHelper::STATUS_EMPTY:
-				return (new CSpan(_('Nothing to send')))->addClass(ZBX_STYLE_GREY);
+				return (new CSpan(cr_t('Nothing to send')))->addClass(ZBX_STYLE_GREY);
 
 			default:
-				return (new CSpan(_('Never')))->addClass(ZBX_STYLE_GREY);
+				return (new CSpan(cr_t('Never')))->addClass(ZBX_STYLE_GREY);
 		}
 	}
 
 	public static function triggerLabel(string $trigger): string {
 		switch ($trigger) {
 			case ScheduleHelper::RUN_SCHEDULE:
-				return _('Scheduled');
+				return cr_t('Scheduled');
 
 			case ScheduleHelper::RUN_TEST:
-				return _('Test to me');
+				return cr_t('Test to me');
 
 			default:
-				return _('Send now');
+				return cr_t('Send now');
 		}
 	}
 
@@ -210,9 +230,9 @@ class FrontendHelper {
 	 */
 	public static function makeTabs(string $active, bool $show_schedules): CTag {
 		$tabs = [
-			'customreports.dashboard' => _('Report dashboard'),
-			'customreports.changes' => _('Changes'),
-			'customreports.schedule.list' => _('Schedules and delivery')
+			'customreports.dashboard' => cr_t('Report dashboard'),
+			'customreports.changes' => cr_t('Changes'),
+			'customreports.schedule.list' => cr_t('Schedules and delivery')
 		];
 
 		if (!$show_schedules) {
@@ -231,6 +251,6 @@ class FrontendHelper {
 			$list->addItem($link);
 		}
 
-		return (new CTag('nav', true, $list))->setAttribute('aria-label', _('Report sections'));
+		return (new CTag('nav', true, $list))->setAttribute('aria-label', cr_t('Report sections'));
 	}
 }

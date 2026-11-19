@@ -56,7 +56,7 @@ class ScheduleHistory extends CController {
 		}
 
 		if ($schedule === null) {
-			CMessageHelper::setErrorTitle(_('No permissions to referred object or it does not exist!'));
+			CMessageHelper::setErrorTitle(cr_t('No permissions to referred object or it does not exist!'));
 			$this->setResponse(new CControllerResponseRedirect(
 				(new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.list')
 			));
@@ -77,7 +77,7 @@ class ScheduleHistory extends CController {
 			'state' => $state,
 			'next_run' => $schedule['enabled'] ? ScheduleHelper::nextOccurrence($schedule, time(), $timezone) : null
 		]);
-		$response->setTitle(_('Delivery history'));
+		$response->setTitle(cr_t('Delivery history'));
 		$this->setResponse($response);
 	}
 }

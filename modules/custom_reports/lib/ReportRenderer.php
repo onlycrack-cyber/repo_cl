@@ -30,15 +30,15 @@ class ReportRenderer {
 		$parts = [];
 
 		if ($days > 0) {
-			$parts[] = $days.'d';
+			$parts[] = $days.I18n::t('d');
 		}
 
 		if ($hours > 0) {
-			$parts[] = $hours.'h';
+			$parts[] = $hours.I18n::t('h');
 		}
 
 		if ($minutes > 0 || !$parts) {
-			$parts[] = $minutes.'m';
+			$parts[] = $minutes.I18n::t('m');
 		}
 
 		return implode(' ', $parts);
@@ -56,7 +56,9 @@ class ReportRenderer {
 			$names = array_values($names);
 
 			if ($max_items > 0 && count($names) > $max_items) {
-				return implode(', ', array_slice($names, 0, $max_items)).' and '.(count($names) - $max_items).' more';
+				return I18n::s('%1$s and %2$s more', implode(', ', array_slice($names, 0, $max_items)),
+					count($names) - $max_items
+				);
 			}
 
 			return implode(', ', $names);
@@ -68,23 +70,28 @@ class ReportRenderer {
 			$parts[] = $info['scope'];
 		}
 
-		$parts[] = 'Period: '.(Period::LABELS[$info['period']] ?? $info['period']);
-		$parts[] = 'Severity: '.($info['severities'] ? implode(', ', $info['severities']) : 'all');
+		$parts[] = I18n::t('Period').': '.(array_key_exists($info['period'], Period::LABELS)
+			? I18n::t(Period::LABELS[$info['period']])
+			: $info['period']);
+		$parts[] = I18n::t('Severity').': '.($info['severities']
+			? implode(', ', array_map([I18n::class, 't'], $info['severities']))
+			: I18n::t('all'));
 
 		if (($info['problem_name'] ?? '') !== '') {
-			$parts[] = 'Problem: *'.$info['problem_name'].'*';
+			$parts[] = I18n::t('Problem').': *'.$info['problem_name'].'*';
 		}
 
 		if (($info['acknowledged'] ?? ReportBuilder::ACK_ALL) != ReportBuilder::ACK_ALL) {
-			$parts[] = $info['acknowledged'] == ReportBuilder::ACK_YES ? 'Acknowledged only' : 'Unacknowledged only';
+			$parts[] = $info['acknowledged'] == ReportBuilder::ACK_YES ? I18n::t('Acknowledged only')
+				: I18n::t('Unacknowledged only');
 		}
 
 		if ($info['groups']) {
-			$parts[] = 'Host groups: '.$list($info['groups']);
+			$parts[] = I18n::t('Host groups').': '.$list($info['groups']);
 		}
 
 		if ($info['hosts']) {
-			$parts[] = 'Hosts: '.$list($info['hosts']);
+			$parts[] = I18n::t('Hosts').': '.$list($info['hosts']);
 		}
 
 		return implode('; ', $parts);
@@ -112,7 +119,9 @@ class ReportRenderer {
 
 		// UTF-8 BOM: lets spreadsheet applications detect the encoding of non-latin names.
 		fwrite($fh, "\xEF\xBB\xBF");
-		fputcsv($fh, ['Time', 'Duration', 'Severity', 'Host', 'Problem', 'Acknowledged', 'Event ID'], ',', '"', '');
+		fputcsv($fh, array_map([I18n::class, 't'],
+			['Time', 'Duration', 'Severity', 'Host', 'Problem', 'Acknowledged', 'Event ID']
+		), ',', '"', '');
 
 		foreach ($report['problems'] as $problem) {
 			fputcsv($fh, array_map([self::class, 'csvCell'], [
@@ -121,7 +130,7 @@ class ReportRenderer {
 				$report['severity_meta'][$problem['severity']]['name'],
 				self::hostNames($problem),
 				$problem['name'],
-				$problem['acknowledged'] ? 'Yes' : 'No',
+				I18n::t($problem['acknowledged'] ? 'Yes' : 'No'),
 				$problem['eventid']
 			]), ',', '"', '');
 		}
@@ -145,19 +154,19 @@ class ReportRenderer {
 		$frontend_url = rtrim((string) ($options['frontend_url'] ?? ''), '/');
 		$cell = 'padding:4px 8px;border:1px solid #dfe4e7;text-align:left;vertical-align:top;';
 
-		$html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.self::e($title).'</title>'.
+		$html = '<!DOCTYPE html><html lang="'.I18n::lang().'"><head><meta charset="UTF-8"><title>'.self::e($title).'</title>'.
 			'<style>@page{size:A4 landscape;margin:12mm}@media print{.no-print{display:none}'.
 			'tr,img{page-break-inside:avoid}}body{font-family:Arial,Helvetica,sans-serif;'.
 			'font-size:13px;color:#1f2c33;margin:16px}table{border-collapse:collapse}</style></head><body>';
 
 		$html .= '<h2 style="margin:0 0 4px 0">'.self::e($title).'</h2>';
-		$html .= '<div style="color:#768d99;margin-bottom:12px">Generated: '.date('Y-m-d H:i:s', $report['generated']).
+		$html .= '<div style="color:#768d99;margin-bottom:12px">'.I18n::t('Generated').': '.date('Y-m-d H:i:s', $report['generated']).
 			'<br>'.self::e(self::filterDescription($report)).'</div>';
 
 		// KPI.
 		$html .= '<table style="margin-bottom:12px"><tr>';
 		$html .= '<td style="'.$cell.'background:#f4f4f4;text-align:center;min-width:90px"><div style="font-size:22px;'.
-			'font-weight:bold">'.$report['total'].'</div>Active problems</td>';
+			'font-weight:bold">'.$report['total'].'</div>'.self::e(I18n::t('Active problems')).'</td>';
 
 		foreach (Severity::descending() as $severity) {
 			$html .= '<td style="'.$cell.'background:#'.self::e($meta[$severity]['color']).';text-align:center;'.
@@ -172,13 +181,13 @@ class ReportRenderer {
 			$html .= self::renderAnalyticsHtml($report['analytics'], $meta, $cell);
 		}
 		elseif (($report['analytics_error'] ?? null) !== null) {
-			$html .= '<p style="color:#e45959">Period analytics is not available: '.
+			$html .= '<p style="color:#e45959">'.self::e(I18n::t('Period analytics is not available')).': '.
 				self::e($report['analytics_error']).'</p>';
 		}
 
 		// Top hosts.
 		if ($report['top_hosts']) {
-			$html .= '<h3 style="margin:8px 0 4px 0">Top problem hosts</h3><table style="margin-bottom:12px">';
+			$html .= '<h3 style="margin:8px 0 4px 0">'.self::e(I18n::t('Top problem hosts')).'</h3><table style="margin-bottom:12px">';
 
 			foreach ($report['top_hosts'] as $i => $host) {
 				$html .= '<tr><td style="'.$cell.'">'.($i + 1).'</td><td style="'.$cell.'">'.self::e($host['name']).
@@ -196,14 +205,14 @@ class ReportRenderer {
 			$html .= ChangeRenderer::renderSection($report['changes'], $meta);
 		}
 		elseif (($report['changes_error'] ?? null) !== null) {
-			$html .= '<p style="color:#e45959">Changes analysis is not available: '.self::e($report['changes_error']).'</p>';
+			$html .= '<p style="color:#e45959">'.self::e(I18n::t('Changes analysis is not available')).': '.self::e($report['changes_error']).'</p>';
 		}
 
 		// Problems (in the "summary" mode the grouped section above replaces the full list).
 		$summary_only = self::isSummaryOnly($report);
 
 		if (!$summary_only) {
-			$html .= '<h3 style="margin:8px 0 4px 0">Active problems</h3>';
+			$html .= '<h3 style="margin:8px 0 4px 0">'.self::e(I18n::t('Active problems')).'</h3>';
 		}
 
 		if ($summary_only) {
@@ -213,7 +222,7 @@ class ReportRenderer {
 			$html .= '<table style="width:100%"><tr>';
 
 			foreach (['Time', 'Duration', 'Severity', 'Host', 'Problem', 'Ack'] as $header) {
-				$html .= '<th style="'.$cell.'background:#f4f4f4">'.$header.'</th>';
+				$html .= '<th style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t($header)).'</th>';
 			}
 
 			$html .= '</tr>';
@@ -235,18 +244,19 @@ class ReportRenderer {
 					'<td style="'.$cell.'">'.self::e(self::hostNames($problem)).'</td>'.
 					'<td style="'.$cell.'">'.$name.'</td>'.
 					'<td style="'.$cell.'color:'.($problem['acknowledged'] ? '#429e47' : '#e45959').'">'.
-						($problem['acknowledged'] ? 'Yes' : 'No').'</td>'.
+						I18n::t($problem['acknowledged'] ? 'Yes' : 'No').'</td>'.
 					'</tr>';
 			}
 
 			$html .= '</table>';
 		}
 		else {
-			$html .= '<p>No active problems match the filter.</p>';
+			$html .= '<p>'.self::e(I18n::t('No active problems match the filter.')).'</p>';
 		}
 
 		if ($report['truncated'] && !$summary_only) {
-			$html .= '<p style="color:#e45959">The report is limited to '.$report['total'].' problems.</p>';
+			$html .= '<p style="color:#e45959">'.self::e(I18n::s('The report is limited to %1$s problems.', $report['total'])).
+				'</p>';
 		}
 
 		if ($frontend_url !== '') {
@@ -279,10 +289,10 @@ class ReportRenderer {
 
 		$lines = [];
 		$lines[] = $b("\u{1F4CA} ".$e($title));
-		$lines[] = $e('Generated: '.date('Y-m-d H:i', $report['generated']));
+		$lines[] = $e(I18n::t('Generated').': '.date('Y-m-d H:i', $report['generated']));
 		$lines[] = $e(self::filterDescription($report, 10));
 		$lines[] = '';
-		$lines[] = $b('Active problems: '.$report['total']);
+		$lines[] = $b($e(I18n::t('Active problems')).': '.$report['total']);
 
 		$counters = [];
 
@@ -316,7 +326,7 @@ class ReportRenderer {
 
 		if ($report['top_hosts']) {
 			$lines[] = '';
-			$lines[] = $b('Top hosts:');
+			$lines[] = $b($e(I18n::t('Top hosts')).':');
 
 			foreach ($report['top_hosts'] as $i => $host) {
 				$lines[] = ($i + 1).'. '.$e($host['name']).' - '.$host['count'];
@@ -340,13 +350,13 @@ class ReportRenderer {
 			}
 		}
 		else {
-			$text .= "\n\n".$b('Problems:');
+			$text .= "\n\n".$b($e(I18n::t('Problems')).':');
 			$items = [];
 
 			foreach ($report['problems'] as $problem) {
 				$items[] = "\n".Severity::ICONS[$problem['severity']].' '.$e(self::hostNames($problem)).': '.
 					$e($problem['name']).' ('.self::formatDuration($problem['age']).
-					($problem['acknowledged'] ? ', ack' : '').')';
+					($problem['acknowledged'] ? ', '.$e(I18n::t('ack')) : '').')';
 			}
 		}
 
@@ -354,7 +364,7 @@ class ReportRenderer {
 
 		foreach ($items as $index => $line) {
 			$rest = $total - $index - 1;
-			$tail = "\n... and ".($rest + 1).' more';
+			$tail = "\n".I18n::s('... and %1$s more', $rest + 1);
 
 			if ($max_length > 0
 					&& mb_strlen($text.$line, 'UTF-8') + ($rest > 0 ? mb_strlen($tail, 'UTF-8') : 0) > $max_length) {
@@ -366,7 +376,7 @@ class ReportRenderer {
 		}
 
 		if ($report['truncated'] && $max_length == 0 && !$summary_only) {
-			$text .= "\n(the report is limited to ".$total.' problems)';
+			$text .= "\n".$e(I18n::s('(the report is limited to %1$s problems)', $total));
 		}
 
 		if ($max_length > 0 && mb_strlen($text, 'UTF-8') > $max_length) {
@@ -399,8 +409,8 @@ class ReportRenderer {
 			return $item['whole_period'];
 		}));
 
-		return sprintf('Unresolved problems: %d, open the whole period (%s): %d', count($report['unresolved']),
-			PeriodAnalytics::LABELS[$report['analytics']['period']], $whole
+		return I18n::s('Unresolved problems: %1$s, open the whole period (%2$s): %3$s', count($report['unresolved']),
+			I18n::t(PeriodAnalytics::LABELS[$report['analytics']['period']]), $whole
 		);
 	}
 
@@ -409,28 +419,31 @@ class ReportRenderer {
 	 * "db-pg-01: Disk failure - open 9d 2h (the whole period), alerts sent: 100, fired 3 times, last alert: ...".
 	 */
 	public static function unresolvedText(array $item): string {
-		$parts = ['open '.self::formatDuration($item['age']).($item['whole_period'] ? ' (the whole period)' : '')];
+		$parts = [I18n::s($item['whole_period'] ? 'open %1$s (the whole period)' : 'open %1$s',
+			self::formatDuration($item['age'])
+		)];
 
 		if ($item['alerts_sent'] !== null) {
-			$parts[] = 'alerts sent: '.$item['alerts_sent'].($item['alerts_failed'] ? ', failed: '.$item['alerts_failed'] : '');
+			$parts[] = I18n::s('alerts sent: %1$s', $item['alerts_sent'])
+				.($item['alerts_failed'] ? ', '.I18n::s('failed: %1$s', $item['alerts_failed']) : '');
 		}
 
 		if ($item['repeats'] > 1) {
-			$parts[] = 'fired '.$item['repeats'].' times';
+			$parts[] = I18n::s('fired %1$s times', $item['repeats']);
 		}
 
 		if ($item['open_count'] > 1) {
-			$parts[] = $item['open_count'].' open problems';
+			$parts[] = I18n::s('%1$s open problems', $item['open_count']);
 		}
 
 		if ($item['acknowledged']) {
-			$parts[] = 'ack';
+			$parts[] = I18n::t('ack');
 		}
 
 		$text = implode(', ', array_column($item['hosts'], 'name')).': '.$item['name'].' - '.implode(', ', $parts);
 
 		if ($item['last_alert'] !== '' && $item['last_alert'] !== $item['name']) {
-			$text .= '. Last alert: "'.$item['last_alert'].'"';
+			$text .= '. '.I18n::s('Last alert: "%1$s"', $item['last_alert']);
 		}
 
 		return $text;
@@ -441,14 +454,14 @@ class ReportRenderer {
 		$html = '<h3 style="margin:8px 0 4px 0">'.self::e(self::unresolvedTitle($report)).'</h3>';
 
 		if (!$report['unresolved']) {
-			return $html.'<p>No unresolved problems.</p>';
+			return $html.'<p>'.self::e(I18n::t('No unresolved problems.')).'</p>';
 		}
 
-		$html .= '<div style="margin-bottom:4px;color:#768d99">One line per problem: alerts and repeated events of the '.
-			'period are counted instead of being listed.</div><table style="width:100%;margin-bottom:12px"><tr>';
+		$html .= '<div style="margin-bottom:4px;color:#768d99">'.self::e(I18n::t('One line per problem: alerts and '.
+			'repeated events of the period are counted instead of being listed.')).'</div><table style="width:100%;margin-bottom:12px"><tr>';
 
 		foreach (['Severity', 'Host', 'Problem', 'Open since', 'Duration', 'Alerts sent', 'Fired', 'Last alert'] as $h) {
-			$html .= '<th style="'.$cell.'background:#f4f4f4">'.$h.'</th>';
+			$html .= '<th style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t($h)).'</th>';
 		}
 
 		$html .= '</tr>';
@@ -457,7 +470,7 @@ class ReportRenderer {
 			$alerts = $item['alerts_sent'] === null
 				? '-'
 				: $item['alerts_sent'].($item['alerts_failed'] ? ' <span style="color:#e45959">('.$item['alerts_failed'].
-					' failed)</span>' : '');
+					' '.self::e(I18n::t('failed')).')</span>' : '');
 
 			$html .= '<tr>'.
 				'<td style="'.$cell.'background:#'.self::e($meta[$item['severity']]['color']).'">'.
@@ -465,10 +478,10 @@ class ReportRenderer {
 				'<td style="'.$cell.'white-space:nowrap">'.self::e(implode(', ', array_column($item['hosts'], 'name'))).
 					'</td>'.
 				'<td style="'.$cell.'">'.self::e($item['name']).($item['acknowledged'] ? ' <span style="color:#429e47">'.
-					'(ack)</span>' : '').'</td>'.
+					'('.self::e(I18n::t('ack')).')</span>' : '').'</td>'.
 				'<td style="'.$cell.'white-space:nowrap">'.date('Y-m-d H:i', $item['since']).'</td>'.
 				'<td style="'.$cell.'white-space:nowrap'.($item['whole_period'] ? ';font-weight:bold;color:#e45959' : '').'">'.
-					self::formatDuration($item['age']).($item['whole_period'] ? '<br>whole period' : '').'</td>'.
+					self::formatDuration($item['age']).($item['whole_period'] ? '<br>'.self::e(I18n::t('whole period')) : '').'</td>'.
 				'<td style="'.$cell.'text-align:right">'.$alerts.'</td>'.
 				'<td style="'.$cell.'text-align:right">'.($item['repeats'] > 0 ? $item['repeats'] : '-').'</td>'.
 				'<td style="'.$cell.'color:#768d99">'.self::e($item['last_alert']).'</td>'.
@@ -485,17 +498,17 @@ class ReportRenderer {
 		$stats = $report['open_stats'];
 
 		if ($stats['oldest_age'] === null) {
-			return 'No open problems.';
+			return I18n::t('No open problems.');
 		}
 
-		return sprintf('Oldest open: %s, average age: %s; open over 1 day: %d, over 7 days: %d; unacknowledged: %d',
+		return I18n::s('Oldest open: %1$s, average age: %2$s; open over 1 day: %3$s, over 7 days: %4$s; unacknowledged: %5$s',
 			self::formatDuration($stats['oldest_age']), self::formatDuration($stats['avg_age']), $stats['over_1d'],
 			$stats['over_7d'], $stats['unacknowledged']
 		);
 	}
 
 	public static function periodTitle(array $analytics): string {
-		return sprintf('Period analytics: %s (%s - %s)', PeriodAnalytics::LABELS[$analytics['period']],
+		return I18n::s('Period analytics: %1$s (%2$s - %3$s)', I18n::t(PeriodAnalytics::LABELS[$analytics['period']]),
 			date('Y-m-d H:i', $analytics['from']), date('Y-m-d H:i', $analytics['till'])
 		);
 	}
@@ -505,10 +518,10 @@ class ReportRenderer {
 	 */
 	public static function changeText(array $analytics): string {
 		if ($analytics['change_pct'] === null) {
-			return sprintf('%d (previous period: %d)', $analytics['new'], $analytics['prev']);
+			return I18n::s('%1$s (previous period: %2$s)', $analytics['new'], $analytics['prev']);
 		}
 
-		return sprintf('%d (%s%d%% vs %d in the previous period)', $analytics['new'],
+		return I18n::s('%1$s (%2$s%3$s%% vs %4$s in the previous period)', $analytics['new'],
 			$analytics['change_pct'] > 0 ? '+' : '', $analytics['change_pct'], $analytics['prev']
 		);
 	}
@@ -522,13 +535,16 @@ class ReportRenderer {
 	 */
 	public static function analyticsMetrics(array $analytics): array {
 		return [
-			'New problems' => self::changeText($analytics),
-			'Resolved' => $analytics['resolved'].' (still open: '.$analytics['unresolved'].')',
-			'Open problems' => self::openChangeText($analytics),
-			'Time to resolve (MTTR)' => 'median '.self::durationOrDash($analytics['mttr_median']).
-				', average '.self::durationOrDash($analytics['mttr_avg']),
-			'Acknowledged' => ($analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%').
-				' (time to acknowledge, average: '.self::durationOrDash($analytics['mtta_avg']).')'
+			I18n::t('New problems') => self::changeText($analytics),
+			I18n::t('Resolved') => I18n::s('%1$s (still open: %2$s)', $analytics['resolved'], $analytics['unresolved']),
+			I18n::t('Open problems') => self::openChangeText($analytics),
+			I18n::t('Time to resolve (MTTR)') => I18n::s('median %1$s, average %2$s',
+				self::durationOrDash($analytics['mttr_median']), self::durationOrDash($analytics['mttr_avg'])
+			),
+			I18n::t('Acknowledged') => I18n::s('%1$s (time to acknowledge, average: %2$s)',
+				$analytics['ack_rate'] === null ? '-' : $analytics['ack_rate'].'%',
+				self::durationOrDash($analytics['mtta_avg'])
+			)
 		];
 	}
 
@@ -549,16 +565,18 @@ class ReportRenderer {
 				$analytics['new_by_severity'][$severity].'</span>';
 		}
 
-		$html .= '<tr><td style="'.$cell.'background:#f4f4f4">New by severity</td><td style="'.$cell.'">'.
+		$html .= '<tr><td style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t('New by severity')).'</td><td style="'.$cell.'">'.
 			implode('', $by_severity).'</td></tr></table>';
 
 		$html .= self::renderSeverityChartHtml($analytics, $meta);
 		$html .= self::renderFlowChartHtml($analytics);
 
 		if ($analytics['recurring']) {
-			$html .= '<h4 style="margin:6px 0 4px 0">Recurring problems</h4><table style="margin-bottom:12px">'.
-				'<tr><th style="'.$cell.'background:#f4f4f4">Host</th><th style="'.$cell.'background:#f4f4f4">'.
-				'Problem</th><th style="'.$cell.'background:#f4f4f4">Times</th></tr>';
+			$html .= '<h4 style="margin:6px 0 4px 0">'.self::e(I18n::t('Recurring problems')).'</h4>'.
+				'<table style="margin-bottom:12px"><tr>'.
+				'<th style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t('Host')).'</th>'.
+				'<th style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t('Problem')).'</th>'.
+				'<th style="'.$cell.'background:#f4f4f4">'.self::e(I18n::t('Times')).'</th></tr>';
 
 			foreach ($analytics['recurring'] as $trigger) {
 				$html .= '<tr><td style="'.$cell.'">'.self::e($trigger['hosts']).'</td><td style="'.$cell.'">'.
@@ -570,7 +588,7 @@ class ReportRenderer {
 		}
 
 		if ($analytics['top_hosts']) {
-			$html .= '<h4 style="margin:6px 0 4px 0">Hosts with most new problems</h4><table style="margin-bottom:12px">';
+			$html .= '<h4 style="margin:6px 0 4px 0">'.self::e(I18n::t('Hosts with most new problems')).'</h4><table style="margin-bottom:12px">';
 
 			foreach ($analytics['top_hosts'] as $i => $host) {
 				$html .= '<tr><td style="'.$cell.'">'.($i + 1).'</td><td style="'.$cell.'">'.self::e($host['name']).
@@ -581,8 +599,8 @@ class ReportRenderer {
 		}
 
 		if ($analytics['truncated']) {
-			$html .= '<p style="color:#e45959">Period analytics is limited by "analytics_limit": the numbers (including '.
-				'alert counts) may be lower than in reality.</p>';
+			$html .= '<p style="color:#e45959">'.self::e(I18n::t('Period analytics is limited by "analytics_limit": '.
+				'the numbers (including alert counts) may be lower than in reality.')).'</p>';
 		}
 
 		return $html;
@@ -594,7 +612,7 @@ class ReportRenderer {
 	public static function openChangeText(array $analytics): string {
 		$delta = $analytics['open_end'] - $analytics['open_start'];
 
-		return sprintf('%d at the start of the period -> %d at the end (%s%d)', $analytics['open_start'],
+		return I18n::s('%1$s at the start of the period -> %2$s at the end (%3$s%4$s)', $analytics['open_start'],
 			$analytics['open_end'], $delta > 0 ? '+' : '', $delta
 		);
 	}
@@ -632,8 +650,9 @@ class ReportRenderer {
 				self::e(self::axisLabel($analytics['buckets'], $index)).'</td>';
 		}
 
-		return '<div style="margin:6px 0 2px 0;color:#768d99">New problems per '.self::chartUnit($analytics).
-			', by severity (colors as above)</div>'.
+		return '<div style="margin:6px 0 2px 0;color:#768d99">'.self::e(I18n::s(
+				'New problems per %1$s, by severity (colors as above)', I18n::t(self::chartUnit($analytics))
+			)).'</div>'.
 			'<table style="width:100%;margin-bottom:10px;border-bottom:1px solid #dfe4e7;table-layout:fixed">'.
 			'<tr style="height:'.($height + 14).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
 	}
@@ -672,8 +691,10 @@ class ReportRenderer {
 		}
 
 		$legend = '';
-		$names = ['count' => 'New', 'resolved' => 'Resolved', 'open' => 'Open at the end of the '.
-			self::chartUnit($analytics)
+		$names = [
+			'count' => I18n::t('New'),
+			'resolved' => I18n::t('Resolved'),
+			'open' => I18n::t('Open at the end of the '.self::chartUnit($analytics))
 		];
 
 		foreach ($colors as $key => $color) {
@@ -681,8 +702,9 @@ class ReportRenderer {
 				';margin:0 4px 0 10px"></span>'.self::e($names[$key]);
 		}
 
-		return '<div style="margin:6px 0 2px 0;color:#768d99">New vs resolved per '.self::chartUnit($analytics).
-			', open problems: '.self::e(self::openChangeText($analytics)).'</div>'.
+		return '<div style="margin:6px 0 2px 0;color:#768d99">'.self::e(I18n::s('New vs resolved per %1$s, open '.
+				'problems: %2$s', I18n::t(self::chartUnit($analytics)), self::openChangeText($analytics)
+			)).'</div>'.
 			'<div style="margin-bottom:4px;font-size:11px;color:#4f5b63">'.$legend.'</div>'.
 			'<table style="width:100%;margin-bottom:12px;border-bottom:1px solid #dfe4e7;table-layout:fixed">'.
 			'<tr style="height:'.($height + 4).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
@@ -710,24 +732,24 @@ class ReportRenderer {
 	}
 
 	private static function renderAnalyticsText(array $analytics, callable $b, callable $e): array {
-		$lines = [$b("\u{1F4C8} ".$e(PeriodAnalytics::LABELS[$analytics['period']]))];
+		$lines = [$b("\u{1F4C8} ".$e(I18n::s('Analytics: %1$s', I18n::t(PeriodAnalytics::LABELS[$analytics['period']]))))];
 
 		foreach (self::analyticsMetrics($analytics) as $label => $value) {
 			$lines[] = $e($label.': '.$value);
 		}
 
 		if ($analytics['truncated']) {
-			$lines[] = $e('(limited by "analytics_limit": the numbers may be lower than in reality)');
+			$lines[] = $e(I18n::t('(limited by "analytics_limit": the numbers may be lower than in reality)'));
 		}
 
 		$unit = self::chartUnit($analytics);
-		$lines[] = $e('New per '.$unit.': ').self::sparkline(array_column($analytics['buckets'], 'count'));
-		$lines[] = $e('Open at the end of the '.$unit.': ').
+		$lines[] = $e(I18n::t('New per '.$unit).': ').self::sparkline(array_column($analytics['buckets'], 'count'));
+		$lines[] = $e(I18n::t('Open at the end of the '.$unit).': ').
 			self::sparkline(array_column($analytics['buckets'], 'open')).
-			$e(' ('.$analytics['open_start'].' -> '.$analytics['open_end'].')');
+			$e(' ('.$analytics['open_start']." \u{2192} ".$analytics['open_end'].')');
 
 		if ($analytics['recurring']) {
-			$lines[] = $b('Recurring:');
+			$lines[] = $b($e(I18n::t('Recurring')).':');
 
 			foreach ($analytics['recurring'] as $trigger) {
 				$lines[] = $e('- '.$trigger['hosts'].': '.$trigger['name'].' x'.$trigger['count']);

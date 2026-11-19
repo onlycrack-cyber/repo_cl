@@ -24,6 +24,10 @@ class ModuleConfig {
 		// Timezone in which schedule times are evaluated, e.g. "Europe/Moscow"; empty = UTC.
 		'timezone' => '',
 
+		// Language of the interface and the reports: "ru", "en" or "auto" (language of the Zabbix user; English
+		// in the cron sender).
+		'language' => 'ru',
+
 		// Storage and logging; empty values = <module>/data and <module>/data/logs/custom_reports.log.
 		'data_dir' => '',
 		'log_file' => '',

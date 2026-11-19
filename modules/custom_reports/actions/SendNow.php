@@ -55,20 +55,20 @@ class SendNow extends CController {
 				+ FrontendHelper::getFilter();
 			$report = $service->buildReport($filter, $split);
 			$result = $service->sendReport($report, $mediatypeid, $sendto, $this->getInput('format'),
-				_('Problem report (test)'), $split, (bool) $this->getInput('skip_empty', 0)
+				cr_t('Problem report (test)'), $split, (bool) $this->getInput('skip_empty', 0)
 			);
 
 			// Failures first: a part without recipients is counted in "failed", but not in "parts".
 			if ($result['failed'] == 0 && $result['parts'] == 0) {
-				CMessageHelper::setSuccessTitle(_('Nothing to send: no problems match the filter'));
+				CMessageHelper::setSuccessTitle(cr_t('Nothing to send: no problems match the filter'));
 			}
 			elseif ($result['failed'] == 0) {
-				CMessageHelper::setSuccessTitle(_s('Sent %1$s report(s), %2$s message(s) delivered', $result['parts'],
+				CMessageHelper::setSuccessTitle(cr_s('Sent %1$s report(s), %2$s message(s) delivered', $result['parts'],
 					$result['sent']
 				));
 			}
 			else {
-				CMessageHelper::setErrorTitle(_s('Report delivery failed for %1$s of %2$s recipient(s)',
+				CMessageHelper::setErrorTitle(cr_s('Report delivery failed for %1$s of %2$s recipient(s)',
 					$result['failed'], $result['sent'] + $result['failed']
 				));
 
@@ -78,7 +78,7 @@ class SendNow extends CController {
 			}
 		}
 		catch (Exception $e) {
-			CMessageHelper::setErrorTitle(_('Cannot send report'));
+			CMessageHelper::setErrorTitle(cr_t('Cannot send report'));
 			CMessageHelper::addError($e->getMessage());
 		}
 

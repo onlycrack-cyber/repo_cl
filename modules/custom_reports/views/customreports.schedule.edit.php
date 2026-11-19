@@ -33,38 +33,38 @@ $form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
 $period = (new CRadioButtonList('period', $schedule['period']))->setModern(true);
 
 foreach ([
-	Period::ALL => _('All active'),
-	Period::LAST_24H => _('Last 24 hours'),
-	Period::LAST_7D => _('Last 7 days'),
-	Period::LAST_30D => _('Last 30 days'),
-	Period::OLDER_1D => _('Older than 1 day'),
-	Period::OLDER_7D => _('Older than 7 days')
+	Period::ALL => cr_t('All active'),
+	Period::LAST_24H => cr_t('Last 24 hours'),
+	Period::LAST_7D => cr_t('Last 7 days'),
+	Period::LAST_30D => cr_t('Last 30 days'),
+	Period::OLDER_1D => cr_t('Older than 1 day'),
+	Period::OLDER_7D => cr_t('Older than 7 days')
 ] as $value => $label) {
 	$period->addValue($label, $value);
 }
 
-$weekdays = [1 => _('Monday'), 2 => _('Tuesday'), 3 => _('Wednesday'), 4 => _('Thursday'), 5 => _('Friday'),
-	6 => _('Saturday'), 7 => _('Sunday')
+$weekdays = [1 => cr_t('Monday'), 2 => cr_t('Tuesday'), 3 => cr_t('Wednesday'), 4 => cr_t('Thursday'), 5 => cr_t('Friday'),
+	6 => cr_t('Saturday'), 7 => cr_t('Sunday')
 ];
 
 $media_type_select = (new CSelect('mediatypeid'))
 	->setId('mediatypeid')
 	->setFocusableElementId('label-mediatypeid')
-	->addOptions(CSelect::createOptionsFromArray([0 => _('Select media type')] + $data['media_types']))
+	->addOptions(CSelect::createOptionsFromArray([0 => cr_t('Select media type')] + $data['media_types']))
 	->setValue($schedule['mediatypeid']);
 
 $form_list = (new CFormList('schedule_form_list'))
-	->addRow((new CLabel(_('Name'), 'name'))->setAsteriskMark(),
+	->addRow((new CLabel(cr_t('Name'), 'name'))->setAsteriskMark(),
 		(new CTextBox('name', $schedule['name'], false, 255))
 			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 			->setAriaRequired()
 			->setAttribute('autofocus', 'autofocus')
 	)
-	->addRow(_('Enabled'), (new CCheckBox('enabled'))->setChecked($schedule['enabled'] == 1))
+	->addRow(cr_t('Enabled'), (new CCheckBox('enabled'))->setChecked($schedule['enabled'] == 1))
 
 	// Report filter.
-	->addRow(new CTag('h4', true, _('Report filter')))
-	->addRow(new CLabel(_('Host groups'), 'groupids__ms'),
+	->addRow(new CTag('h4', true, cr_t('Report filter')))
+	->addRow(new CLabel(cr_t('Host groups'), 'groupids__ms'),
 		(new CMultiSelect([
 			'name' => 'groupids[]',
 			'object_name' => 'hostGroup',
@@ -80,7 +80,7 @@ $form_list = (new CFormList('schedule_form_list'))
 			]
 		]))->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 	)
-	->addRow(new CLabel(_('Hosts'), 'hostids__ms'),
+	->addRow(new CLabel(cr_t('Hosts'), 'hostids__ms'),
 		(new CMultiSelect([
 			'name' => 'hostids[]',
 			'object_name' => 'hosts',
@@ -99,106 +99,106 @@ $form_list = (new CFormList('schedule_form_list'))
 			]
 		]))->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 	)
-	->addRow(_('Severity'),
+	->addRow(cr_t('Severity'),
 		(new CCheckBoxList('severities'))
-			->setOptions(CSeverityHelper::getSeverities())
+			->setOptions(FrontendHelper::getSeverities())
 			->setChecked($schedule['severities'])
 			->setColumns(3)
 			->setVertical()
 	)
-	->addRow(_('Age'), $period)
-	->addRow(_('Include suppressed problems'),
+	->addRow(cr_t('Age'), $period)
+	->addRow(cr_t('Include suppressed problems'),
 		(new CCheckBox('show_suppressed'))->setChecked($schedule['show_suppressed'] == 1)
 	)
-	->addRow(_('Problem'),
+	->addRow(cr_t('Problem'),
 		(new CTextBox('problem_name', $schedule['problem_name'], false, 255))
 			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
-			->setAttribute('placeholder', _('part of the problem name'))
+			->setAttribute('placeholder', cr_t('part of the problem name'))
 	)
-	->addRow(_('Acknowledgement status'),
+	->addRow(cr_t('Acknowledgement status'),
 		(new CRadioButtonList('acknowledged', $schedule['acknowledged']))
-			->addValue(_('All'), ReportBuilder::ACK_ALL)
-			->addValue(_('Unacknowledged'), ReportBuilder::ACK_NO)
-			->addValue(_('Acknowledged'), ReportBuilder::ACK_YES)
+			->addValue(cr_t('All'), ReportBuilder::ACK_ALL)
+			->addValue(cr_t('Unacknowledged'), ReportBuilder::ACK_NO)
+			->addValue(cr_t('Acknowledged'), ReportBuilder::ACK_YES)
 			->setModern(true)
 	)
-	->addRow(_('Problem list'), [
+	->addRow(cr_t('Problem list'), [
 		(new CRadioButtonList('problem_list', $schedule['problem_list']))
-			->addValue(_('All open problems'), ReportBuilder::LIST_FULL)
-			->addValue(_('Unresolved summary only'), ReportBuilder::LIST_SUMMARY)
+			->addValue(cr_t('All open problems'), ReportBuilder::LIST_FULL)
+			->addValue(cr_t('Unresolved summary only'), ReportBuilder::LIST_SUMMARY)
 			->setModern(true),
-		(new CDiv(_('Unresolved summary: one line per problem with how long it is open, whether it was open the whole period, how many alerts were sent and the last alert, instead of every problem. Needs period analytics.')))
+		(new CDiv(cr_t('Unresolved summary: one line per problem with how long it is open, whether it was open the whole period, how many alerts were sent and the last alert, instead of every problem. Needs period analytics.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
-	->addRow(_('Period analytics'), [
+	->addRow(cr_t('Period analytics'), [
 		(new CRadioButtonList('analytics', $schedule['analytics']))
-			->addValue(_('Auto'), PeriodAnalytics::PERIOD_AUTO)
-			->addValue(_('Off'), PeriodAnalytics::PERIOD_NONE)
-			->addValue(_('24 hours'), PeriodAnalytics::PERIOD_24H)
-			->addValue(_('7 days'), PeriodAnalytics::PERIOD_7D)
-			->addValue(_('30 days'), PeriodAnalytics::PERIOD_30D)
+			->addValue(cr_t('Auto'), PeriodAnalytics::PERIOD_AUTO)
+			->addValue(cr_t('Off'), PeriodAnalytics::PERIOD_NONE)
+			->addValue(cr_t('24 hours'), PeriodAnalytics::PERIOD_24H)
+			->addValue(cr_t('7 days'), PeriodAnalytics::PERIOD_7D)
+			->addValue(cr_t('30 days'), PeriodAnalytics::PERIOD_30D)
 			->setModern(true),
-		(new CDiv(_('New, resolved and acknowledged problems of the period compared with the previous period, MTTR, MTTA, problems per day, recurring problems. Auto: 24 hours for daily, 7 days for weekly schedules.')))
+		(new CDiv(cr_t('New, resolved and acknowledged problems of the period compared with the previous period, MTTR, MTTA, problems per day, recurring problems. Auto: 24 hours for daily, 7 days for weekly schedules.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
-	->addRow(_('Changes analysis'), [
+	->addRow(cr_t('Changes analysis'), [
 		(new CCheckBox('include_changes'))
 			->setChecked($schedule['include_changes'] == 1)
-			->setLabel(_('Compare with the previous period')),
-		(new CDiv(_('Adds the blocks of the "Changes" tab to HTML/PDF reports (by host group: previous -> current, growth and decline, new and disappeared problems, MTTR by severity, heatmap, noisy triggers, time in problem) and a few lines to the short summary. Period: the period analytics period, or the schedule period if analytics is off.')))
+			->setLabel(cr_t('Compare with the previous period')),
+		(new CDiv(cr_t('Adds the blocks of the "Changes" tab to HTML/PDF reports (by host group: previous -> current, growth and decline, new and disappeared problems, MTTR by severity, heatmap, noisy triggers, time in problem) and a few lines to the short summary. Period: the period analytics period, or the schedule period if analytics is off.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
-	->addRow(new CLabel(_('Sort by'), 'label-sortfield'), [
+	->addRow(new CLabel(cr_t('Sort by'), 'label-sortfield'), [
 		(new CSelect('sortfield'))
 			->setFocusableElementId('label-sortfield')
 			->addOptions(CSelect::createOptionsFromArray([
-				ReportBuilder::SORT_SEVERITY => _('Severity'),
-				ReportBuilder::SORT_TIME => _('Time'),
-				ReportBuilder::SORT_DURATION => _('Duration'),
-				ReportBuilder::SORT_HOST => _('Host'),
-				ReportBuilder::SORT_PROBLEM => _('Problem'),
-				ReportBuilder::SORT_ACK => _('Ack')
+				ReportBuilder::SORT_SEVERITY => cr_t('Severity'),
+				ReportBuilder::SORT_TIME => cr_t('Time'),
+				ReportBuilder::SORT_DURATION => cr_t('Duration'),
+				ReportBuilder::SORT_HOST => cr_t('Host'),
+				ReportBuilder::SORT_PROBLEM => cr_t('Problem'),
+				ReportBuilder::SORT_ACK => cr_t('Ack')
 			]))
 			->setValue($schedule['sortfield']),
 		(new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN),
 		(new CRadioButtonList('sortorder', $schedule['sortorder']))
-			->addValue(_('Descending'), ReportBuilder::SORT_DESC)
-			->addValue(_('Ascending'), ReportBuilder::SORT_ASC)
+			->addValue(cr_t('Descending'), ReportBuilder::SORT_DESC)
+			->addValue(cr_t('Ascending'), ReportBuilder::SORT_ASC)
 			->setModern(true)
 	])
 
 	// Schedule.
-	->addRow(new CTag('h4', true, _('Schedule')))
-	->addRow(_('Frequency'),
+	->addRow(new CTag('h4', true, cr_t('Schedule')))
+	->addRow(cr_t('Frequency'),
 		(new CRadioButtonList('frequency', $schedule['frequency']))
-			->addValue(_('Daily'), ScheduleHelper::FREQUENCY_DAILY)
-			->addValue(_('Weekly'), ScheduleHelper::FREQUENCY_WEEKLY)
+			->addValue(cr_t('Daily'), ScheduleHelper::FREQUENCY_DAILY)
+			->addValue(cr_t('Weekly'), ScheduleHelper::FREQUENCY_WEEKLY)
 			->setModern(true)
 	)
-	->addRow(new CLabel(_('Day of week'), 'label-weekday'),
+	->addRow(new CLabel(cr_t('Day of week'), 'label-weekday'),
 		(new CSelect('weekday'))
 			->setFocusableElementId('label-weekday')
 			->addOptions(CSelect::createOptionsFromArray($weekdays))
 			->setValue($schedule['weekday']),
 		'cr-weekday-row'
 	)
-	->addRow((new CLabel(_('Time'), 'time'))->setAsteriskMark(), [
+	->addRow((new CLabel(cr_t('Time'), 'time'))->setAsteriskMark(), [
 		(new CTextBox('time', $schedule['time'], false, 5))
 			->setWidth(ZBX_TEXTAREA_TINY_WIDTH)
 			->setAttribute('placeholder', 'hh:mm')
 			->setAriaRequired(),
-		(new CSpan(_s('timezone: %1$s', $data['timezone'])))
+		(new CSpan(cr_s('timezone: %1$s', $data['timezone'])))
 			->addClass($data['timezone_problem'] === null ? ZBX_STYLE_GREY : ZBX_STYLE_RED)
 			->addStyle('margin-left: 10px;'),
 		$data['timezone_problem'] === null
 			? null
-			: (new CSpan(_('(set "timezone" in conf/config.php)')))->addClass(ZBX_STYLE_RED)->addStyle('margin-left: 5px;')
+			: (new CSpan(cr_t('(set "timezone" in conf/config.php)')))->addClass(ZBX_STYLE_RED)->addStyle('margin-left: 5px;')
 	])
 
 	// Delivery.
-	->addRow(new CTag('h4', true, _('Delivery')))
-	->addRow((new CLabel(_('Media type'), 'label-mediatypeid'))->setAsteriskMark(), $media_type_select)
-	->addRow(new CLabel(_('Users'), 'userids__ms'),
+	->addRow(new CTag('h4', true, cr_t('Delivery')))
+	->addRow((new CLabel(cr_t('Media type'), 'label-mediatypeid'))->setAsteriskMark(), $media_type_select)
+	->addRow(new CLabel(cr_t('Users'), 'userids__ms'),
 		(new CMultiSelect([
 			'name' => 'userids[]',
 			'object_name' => 'users',
@@ -214,7 +214,7 @@ $form_list = (new CFormList('schedule_form_list'))
 			]
 		]))->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 	)
-	->addRow(new CLabel(_('User groups'), 'usrgrpids__ms'),
+	->addRow(new CLabel(cr_t('User groups'), 'usrgrpids__ms'),
 		(new CMultiSelect([
 			'name' => 'usrgrpids[]',
 			'object_name' => 'usersGroups',
@@ -230,46 +230,46 @@ $form_list = (new CFormList('schedule_form_list'))
 			]
 		]))->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 	)
-	->addRow(new CLabel(_('Additional recipients'), 'extra_sendto'), [
+	->addRow(new CLabel(cr_t('Additional recipients'), 'extra_sendto'), [
 		(new CTextArea('extra_sendto', implode("\n", $schedule['extra_sendto'])))
 			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 			->setRows(3)
-			->setAttribute('placeholder', _('One address per line: e-mail, Telegram chat ID, etc.')),
-		(new CDiv(_('Users receive the report at the active "Send to" addresses of the selected media type.')))
+			->setAttribute('placeholder', cr_t('One address per line: e-mail, Telegram chat ID, etc.')),
+		(new CDiv(cr_t('Users receive the report at the active "Send to" addresses of the selected media type.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
-	->addRow(_('Report format'),
+	->addRow(cr_t('Report format'),
 		(new CRadioButtonList('format', $schedule['format']))
-			->addValue(_('Short summary'), ReportRenderer::FORMAT_SUMMARY)
-			->addValue(_('Detailed HTML'), ReportRenderer::FORMAT_HTML)
-			->addValue(_('CSV'), ReportRenderer::FORMAT_CSV)
-			->addValue(_('PDF'), ReportRenderer::FORMAT_PDF)
+			->addValue(cr_t('Short summary'), ReportRenderer::FORMAT_SUMMARY)
+			->addValue(cr_t('Detailed HTML'), ReportRenderer::FORMAT_HTML)
+			->addValue(cr_t('CSV'), ReportRenderer::FORMAT_CSV)
+			->addValue(cr_t('PDF'), ReportRenderer::FORMAT_PDF)
 			->setModern(true)
 	)
-	->addRow(_('Send separately'),
+	->addRow(cr_t('Send separately'),
 		(new CRadioButtonList('split', $schedule['split']))
-			->addValue(_('One report'), ReportSplitter::SPLIT_NONE)
-			->addValue(_('Per host group'), ReportSplitter::SPLIT_GROUP)
-			->addValue(_('Per host'), ReportSplitter::SPLIT_HOST)
+			->addValue(cr_t('One report'), ReportSplitter::SPLIT_NONE)
+			->addValue(cr_t('Per host group'), ReportSplitter::SPLIT_GROUP)
+			->addValue(cr_t('Per host'), ReportSplitter::SPLIT_HOST)
 			->setModern(true)
 	)
 	->addRow('',
 		(new CDiv([
-			_('Per host group: a separate report for every selected host group (or for every group with problems if no group is selected).'),
+			cr_t('Per host group: a separate report for every selected host group (or for every group with problems if no group is selected).'),
 			BR(),
-			_('Per host: a separate report for every selected host (or for every host with problems if no host is selected).')
+			cr_t('Per host: a separate report for every selected host (or for every host with problems if no host is selected).')
 		]))->addClass(ZBX_STYLE_GREY)
 	)
-	->addRow(_('Do not send empty reports'), (new CCheckBox('skip_empty'))->setChecked($schedule['skip_empty'] == 1))
+	->addRow(cr_t('Do not send empty reports'), (new CCheckBox('skip_empty'))->setChecked($schedule['skip_empty'] == 1))
 	->addRow('',
 		(new CDiv([
-			_('Short summary: text with HTML markup, limited to the Telegram message size (4096 characters).'),
+			cr_t('Short summary: text with HTML markup, limited to the Telegram message size (4096 characters).'),
 			BR(),
-			_('Detailed HTML: full table in the e-mail body; for Telegram it is sent as an .html document.'),
+			cr_t('Detailed HTML: full table in the e-mail body; for Telegram it is sent as an .html document.'),
 			BR(),
-			_('CSV: short summary plus a CSV attachment (document for Telegram).'),
+			cr_t('CSV: short summary plus a CSV attachment (document for Telegram).'),
 			BR(),
-			_('PDF: short summary plus the detailed report as a PDF attachment (document for Telegram). Needs Chrome/Chromium or wkhtmltopdf on the server; without them HTML is attached.')
+			cr_t('PDF: short summary plus the detailed report as a PDF attachment (document for Telegram). Needs Chrome/Chromium or wkhtmltopdf on the server; without them HTML is attached.')
 		]))->addClass(ZBX_STYLE_GREY)
 	);
 
@@ -285,7 +285,7 @@ $make_rules_table = static function (string $field, string $key) use ($schedule,
 	$table = (new CTable())
 		->setId('cr-'.$field)
 		->addClass('cr-rules')
-		->setHeader([$is_group ? _('Host groups') : _('Hosts'), _('Recipients'), _('Action')]);
+		->setHeader([$is_group ? cr_t('Host groups') : cr_t('Hosts'), cr_t('Recipients'), cr_t('Action')]);
 
 	foreach ($schedule[$field] as $index => $rule) {
 		$prefix = $field.'['.$index.']';
@@ -366,10 +366,10 @@ $make_rules_table = static function (string $field, string $key) use ($schedule,
 				(new CTextArea($prefix.'[extra_sendto]', implode("\n", $rule['extra_sendto'])))
 					->setWidth(ZBX_TEXTAREA_MEDIUM_WIDTH)
 					->setRows(2)
-					->setAttribute('placeholder', _('additional addresses, one per line'))
+					->setAttribute('placeholder', cr_t('additional addresses, one per line'))
 			],
 			(new CCol(
-				(new CSimpleButton(_('Remove')))
+				(new CSimpleButton(cr_t('Remove')))
 					->addClass(ZBX_STYLE_BTN_LINK)
 					->addClass('js-cr-rule-remove')
 					->setAttribute('data-list', $field)
@@ -380,7 +380,7 @@ $make_rules_table = static function (string $field, string $key) use ($schedule,
 
 	$table->addRow(
 		(new CCol(
-			(new CSimpleButton(_('Add')))
+			(new CSimpleButton(cr_t('Add')))
 				->addClass(ZBX_STYLE_BTN_LINK)
 				->addClass('js-cr-rule-add')
 				->setAttribute('data-list', $field)
@@ -391,24 +391,24 @@ $make_rules_table = static function (string $field, string $key) use ($schedule,
 };
 
 $form_list
-	->addRow(_('Recipients per host group'), [
+	->addRow(cr_t('Recipients per host group'), [
 		(new CDiv($make_rules_table('group_recipients', 'groupids')))
 			->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
 			->addStyle('min-width: '.ZBX_TEXTAREA_BIG_WIDTH.'px;'),
-		(new CDiv(_('The report of a host group is sent to the recipients of every row that lists this group. The "Users", "User groups" and "Additional recipients" above are common recipients.')))
+		(new CDiv(cr_t('The report of a host group is sent to the recipients of every row that lists this group. The "Users", "User groups" and "Additional recipients" above are common recipients.')))
 			->addClass(ZBX_STYLE_GREY)
 	], 'cr-group-recipients-row')
-	->addRow(_('Recipients per host'), [
+	->addRow(cr_t('Recipients per host'), [
 		(new CDiv($make_rules_table('host_recipients', 'hostids')))
 			->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
 			->addStyle('min-width: '.ZBX_TEXTAREA_BIG_WIDTH.'px;'),
-		(new CDiv(_('The report of a host is sent to the recipients of every row that lists this host. The "Users", "User groups" and "Additional recipients" above are common recipients.')))
+		(new CDiv(cr_t('The report of a host is sent to the recipients of every row that lists this host. The "Users", "User groups" and "Additional recipients" above are common recipients.')))
 			->addClass(ZBX_STYLE_GREY)
 	], 'cr-host-recipients-row')
-	->addRow(_('Common recipients receive'),
+	->addRow(cr_t('Common recipients receive'),
 		(new CRadioButtonList('common_recipients', $schedule['common_recipients']))
-			->addValue(_('All reports'), ScheduleHelper::COMMON_ALL)
-			->addValue(_('Only reports without own recipients'), ScheduleHelper::COMMON_FALLBACK)
+			->addValue(cr_t('All reports'), ScheduleHelper::COMMON_ALL)
+			->addValue(cr_t('Only reports without own recipients'), ScheduleHelper::COMMON_FALLBACK)
 			->setModern(true),
 		'cr-common-recipients-row'
 	);
@@ -416,16 +416,16 @@ $form_list
 $is_new = $schedule['scheduleid'] === '';
 
 $tab_view = (new CTabView())
-	->addTab('schedule_tab', _('Report schedule'), $form_list)
+	->addTab('schedule_tab', cr_t('Report schedule'), $form_list)
 	->setFooter(makeFormFooter(
-		new CSubmit('update', $is_new ? _('Add') : _('Update')),
-		[(new CRedirectButton(_('Cancel'), $list_url))->setId('cancel')]
+		new CSubmit('update', $is_new ? cr_t('Add') : cr_t('Update')),
+		[(new CRedirectButton(cr_t('Cancel'), $list_url))->setId('cancel')]
 	));
 
 $form->addItem($tab_view);
 
 (new CHtmlPage())
-	->setTitle($is_new ? _('New report schedule') : _('Report schedule'))
+	->setTitle($is_new ? cr_t('New report schedule') : cr_t('Report schedule'))
 	->addItem(FrontendHelper::makeTabs('customreports.schedule.list', true))
 	->addItem($form)
 	->show();

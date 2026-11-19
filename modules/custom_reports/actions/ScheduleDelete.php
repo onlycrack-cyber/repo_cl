@@ -36,14 +36,14 @@ class ScheduleDelete extends CController {
 			$deleted = (new ScheduleStorage(ModuleConfig::get()['data_dir']))->delete($this->getInput('scheduleid'));
 
 			if ($deleted) {
-				CMessageHelper::setSuccessTitle(_('Schedule deleted'));
+				CMessageHelper::setSuccessTitle(cr_t('Schedule deleted'));
 			}
 			else {
-				CMessageHelper::setErrorTitle(_('No permissions to referred object or it does not exist!'));
+				CMessageHelper::setErrorTitle(cr_t('No permissions to referred object or it does not exist!'));
 			}
 		}
 		catch (Exception $e) {
-			CMessageHelper::setErrorTitle(_('Cannot delete schedule'));
+			CMessageHelper::setErrorTitle(cr_t('Cannot delete schedule'));
 			CMessageHelper::addError($e->getMessage());
 		}
 
