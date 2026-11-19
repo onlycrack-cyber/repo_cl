@@ -16,6 +16,7 @@ use CMessageHelper;
 use CUrl;
 use Exception;
 use Modules\CustomReports\Lib\Dispatcher;
+use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\PeriodAnalytics;
@@ -179,7 +180,7 @@ class ScheduleEdit extends CController {
 			'hosts' => $this->getMultiselectData('host', $schedule['hostids']),
 			'users' => $this->getMultiselectData('user', $schedule['userids']),
 			'usrgrps' => $this->getMultiselectData('usergroup', $schedule['usrgrpids']),
-			'media_types' => $this->getMediaTypes(),
+			'media_types' => FrontendHelper::getSupportedMediaTypes(),
 			'scripts' => ScriptReport::listScripts(ModuleConfig::get()),
 			'scripts_path' => (string) ModuleConfig::get()['external_scripts_path'],
 			'timezone' => ModuleConfig::timezone(),
@@ -222,29 +223,5 @@ class ScheduleEdit extends CController {
 		}
 
 		return [];
-	}
-
-	/**
-	 * Active media types that the module can deliver through.
-	 */
-	private function getMediaTypes(): array {
-		$media_types = API::MediaType()->get([
-			'output' => 'extend',
-			'filter' => ['status' => MEDIA_TYPE_STATUS_ACTIVE]
-		]);
-
-		$result = [];
-
-		foreach ($media_types as $media_type) {
-			$channel = Dispatcher::getChannel($media_type);
-
-			if ($channel !== Dispatcher::CHANNEL_UNSUPPORTED) {
-				$result[$media_type['mediatypeid']] = $media_type['name'].' ('.$channel.')';
-			}
-		}
-
-		natcasesort($result);
-
-		return $result;
 	}
 }

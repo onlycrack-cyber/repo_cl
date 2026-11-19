@@ -172,6 +172,30 @@ class FrontendHelper {
 	/**
 	 * Active media of the current user: mediatypeid => sendto[].
 	 */
+	/**
+	 * Active media types that the module can deliver through: [mediatypeid => "name (channel)"].
+	 */
+	public static function getSupportedMediaTypes(): array {
+		$media_types = \API::MediaType()->get([
+			'output' => 'extend',
+			'filter' => ['status' => MEDIA_TYPE_STATUS_ACTIVE]
+		]);
+
+		$result = [];
+
+		foreach ($media_types as $media_type) {
+			$channel = Dispatcher::getChannel($media_type);
+
+			if ($channel !== Dispatcher::CHANNEL_UNSUPPORTED) {
+				$result[$media_type['mediatypeid']] = $media_type['name'].' ('.$channel.')';
+			}
+		}
+
+		natcasesort($result);
+
+		return $result;
+	}
+
 	public static function getCurrentUserMedia(): array {
 		$result = [];
 		$medias = DBselect(
@@ -218,7 +242,7 @@ class FrontendHelper {
 				return cr_t('Scheduled');
 
 			case ScheduleHelper::RUN_TEST:
-				return cr_t('Test to me');
+				return cr_t('Test');
 
 			default:
 				return cr_t('Send now');

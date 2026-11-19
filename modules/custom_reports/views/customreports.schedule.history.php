@@ -114,7 +114,7 @@ foreach ($data['history'] as $index => $run) {
 	)
 	->addItem(FrontendHelper::makeTabs('customreports.schedule.list', true))
 	->addItem($summary)
-	->addItem((new CDiv(cr_s('Last %1$s runs are kept: scheduled (cron), "Send now" and "Test to me".',
+	->addItem((new CDiv(cr_s('Last %1$s runs are kept: scheduled (cron), "Send now" and "Test".',
 		ScheduleHelper::HISTORY_RUNS
 	)))->addClass('cr-note'))
 	->addItem($table)

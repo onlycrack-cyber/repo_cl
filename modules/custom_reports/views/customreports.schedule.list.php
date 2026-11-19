@@ -35,7 +35,7 @@ $weekdays = [1 => cr_t('Monday'), 2 => cr_t('Tuesday'), 3 => cr_t('Wednesday'), 
 // Module controllers check the CSRF token against the full action name.
 $csrf_tokens = [];
 
-foreach (['customreports.schedule.run', 'customreports.schedule.test', 'customreports.schedule.delete',
+foreach (['customreports.schedule.run', 'customreports.schedule.toggle', 'customreports.schedule.delete',
 		'customreports.cron.update'] as $action) {
 	$csrf_tokens[$action] = CCsrfTokenHelper::get($action);
 }
@@ -101,15 +101,33 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		? zbx_date2str(DATE_TIME_FORMAT, ScheduleHelper::nextOccurrence($schedule, $now, $data['timezone']))
 		: '-';
 
-	$test_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
+	// "Test": a form to choose the recipients (me, users, any address).
+	$test_link = (new CLink(cr_t('Test...'), (new CUrl('zabbix.php'))
+		->setArgument('action', 'customreports.schedule.testform')
+		->setArgument('scheduleid', $scheduleid)
+		->getUrl()
+	))
+		->addClass('cr-action-link')
+		->setTitle(cr_t('Send a test report to me, to selected users or to any address'));
+
+	// Status: one click enables / disables the schedule (disabling asks first).
+	$status_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
 		->addClass('cr-inline-form')
-		->addVar('action', 'customreports.schedule.test')
+		->addVar('action', 'customreports.schedule.toggle')
 		->addVar('scheduleid', $scheduleid)
-		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.schedule.test'])
-		->addItem((new CSubmit('test', cr_t('Test to me')))
+		->addVar('enabled', $schedule['enabled'] ? 0 : 1)
+		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.schedule.toggle'])
+		->addItem((new CSubmit('toggle', $schedule['enabled'] ? cr_t('Enabled') : cr_t('Disabled')))
 			->addClass(ZBX_STYLE_BTN_LINK)
-			->setTitle(cr_t('Send this report with all its settings only to your own media of this media type'))
+			->addClass($schedule['enabled'] ? ZBX_STYLE_GREEN : ZBX_STYLE_RED)
+			->setTitle($schedule['enabled'] ? cr_t('Click to disable') : cr_t('Click to enable'))
 		);
+
+	if ($schedule['enabled']) {
+		$status_form->setAttribute('data-confirm', cr_s('Disable schedule "%1$s"? Reports will not be sent until it is enabled again.',
+			$schedule['name']
+		));
+	}
 
 	$run_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
 		->addClass('cr-inline-form')
@@ -152,13 +170,11 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 			? '-'
 			: $split_labels[$schedule['split'] ?? ReportSplitter::SPLIT_NONE],
 		implode(', ', $recipients),
-		$schedule['enabled']
-			? (new CSpan(cr_t('Enabled')))->addClass(ZBX_STYLE_GREEN)
-			: (new CSpan(cr_t('Disabled')))->addClass(ZBX_STYLE_RED),
+		$status_form,
 		$last_run > 0 ? zbx_date2str(DATE_TIME_FORMAT_SECONDS, $last_run) : cr_t('Never'),
 		$result,
 		(new CCol($next_run))->addClass(ZBX_STYLE_NOWRAP),
-		(new CCol([$run_form, $test_form, (new CLink(cr_t('History'), $history_url))->addClass('cr-action-link'),
+		(new CCol([$run_form, $test_link, (new CLink(cr_t('History'), $history_url))->addClass('cr-action-link'),
 			$delete_form
 		]))->addClass('cr-actions')
 	]);

@@ -15,6 +15,8 @@ use CWebUser;
 use Exception;
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\ModuleConfig;
+use Modules\CustomReports\Lib\RecipientResolver;
+use Modules\CustomReports\Lib\ReportService;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
 
@@ -26,7 +28,14 @@ use Modules\CustomReports\Lib\ScheduleStorage;
 class ScheduleRun extends CController {
 
 	protected function checkInput(): bool {
-		$ret = $this->validateInput(['scheduleid' => 'required|string|not_empty']);
+		$ret = $this->validateInput([
+			'scheduleid' =>			'required|string|not_empty',
+			// "Test": to me / to selected users / to addresses through any media type.
+			'test_target' =>		'in me,users,address',
+			'test_userids' =>		'array_id',
+			'test_mediatypeid' =>	'id',
+			'test_sendto' =>		'string'
+		]);
 
 		if (!$ret) {
 			$this->setResponse(new CControllerResponseFatal());
@@ -54,6 +63,20 @@ class ScheduleRun extends CController {
 		$started = time();
 		$schedule = null;
 
+		// A test form filled in wrong is not a delivery: back to the form, nothing in the history.
+		$form_error = $test ? $this->testFormError() : null;
+
+		if ($form_error !== null) {
+			CMessageHelper::setErrorTitle(cr_t('Cannot send report'));
+			CMessageHelper::addError($form_error);
+			$this->setResponse(new CControllerResponseRedirect((new CUrl('zabbix.php'))
+				->setArgument('action', 'customreports.schedule.testform')
+				->setArgument('scheduleid', $this->getInput('scheduleid'))
+			));
+
+			return;
+		}
+
 		try {
 			$schedule = $storage->get($this->getInput('scheduleid'));
 
@@ -62,9 +85,7 @@ class ScheduleRun extends CController {
 			}
 
 			$service = FrontendHelper::createService();
-			$result = $test
-				? $service->testSchedule($schedule, FrontendHelper::getCurrentUserMedia())
-				: $service->runSchedule($schedule);
+			$result = $test ? $this->runTest($service, $schedule) : $service->runSchedule($schedule);
 			$run = ScheduleHelper::makeRun($trigger, $started, $result, null, $user);
 		}
 		catch (Exception $e) {
@@ -130,6 +151,51 @@ class ScheduleRun extends CController {
 		}
 
 		$this->redirect();
+	}
+
+	private function testFormError(): ?string {
+		switch ($this->getInput('test_target', 'me')) {
+			case 'users':
+				return $this->getInput('test_userids', []) ? null : cr_t('Select at least one user.');
+
+			case 'address':
+				return $this->getInput('test_mediatypeid', '0') !== '0'
+						&& RecipientResolver::normalizeSendto(preg_split('/[\r\n,;]+/', $this->getInput('test_sendto', '')))
+					? null
+					: cr_t('Select a media type and enter at least one address.');
+
+			default:
+				return null;
+		}
+	}
+
+	/**
+	 * Test delivery to the recipients chosen in the test form (customreports.schedule.testform).
+	 */
+	private function runTest(ReportService $service, array $schedule): array {
+		switch ($this->getInput('test_target', 'me')) {
+			case 'users':
+				$userids = $this->getInput('test_userids', []);
+
+				if (!$userids) {
+					throw new Exception(cr_t('Select at least one user.'));
+				}
+
+				return $service->testScheduleTargets($schedule, $service->targetsForUsers($schedule, $userids));
+
+			case 'address':
+				$mediatypeid = (string) $this->getInput('test_mediatypeid', '0');
+				$sendto = RecipientResolver::normalizeSendto(preg_split('/[\r\n,;]+/', $this->getInput('test_sendto', '')));
+
+				if ($mediatypeid === '0' || !$sendto) {
+					throw new Exception(cr_t('Select a media type and enter at least one address.'));
+				}
+
+				return $service->testScheduleTargets($schedule, [$mediatypeid => $sendto]);
+
+			default:
+				return $service->testSchedule($schedule, FrontendHelper::getCurrentUserMedia());
+		}
 	}
 
 	private function redirect(): void {

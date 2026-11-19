@@ -33,6 +33,7 @@ class Module extends CModule {
 						'customreports.schedule.list',
 						'customreports.schedule.edit',
 						'customreports.schedule.history',
+						'customreports.schedule.testform',
 						'customreports.script'
 					])
 			);

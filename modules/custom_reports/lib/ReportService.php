@@ -242,6 +242,36 @@ class ReportService {
 	}
 
 	/**
+	 * Addresses of users the way the schedule sends: its media type, or their own media ("own media of every user").
+	 */
+	public function targetsForUsers(array $schedule, array $userids): array {
+		return $this->resolveTargets(new RecipientResolver($this->api),
+			['userids' => $userids, 'usrgrpids' => [], 'extra_sendto' => []], $schedule
+		);
+	}
+
+	/**
+	 * Test delivery of a schedule to explicit addresses ([mediatypeid => string[]]) chosen in the test form.
+	 *
+	 * @throws RuntimeException
+	 */
+	public function testScheduleTargets(array $schedule, array $targets): array {
+		$targets = self::mergeTargets($targets, []);
+
+		if (!$targets) {
+			throw new RuntimeException(I18n::t('No recipients: selected users have no active media.'));
+		}
+
+		$report = $this->buildScheduleReport($schedule);
+
+		return $this->deliver(static function () use ($targets): array {
+			return $targets;
+		}, $report, $schedule['format'], '['.I18n::t('Test').'] '.$schedule['name'], $schedule['split'],
+			(bool) $schedule['skip_empty']
+		);
+	}
+
+	/**
 	 * Sends an already built report to explicit addresses.
 	 */
 	public function sendReport(array $report, string $mediatypeid, array $sendto, string $format, string $title,

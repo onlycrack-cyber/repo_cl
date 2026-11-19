@@ -76,6 +76,16 @@
 			setRowVisible('cr-split-hint-row', !script);
 		}
 
+		// "Test" form: the fields of the chosen recipients.
+		if (checkedValue('test_target') !== null) {
+			const target = checkedValue('test_target');
+
+			setRowVisible('cr-test-me', target === 'me');
+			setRowVisible('cr-test-users', target === 'users');
+			setRowVisible('cr-test-address-type', target === 'address');
+			setRowVisible('cr-test-address', target === 'address');
+		}
+
 		// "Own media of every user": the media type is optional (only for the additional recipients).
 		if (checkedValue('media_mode') !== null) {
 			const label = document.querySelector('label[for="label-mediatypeid"]');
@@ -95,7 +105,7 @@
 	}
 
 	document.addEventListener('change', function(e) {
-		if (['frequency', 'split', 'filter_period', 'source', 'media_mode'].includes(e.target.name)) {
+		if (['frequency', 'split', 'filter_period', 'source', 'media_mode', 'test_target'].includes(e.target.name)) {
 			toggleScheduleRows();
 		}
 	});
