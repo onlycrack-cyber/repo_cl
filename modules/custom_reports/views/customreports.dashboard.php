@@ -10,6 +10,7 @@
  */
 
 use Modules\CustomReports\Lib\FrontendHelper;
+use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\OpenStructure;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\PeriodAnalytics;
@@ -421,7 +422,7 @@ if ($analytics !== null) {
 }
 
 // Structure of open problems: age, host groups, not acknowledged, alerts.
-$structure = OpenStructure::compute($report);
+$structure = OpenStructure::compute($report, ModuleConfig::get()['response_targets']);
 $severities = array_reverse(FrontendHelper::getSeverities());
 $severity_names = array_column($severities, 'label', 'value');
 $structure_panel = static function (string $title, $body, string $hint = '') {
@@ -491,39 +492,72 @@ foreach ($structure['groups'] as $group) {
 	]);
 }
 
-// 3. Not acknowledged.
-$unack_list = (new CList())->addClass('cr-severity-list');
+// 3. Response and resolution times: open problems against the target times of their severity.
+$targets = $structure['targets'];
+$format_target = static function (int $seconds): string {
+	return $seconds > 0 ? ReportRenderer::formatDuration($seconds) : '-';
+};
 
-foreach ($severities as $severity) {
-	if ($structure['unack_by_severity'][$severity['value']] > 0) {
-		$unack_list->addItem((new CSpan($severity['label'].': '.$structure['unack_by_severity'][$severity['value']]))
-			->addClass(CSeverityHelper::getStyle((int) $severity['value']))
-		);
+$targets_table = (new CTableInfo())
+	->addClass('cr-compact-table')
+	->setHeader([cr_t('Severity'), cr_t('Target: reaction / resolution'), cr_t('Open'), cr_t('No reaction'),
+		cr_t('Not resolved'), cr_t('In time')
+	])
+	->setNoDataMessage(cr_t('No target times are configured.'));
+
+foreach ($targets['rows'] as $severity => $row) {
+	if ($row['open'] == 0) {
+		continue;
 	}
-}
 
-$oldest_table = (new CTableInfo())
-	->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Problem'), cr_t('Duration')])
-	->setNoDataMessage(cr_t('No High or Disaster problems without acknowledgement.'));
-
-foreach ($structure['oldest_unacknowledged'] as $problem) {
-	$oldest_table->addRow([CSeverityHelper::makeSeverityCell($problem['severity']), ReportRenderer::hostNames($problem),
-		$problem['name'], (new CCol(ReportRenderer::formatDuration($problem['age'])))->addClass(ZBX_STYLE_NOWRAP)
+	$share = round($row['in_time'] * 100 / $row['open']);
+	$targets_table->addRow([
+		CSeverityHelper::makeSeverityCell((int) $severity),
+		(new CCol($format_target($row['ack']).' / '.$format_target($row['resolve'])))->addClass(ZBX_STYLE_NOWRAP),
+		$row['open'],
+		$row['ack_overdue'] > 0 ? (new CSpan($row['ack_overdue']))->addClass(ZBX_STYLE_RED) : '0',
+		$row['resolve_overdue'] > 0 ? (new CSpan($row['resolve_overdue']))->addClass(ZBX_STYLE_RED) : '0',
+		(new CSpan($share.'%'))->addClass($share >= 90 ? ZBX_STYLE_GREEN : ($share >= 60 ? ZBX_STYLE_ORANGE : ZBX_STYLE_RED))
 	]);
 }
 
-$unack_body = [
+$breach_labels = [
+	'ack' => cr_t('no reaction'),
+	'resolve' => cr_t('not resolved'),
+	'both' => cr_t('no reaction, not resolved')
+];
+$overdue_table = (new CTableInfo())
+	->addClass('cr-compact-table')
+	->setHeader([cr_t('Severity'), cr_t('Problem'), cr_t('Overdue')])
+	->setNoDataMessage(cr_t('All open problems are within the target times.'));
+
+foreach ($targets['top'] as $problem) {
+	$overdue_table->addRow([
+		CSeverityHelper::makeSeverityCell($problem['severity']),
+		[
+			(new CSpan(ReportRenderer::hostNames($problem)))->addClass('cr-strong'),
+			': ',
+			$problem['name'],
+			(new CDiv(cr_s('open %1$s', ReportRenderer::formatDuration($problem['age']))))->addClass(ZBX_STYLE_GREY)
+		],
+		(new CCol([
+			(new CSpan('+'.ReportRenderer::formatDuration($problem['over'])))->addClass(ZBX_STYLE_RED),
+			(new CDiv($breach_labels[$problem['breach']]))->addClass(ZBX_STYLE_GREY)
+		]))->addClass(ZBX_STYLE_NOWRAP)
+	]);
+}
+
+$targets_body = [
 	(new CDiv([
-		(new CSpan($structure['unacknowledged']))->addClass('cr-big-number'),
+		(new CSpan($targets['overdue']))->addClass('cr-big-number'),
 		' ',
-		cr_s('of %1$s open problems are not acknowledged', $structure['total']),
-		$structure['total'] > 0
-			? ' ('.round($structure['unacknowledged'] * 100 / $structure['total']).'%)'
-			: ''
+		cr_s('of %1$s open problems are beyond the target times', $targets['checked']),
+		$targets['checked'] > 0 ? ' ('.round($targets['overdue'] * 100 / $targets['checked']).'%)' : ''
 	])),
-	$unack_list,
-	(new CDiv(cr_t('The oldest High and Disaster problems without acknowledgement:')))->addClass('cr-note'),
-	$oldest_table
+	$targets_table,
+	(new CDiv(cr_t('Most overdue: higher severity first, then how many times the target is exceeded.')))
+		->addClass('cr-note'),
+	$overdue_table
 ];
 
 // 4. Alerts of the period for the unresolved problems.
@@ -574,7 +608,9 @@ $structure_block = $structure['total'] > 0
 						->addClass('cr-note')
 					: null
 			], cr_t('Host groups with open problems; a problem of hosts in several groups counts in each.')),
-			$structure_panel(cr_t('Not acknowledged'), $unack_body),
+			$structure_panel(cr_t('Response and resolution times'), $targets_body,
+				cr_t('Open problems against the target times of their severity ("response_targets" in conf/config.php): acknowledged in time and resolved in time.')
+			),
 			$alerts_body !== null
 				? $structure_panel(cr_t('Alerts for the open problems'), $alerts_body,
 					cr_t('Alerts of the period analytics sent by Zabbix actions for the problems that are still open.')

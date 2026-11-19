@@ -626,4 +626,20 @@ return [
 	'does not equal' => 'не равно',
 	'exists' => 'существует',
 	'does not exist' => 'не существует',
+
+	// Response and resolution times.
+	'Target: reaction / resolution' => 'Срок: реакция / устранение',
+	'No target times are configured.' => 'Целевые сроки не заданы.',
+	'no reaction' => 'нет реакции',
+	'not resolved' => 'не устранено',
+	'no reaction, not resolved' => 'нет реакции, не устранено',
+	'Overdue' => 'Просрочка',
+	'All open problems are within the target times.' => 'Все открытые проблемы в пределах сроков.',
+	'of %1$s open problems are beyond the target times' => 'из %1$s открытых проблем вышли за сроки',
+	'Response and resolution times' => 'Сроки реакции и устранения',
+	'Open problems against the target times of their severity ("response_targets" in conf/config.php): acknowledged in time and resolved in time.' => 'Открытые проблемы против целевых сроков их важности («response_targets» в conf/config.php): подтверждены ли вовремя и не превышен ли срок устранения.',
+	'No reaction' => 'Нет реакции',
+	'Not resolved' => 'Не устранено',
+	'In time' => 'В срок',
+	'Most overdue: higher severity first, then how many times the target is exceeded.' => 'Самые просроченные: сначала более важные, затем по тому, во сколько раз превышен срок.',
 ];

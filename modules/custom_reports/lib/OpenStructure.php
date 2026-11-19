@@ -16,10 +16,18 @@ class OpenStructure {
 	// Age columns: upper limits in seconds (null - no limit).
 	public const AGES = ['hour' => 3600, 'day' => 86400, 'week' => 604800, 'older' => null];
 
+	// Target times by severity: acknowledgement and resolution (ModuleConfig "response_targets").
+	public const DEFAULT_TARGETS = [
+		Severity::DISASTER => ['ack' => 900, 'resolve' => 4 * 3600],
+		Severity::HIGH => ['ack' => 1800, 'resolve' => 8 * 3600],
+		Severity::AVERAGE => ['ack' => 4 * 3600, 'resolve' => 3 * 86400],
+		Severity::WARNING => ['ack' => 86400, 'resolve' => 7 * 86400]
+	];
+
 	private const TOP_GROUPS = 10;
 	private const TOP_ROWS = 5;
 
-	public static function compute(array $report): array {
+	public static function compute(array $report, ?array $targets = null): array {
 		$problems = $report['problems'];
 
 		// Age x severity.
@@ -65,22 +73,9 @@ class OpenStructure {
 			return [$b['high'], $b['total'], $a['name']] <=> [$a['high'], $a['total'], $b['name']];
 		});
 
-		// Not acknowledged: by severity and the oldest High / Disaster ones.
-		$unacknowledged = array_values(array_filter($problems, static function (array $problem): bool {
+		$unacknowledged = count(array_filter($problems, static function (array $problem): bool {
 			return !$problem['acknowledged'];
 		}));
-		$unack_by_severity = array_fill_keys(array_keys(Severity::NAMES), 0);
-
-		foreach ($unacknowledged as $problem) {
-			$unack_by_severity[$problem['severity']]++;
-		}
-
-		$oldest = array_values(array_filter($unacknowledged, static function (array $problem): bool {
-			return $problem['severity'] >= Severity::HIGH;
-		}));
-		usort($oldest, static function (array $a, array $b): int {
-			return $b['age'] <=> $a['age'];
-		});
 
 		// Alerts of the period for the unresolved problems (period analytics).
 		$alerts = null;
@@ -110,10 +105,88 @@ class OpenStructure {
 			'ages' => $ages,
 			'groups' => array_slice($groups, 0, self::TOP_GROUPS),
 			'groups_total' => count($groups),
-			'unacknowledged' => count($unacknowledged),
-			'unack_by_severity' => $unack_by_severity,
-			'oldest_unacknowledged' => array_slice($oldest, 0, self::TOP_ROWS),
+			'unacknowledged' => $unacknowledged,
+			'targets' => self::targets($problems, $targets ?? self::DEFAULT_TARGETS),
 			'alerts' => $alerts
+		];
+	}
+
+	/**
+	 * Open problems against the target times of their severity: not acknowledged later than "ack", open longer than
+	 * "resolve". The most overdue problems first (by how many times the target is exceeded).
+	 *
+	 * @return array  ['rows' => [severity => ['ack', 'resolve', 'open', 'ack_overdue', 'resolve_overdue', 'in_time']],
+	 *                 'checked' => int, 'overdue' => int, 'top' => list of problem + ['breach', 'over', 'ratio']]
+	 */
+	public static function targets(array $problems, array $targets): array {
+		$rows = [];
+
+		foreach (Severity::descending() as $severity) {
+			$target = $targets[$severity] ?? null;
+
+			if (!is_array($target) || (int) ($target['ack'] ?? 0) <= 0 && (int) ($target['resolve'] ?? 0) <= 0) {
+				continue;
+			}
+
+			$rows[$severity] = ['ack' => max(0, (int) ($target['ack'] ?? 0)),
+				'resolve' => max(0, (int) ($target['resolve'] ?? 0)), 'open' => 0, 'ack_overdue' => 0,
+				'resolve_overdue' => 0, 'in_time' => 0
+			];
+		}
+
+		$top = [];
+
+		foreach ($problems as $problem) {
+			if (!array_key_exists($problem['severity'], $rows)) {
+				continue;
+			}
+
+			$row = &$rows[$problem['severity']];
+			$row['open']++;
+			$breach = null;
+
+			if ($row['resolve'] > 0 && $problem['age'] > $row['resolve']) {
+				$row['resolve_overdue']++;
+				$breach = ['breach' => 'resolve', 'over' => $problem['age'] - $row['resolve'],
+					'ratio' => $problem['age'] / $row['resolve']
+				];
+			}
+
+			if (!$problem['acknowledged'] && $row['ack'] > 0 && $problem['age'] > $row['ack']) {
+				$row['ack_overdue']++;
+				$ratio = $problem['age'] / $row['ack'];
+
+				// Not even acknowledged: the more urgent breach unless the resolution one is bigger.
+				if ($breach === null) {
+					$breach = ['breach' => 'ack', 'over' => $problem['age'] - $row['ack'], 'ratio' => $ratio];
+				}
+				else {
+					$breach['breach'] = 'both';
+				}
+			}
+
+			if ($breach === null) {
+				$row['in_time']++;
+			}
+			else {
+				$top[] = $problem + $breach;
+			}
+
+			unset($row);
+		}
+
+		// Higher severity first, then how many times the target is exceeded.
+		usort($top, static function (array $a, array $b): int {
+			return [$b['severity'], $b['ratio']] <=> [$a['severity'], $a['ratio']];
+		});
+
+		$checked = array_sum(array_column($rows, 'open'));
+
+		return [
+			'rows' => $rows,
+			'checked' => $checked,
+			'overdue' => count($top),
+			'top' => array_slice($top, 0, self::TOP_ROWS)
 		];
 	}
 }

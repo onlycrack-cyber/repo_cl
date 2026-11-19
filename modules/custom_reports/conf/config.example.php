@@ -39,6 +39,16 @@ return [
 	// Events read for period analytics ("Period analytics" section), per period.
 	'analytics_limit' => 10000,
 
+	// Target times by severity in seconds (dashboard panel "Response and resolution times"): "ack" - an open problem
+	// should be acknowledged within it, "resolve" - resolved within it. Severities: 5 Disaster, 4 High, 3 Average,
+	// 2 Warning, 1 Information, 0 Not classified; a severity left out is not checked.
+	'response_targets' => [
+		5 => ['ack' => 900, 'resolve' => 4 * 3600],
+		4 => ['ack' => 1800, 'resolve' => 8 * 3600],
+		3 => ['ack' => 4 * 3600, 'resolve' => 3 * 86400],
+		2 => ['ack' => 86400, 'resolve' => 7 * 86400]
+	],
+
 	// PDF reports: "auto" uses headless Chrome/Chromium (google-chrome, chromium) and falls back to wkhtmltopdf;
 	// set an explicit binary if it is not in a standard location. "none" sends HTML instead of PDF.
 	'pdf_converter' => 'auto',

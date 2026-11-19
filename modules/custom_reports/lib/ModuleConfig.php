@@ -41,6 +41,9 @@ class ModuleConfig {
 
 		// Maximum number of events read for period analytics (per period).
 		'analytics_limit' => 10000,
+		// Target times by severity (seconds) for the dashboard "Response and resolution times": "ack" - reaction
+		// (acknowledgement), "resolve" - resolution. A severity without targets is not checked.
+		'response_targets' => OpenStructure::DEFAULT_TARGETS,
 
 		// PDF: "auto" (Chrome/Chromium, then wkhtmltopdf), "chrome", "wkhtmltopdf" or "none".
 		'pdf_converter' => 'auto',

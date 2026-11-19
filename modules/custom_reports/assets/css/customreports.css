@@ -510,3 +510,17 @@
 	font-size: 20px;
 	font-weight: bold;
 }
+
+/* Narrow tables inside the panels of the dashboard. */
+.cr-panel .cr-compact-table {
+	table-layout: auto;
+	width: 100%;
+}
+
+.cr-panel .cr-compact-table th {
+	white-space: normal;
+}
+
+.cr-strong {
+	font-weight: bold;
+}
