@@ -50,6 +50,14 @@ return [
 	// AlertScriptsPath from zabbix_server.conf (for media types of type "Script").
 	'alert_scripts_path' => '/usr/lib/zabbix/alertscripts',
 
+	// Media types of type "Script" (e.g. a Telegram script): {ALERT.MESSAGE} gets the short summary of the report,
+	// split into several calls if it is longer than script_message_max_length characters. script_message_format:
+	// "text", or "html" if the script sends with parse_mode=HTML (tables then come as copyable <pre> blocks).
+	// The report file (HTML/PDF/CSV, depending on the format of the schedule) is passed as {REPORT.FILE} in the media
+	// type parameters and as the environment variables CR_REPORT_FILE, CR_REPORT_FILENAME, CR_REPORT_MIME.
+	'script_message_max_length' => 4000,
+	'script_message_format' => 'text',
+
 	// Report scripts (ExternalScripts from zabbix_server.conf): executable files of this directory can be the data
 	// source of a report. They run as the web server user (tab "Scripts", "Send now") and as the cron user
 	// (schedules). Output: JSON, CSV or plain text (see README, "Reports from external scripts").

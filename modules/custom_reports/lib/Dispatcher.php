@@ -220,13 +220,46 @@ class Dispatcher {
 				};
 
 			case self::CHANNEL_SCRIPT:
+				// The message is the short summary (a whole HTML report does not fit into a command argument), split
+				// into several calls if it is long; the report file goes to the last call ({REPORT.FILE}).
 				$transport = new ScriptTransport($media_type, (string) $this->config['alert_scripts_path'], $timeout);
-				$message = $format === ReportRenderer::FORMAT_HTML
-					? self::html($report, $title, $frontend_url)
-					: self::text($report, $title, 0, false);
+				$max_length = (int) $this->config['script_message_max_length'];
+				$max_length = $max_length > 0 ? min($max_length, ScriptTransport::MAX_ARGUMENT) : ScriptTransport::MAX_ARGUMENT;
+				$markup = $this->config['script_message_format'] === 'html';
+				$messages = self::isScript($report)
+					? ScriptReportRenderer::renderMessages($report, $title, $max_length, $markup)
+					: [self::text($report, $title, $max_length, $markup)];
+				$document = $format !== ReportRenderer::FORMAT_SUMMARY
+					? $this->makeDocument($report, $title, $format)
+					: null;
 
-				return static function (string $recipient) use ($transport, $subject, $message) {
-					$transport->send($recipient, $subject, $message);
+				return static function (string $recipient) use ($transport, $subject, $messages, $document) {
+					$file = null;
+
+					try {
+						if ($document !== null) {
+							$path = tempnam(sys_get_temp_dir(), 'cr_report_');
+
+							if ($path === false || file_put_contents($path, $document[2]) === false) {
+								throw new RuntimeException('Cannot write a temporary report file.');
+							}
+
+							$file = ['path' => $path, 'name' => $document[0], 'type' => $document[1]];
+						}
+
+						$count = count($messages);
+
+						foreach (array_values($messages) as $index => $message) {
+							$transport->send($recipient, $count > 1 ? $subject.' ('.($index + 1).'/'.$count.')' : $subject,
+								$message, $index == $count - 1 ? $file : null
+							);
+						}
+					}
+					finally {
+						if ($file !== null) {
+							@unlink($file['path']);
+						}
+					}
 				};
 
 			default:

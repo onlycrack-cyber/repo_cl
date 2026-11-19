@@ -12,8 +12,15 @@ use RuntimeException;
  * Runs the alert script of a Zabbix "Script" media type the same way Zabbix server does:
  * <AlertScriptsPath>/<exec_path> with the media type parameters, where {ALERT.SENDTO},
  * {ALERT.SUBJECT} and {ALERT.MESSAGE} are expanded.
+ *
+ * The report file (HTML, PDF or CSV) is offered as {REPORT.FILE} in the parameters and in the environment variables
+ * CR_REPORT_FILE, CR_REPORT_FILENAME and CR_REPORT_MIME; scripts that do not know them just ignore them.
  */
 class ScriptTransport {
+
+	// One argument of a command is limited by the kernel (MAX_ARG_STRLEN, 128 KB on Linux): longer values are cut,
+	// otherwise the script cannot be started at all ("Argument list too long").
+	public const MAX_ARGUMENT = 100000;
 
 	private array $media_type;
 	private string $scripts_path;
@@ -25,7 +32,10 @@ class ScriptTransport {
 		$this->timeout = $timeout;
 	}
 
-	public function send(string $sendto, string $subject, string $message): void {
+	/**
+	 * @param array|null $file  ['path' => ..., 'name' => ..., 'type' => ...]: the report file for this call.
+	 */
+	public function send(string $sendto, string $subject, string $message, ?array $file = null): void {
 		// basename(): the script must reside in AlertScriptsPath, as on Zabbix server.
 		$script = $this->scripts_path.'/'.basename((string) $this->media_type['exec_path']);
 
@@ -41,19 +51,35 @@ class ScriptTransport {
 		$macros = [
 			'{ALERT.SENDTO}' => $sendto,
 			'{ALERT.SUBJECT}' => $subject,
-			'{ALERT.MESSAGE}' => $message
+			'{ALERT.MESSAGE}' => $message,
+			'{REPORT.FILE}' => $file['path'] ?? ''
 		];
 
 		$command = [$script];
 
 		foreach ($parameters as $parameter) {
-			$command[] = strtr((string) $parameter['value'], $macros);
+			$command[] = self::limit(strtr((string) $parameter['value'], $macros));
 		}
 
-		$process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+		$env = getenv();
+		$env = is_array($env) ? $env : [];
+
+		if ($file !== null) {
+			$env['CR_REPORT_FILE'] = $file['path'];
+			$env['CR_REPORT_FILENAME'] = $file['name'];
+			$env['CR_REPORT_MIME'] = $file['type'];
+		}
+
+		$process = @proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
+			$env
+		);
 
 		if (!is_resource($process)) {
-			throw new RuntimeException(sprintf('Cannot start alert script "%s".', $script));
+			$error = error_get_last();
+
+			throw new RuntimeException(sprintf('Cannot start alert script "%s"%s.', $script,
+				$error !== null ? ': '.$error['message'] : ''
+			));
 		}
 
 		fclose($pipes[0]);
@@ -94,5 +120,16 @@ class ScriptTransport {
 				$status['exitcode'], trim(substr($output, 0, 500))
 			));
 		}
+	}
+
+	/**
+	 * Cuts a too long argument at a character boundary.
+	 */
+	public static function limit(string $value): string {
+		if (strlen($value) <= self::MAX_ARGUMENT) {
+			return $value;
+		}
+
+		return mb_strcut($value, 0, self::MAX_ARGUMENT - 3, 'UTF-8').'...';
 	}
 }

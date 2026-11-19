@@ -53,6 +53,11 @@ class ModuleConfig {
 
 		// Directory with alert scripts (AlertScriptsPath from zabbix_server.conf).
 		'alert_scripts_path' => '/usr/lib/zabbix/alertscripts',
+		// Media types of type "Script": the message ({ALERT.MESSAGE}) is the short summary, split into several calls
+		// of the script if longer than this (characters; 0 - up to 100000); "text" or "html" (Telegram markup: <b>,
+		// <pre> - for scripts that send with parse_mode=HTML). The report file is in {REPORT.FILE} / CR_REPORT_FILE.
+		'script_message_max_length' => 4000,
+		'script_message_format' => 'text',
 
 		// Report scripts: executable files of this directory (ExternalScripts from zabbix_server.conf) can be the data
 		// source of a report (tab "Scripts", schedules with the source "External script").
