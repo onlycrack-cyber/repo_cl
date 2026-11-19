@@ -232,11 +232,13 @@ class FrontendHelper {
 		$tabs = [
 			'customreports.dashboard' => cr_t('Report dashboard'),
 			'customreports.changes' => cr_t('Changes'),
-			'customreports.schedule.list' => cr_t('Schedules and delivery')
+			'customreports.schedule.list' => cr_t('Schedules and delivery'),
+			'customreports.script' => cr_t('Scripts')
 		];
 
+		// Schedules and scripts: Super admins only.
 		if (!$show_schedules) {
-			unset($tabs['customreports.schedule.list']);
+			unset($tabs['customreports.schedule.list'], $tabs['customreports.script']);
 		}
 
 		$list = (new CList())->addClass('cr-tabs');

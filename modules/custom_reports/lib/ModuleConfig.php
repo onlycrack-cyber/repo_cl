@@ -54,6 +54,14 @@ class ModuleConfig {
 		// Directory with alert scripts (AlertScriptsPath from zabbix_server.conf).
 		'alert_scripts_path' => '/usr/lib/zabbix/alertscripts',
 
+		// Report scripts: executable files of this directory (ExternalScripts from zabbix_server.conf) can be the data
+		// source of a report (tab "Scripts", schedules with the source "External script").
+		'external_scripts_path' => '/usr/lib/zabbix/externalscripts',
+		'script_timeout' => 60,
+		// Limits of the script output: rows per table and bytes of stdout.
+		'script_max_rows' => 5000,
+		'script_max_output' => 10485760,
+
 		// SMTP passwords by mediatypeid, used if the API does not return the password.
 		'smtp_passwords' => [],
 

@@ -14,6 +14,10 @@ use DateTimeZone;
  */
 class ScheduleHelper {
 
+	// Data source of a report: problems of Zabbix or the output of an external script (ScriptReport).
+	public const SOURCE_PROBLEMS = 'problems';
+	public const SOURCE_SCRIPT = 'script';
+
 	public const FREQUENCY_DAILY = 'daily';
 	public const FREQUENCY_WEEKLY = 'weekly';
 
@@ -51,6 +55,10 @@ class ScheduleHelper {
 			'scheduleid' => '',
 			'name' => '',
 			'enabled' => 1,
+			'source' => self::SOURCE_PROBLEMS,
+			'script' => '',
+			'script_params' => [],
+			'script_format' => ScriptReport::FORMAT_AUTO,
 			'groupids' => [],
 			'hostids' => [],
 			'severities' => [],
@@ -91,10 +99,18 @@ class ScheduleHelper {
 			$extra_sendto = preg_split('/[\r\n,;]+/', (string) $extra_sendto);
 		}
 
+		$source = $schedule['source'] === self::SOURCE_SCRIPT ? self::SOURCE_SCRIPT : self::SOURCE_PROBLEMS;
+
 		return [
 			'scheduleid' => (string) $schedule['scheduleid'],
 			'name' => trim((string) $schedule['name']),
 			'enabled' => (int) !empty($schedule['enabled']),
+			'source' => $source,
+			'script' => trim((string) $schedule['script']),
+			'script_params' => ScriptReport::normalizeParams($schedule['script_params']),
+			'script_format' => in_array($schedule['script_format'], ScriptReport::FORMATS, true)
+				? $schedule['script_format']
+				: ScriptReport::FORMAT_AUTO,
 			'groupids' => $filter['groupids'],
 			'hostids' => $filter['hostids'],
 			'severities' => $filter['severities'],
@@ -119,7 +135,7 @@ class ScheduleHelper {
 			'format' => in_array($schedule['format'], ReportRenderer::FORMATS, true)
 				? $schedule['format']
 				: ReportRenderer::FORMAT_SUMMARY,
-			'split' => ReportSplitter::isValid((string) $schedule['split'])
+			'split' => $source === self::SOURCE_PROBLEMS && ReportSplitter::isValid((string) $schedule['split'])
 				? (string) $schedule['split']
 				: ReportSplitter::SPLIT_NONE,
 			'skip_empty' => (int) !empty($schedule['skip_empty']),
@@ -216,6 +232,15 @@ class ScheduleHelper {
 
 		if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $schedule['time'])) {
 			$errors[] = I18n::t('Incorrect value for field "Time": expected format is hh:mm (00:00-23:59).');
+		}
+
+		if ($schedule['source'] === self::SOURCE_SCRIPT) {
+			if ($schedule['script'] === '') {
+				$errors[] = I18n::t('Incorrect value for field "Script": a script must be selected.');
+			}
+			elseif (!ScriptReport::isValidName($schedule['script'])) {
+				$errors[] = I18n::s('Incorrect script name "%1$s".', $schedule['script']);
+			}
 		}
 
 		if (!ctype_digit($schedule['mediatypeid']) || $schedule['mediatypeid'] === '0') {
@@ -345,6 +370,7 @@ class ScheduleHelper {
 			'user' => $user,
 			'status' => $result !== null && $error === null ? self::runStatus($result) : self::STATUS_ERROR,
 			'media_type' => $result['media_type'] ?? '',
+			'source' => $result['source'] ?? self::SOURCE_PROBLEMS,
 			'problems' => $result['problems'] ?? 0,
 			'parts' => $result['parts'] ?? 0,
 			'sent' => $result['sent'] ?? 0,
@@ -366,7 +392,10 @@ class ScheduleHelper {
 			return $run['message'];
 		}
 
-		$text = I18n::s('Problems: %1$s, reports: %2$s, sent: %3$s, failed: %4$s.', $run['problems'], $run['parts'],
+		$text = I18n::s(($run['source'] ?? self::SOURCE_PROBLEMS) === self::SOURCE_SCRIPT
+				? 'Records: %1$s, reports: %2$s, sent: %3$s, failed: %4$s.'
+				: 'Problems: %1$s, reports: %2$s, sent: %3$s, failed: %4$s.',
+			$run['problems'], $run['parts'],
 			$run['sent'], $run['failed']
 		);
 

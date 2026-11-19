@@ -50,6 +50,14 @@ return [
 	// AlertScriptsPath from zabbix_server.conf (for media types of type "Script").
 	'alert_scripts_path' => '/usr/lib/zabbix/alertscripts',
 
+	// Report scripts (ExternalScripts from zabbix_server.conf): executable files of this directory can be the data
+	// source of a report. They run as the web server user (tab "Scripts", "Send now") and as the cron user
+	// (schedules). Output: JSON, CSV or plain text (see README, "Reports from external scripts").
+	'external_scripts_path' => '/usr/lib/zabbix/externalscripts',
+	'script_timeout' => 60,
+	'script_max_rows' => 5000,
+	'script_max_output' => 10485760,
+
 	// The Zabbix API does not return media type passwords. The CLI sender reads them from the database
 	// with the credentials of the frontend config file; or set them explicitly by mediatypeid:
 	// 'smtp_passwords' => ['1' => 'secret'],

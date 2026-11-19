@@ -98,6 +98,12 @@ class ReportRenderer {
 	}
 
 	public static function fileName(string $title, string $extension, int $time): string {
+		// Cyrillic and other titles: Latin letters if the intl extension is available.
+		if (function_exists('transliterator_transliterate')) {
+			$latin = transliterator_transliterate('Any-Latin; Latin-ASCII', $title);
+			$title = is_string($latin) ? $latin : $title;
+		}
+
 		$base = preg_replace('/[^A-Za-z0-9_-]+/', '_', $title);
 		$base = trim((string) $base, '_');
 

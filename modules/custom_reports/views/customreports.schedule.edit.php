@@ -16,6 +16,7 @@ use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
+use Modules\CustomReports\Lib\ScriptReport;
 
 $this->addJsFile('multiselect.js');
 
@@ -53,6 +54,37 @@ $media_type_select = (new CSelect('mediatypeid'))
 	->addOptions(CSelect::createOptionsFromArray([0 => cr_t('Select media type')] + $data['media_types']))
 	->setValue($schedule['mediatypeid']);
 
+// External script: a select of the executable files of "external_scripts_path".
+if ($data['scripts']) {
+	$script_options = $data['scripts'];
+
+	// A stored script that is gone (renamed, not executable) stays visible in the select.
+	if ($schedule['script'] !== '' && !in_array($schedule['script'], $script_options, true)) {
+		array_unshift($script_options, $schedule['script']);
+	}
+
+	$script_field = (new CSelect('script'))
+		->setId('script')
+		->setFocusableElementId('label-script')
+		->addOptions(CSelect::createOptionsFromArray(array_combine($script_options, $script_options)))
+		->setValue($schedule['script'] !== '' ? $schedule['script'] : reset($script_options));
+}
+else {
+	$script_field = [
+		new CVar('script', $schedule['script']),
+		(new CSpan(cr_s('No executable files in %1$s (set "external_scripts_path" in conf/config.php).',
+			$data['scripts_path']
+		)))->addClass(ZBX_STYLE_RED)
+	];
+}
+
+$script_format = (new CRadioButtonList('script_format', $schedule['script_format']))
+	->addValue(cr_t('Auto'), ScriptReport::FORMAT_AUTO)
+	->addValue('JSON', ScriptReport::FORMAT_JSON)
+	->addValue('CSV', ScriptReport::FORMAT_CSV)
+	->addValue(cr_t('Text'), ScriptReport::FORMAT_TEXT)
+	->setModern(true);
+
 $form_list = (new CFormList('schedule_form_list'))
 	->addRow((new CLabel(cr_t('Name'), 'name'))->setAsteriskMark(),
 		(new CTextBox('name', $schedule['name'], false, 255))
@@ -62,8 +94,47 @@ $form_list = (new CFormList('schedule_form_list'))
 	)
 	->addRow(cr_t('Enabled'), (new CCheckBox('enabled'))->setChecked($schedule['enabled'] == 1))
 
-	// Report filter.
-	->addRow(new CTag('h4', true, cr_t('Report filter')))
+	// Report data: problems of Zabbix (filter below) or an external script.
+	->addRow(new CTag('h4', true, cr_t('Report data')))
+	->addRow(cr_t('Data source'),
+		(new CRadioButtonList('source', $schedule['source']))
+			->addValue(cr_t('Zabbix problems'), ScheduleHelper::SOURCE_PROBLEMS)
+			->addValue(cr_t('External script'), ScheduleHelper::SOURCE_SCRIPT)
+			->setModern(true)
+	)
+	->addRow(new CLabel(cr_t('Script'), 'label-script'), [
+		$script_field,
+		$data['scripts']
+			? [
+				(new CDiv())->addClass(ZBX_STYLE_FORM_INPUT_MARGIN),
+				(new CSimpleButton(cr_t('Run and show')))
+					->addClass(ZBX_STYLE_BTN_GREY)
+					->addClass('js-cr-script-preview')
+					->setAttribute('data-script-url', (new CUrl('zabbix.php'))
+						->setArgument('action', 'customreports.script')
+						->getUrl()
+					)
+					->setAttribute('data-csrf-name', CCsrfTokenHelper::CSRF_TOKEN_NAME)
+					->setAttribute('data-csrf-token', CCsrfTokenHelper::get('customreports.script'))
+			]
+			: null,
+		(new CDiv(cr_s('Executable files of %1$s (ExternalScripts of Zabbix). The script runs as the web server user here and as the cron user for schedules.',
+			$data['scripts_path']
+		)))->addClass(ZBX_STYLE_GREY)
+	], 'cr-script-row')
+	->addRow(new CLabel(cr_t('Parameters'), 'script_params'), [
+		(new CTextArea('script_params', implode("\n", $schedule['script_params'])))
+			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
+			->setRows(3)
+			->setAttribute('placeholder', cr_t('one parameter per line')),
+		(new CDiv(cr_t('Macros: {DATE}, {TIME}, {PERIOD_FROM}, {PERIOD_TILL} (Unix time), {PERIOD_FROM_DATE}, {PERIOD_TILL_DATE}, {SCHEDULE}. Period: 24 hours for daily, 7 days for weekly schedules. The same values are in the environment variables CR_DATE, CR_PERIOD_FROM, ...')))
+			->addClass(ZBX_STYLE_GREY)
+	], 'cr-script-params-row')
+	->addRow(cr_t('Data format'), [
+		$script_format,
+		(new CDiv(cr_t('JSON: a list of rows, or an object with "title", "summary", "status", "kpi", "tables". CSV: the first line is the header. Text: shown as it is. See README.')))
+			->addClass(ZBX_STYLE_GREY)
+	], 'cr-script-format-row')
 	->addRow(new CLabel(cr_t('Host groups'), 'groupids__ms'),
 		(new CMultiSelect([
 			'name' => 'groupids[]',
@@ -258,7 +329,8 @@ $form_list = (new CFormList('schedule_form_list'))
 			cr_t('Per host group: a separate report for every selected host group (or for every group with problems if no group is selected).'),
 			BR(),
 			cr_t('Per host: a separate report for every selected host (or for every host with problems if no host is selected).')
-		]))->addClass(ZBX_STYLE_GREY)
+		]))->addClass(ZBX_STYLE_GREY),
+		'cr-split-hint-row'
 	)
 	->addRow(cr_t('Do not send empty reports'), (new CCheckBox('skip_empty'))->setChecked($schedule['skip_empty'] == 1))
 	->addRow('',

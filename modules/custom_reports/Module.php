@@ -32,7 +32,8 @@ class Module extends CModule {
 						'customreports.changes',
 						'customreports.schedule.list',
 						'customreports.schedule.edit',
-						'customreports.schedule.history'
+						'customreports.schedule.history',
+						'customreports.script'
 					])
 			);
 	}

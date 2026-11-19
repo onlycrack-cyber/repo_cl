@@ -38,7 +38,13 @@
 		return checked !== null ? checked.value : null;
 	}
 
-	// Schedule form: show fields that depend on "Frequency" and "Send separately".
+	// Fields of the schedule form that only apply to the data source "Zabbix problems".
+	const PROBLEM_FIELDS = ['#groupids_', '#hostids_', 'input[name^="severities"]', 'input[name="period"]',
+		'#show_suppressed', '#problem_name', 'input[name="acknowledged"]', 'input[name="problem_list"]',
+		'input[name="analytics"]', '#include_changes', '[name="sortfield"]', 'input[name="split"]'
+	];
+
+	// Schedule form: show fields that depend on "Data source", "Frequency" and "Send separately".
 	function toggleScheduleRows() {
 		if (checkedValue('frequency') !== null) {
 			setRowVisible('cr-weekday-row', checkedValue('frequency') === 'weekly');
@@ -49,8 +55,29 @@
 			setRowVisible('cr-changes-dates', checkedValue('filter_period') === 'custom');
 		}
 
+		// Data source "External script": the problem filter, analytics and split do not apply.
+		const script = checkedValue('source') === 'script';
+
+		if (checkedValue('source') !== null) {
+			['cr-script-row', 'cr-script-params-row', 'cr-script-format-row'].forEach(function(id) {
+				setRowVisible(id, script);
+			});
+
+			PROBLEM_FIELDS.forEach(function(selector) {
+				const field = document.querySelector(selector);
+				// The row of the form list, not an option of a radio button list (also an <li>).
+				const row = field !== null ? field.closest('.table-forms > li') : null;
+
+				if (row !== null) {
+					row.style.display = script ? 'none' : '';
+				}
+			});
+
+			setRowVisible('cr-split-hint-row', !script);
+		}
+
 		if (checkedValue('split') !== null) {
-			const split = checkedValue('split');
+			const split = script ? 'none' : checkedValue('split');
 
 			setRowVisible('cr-group-recipients-row', split === 'group');
 			setRowVisible('cr-host-recipients-row', split === 'host');
@@ -59,7 +86,7 @@
 	}
 
 	document.addEventListener('change', function(e) {
-		if (e.target.name === 'frequency' || e.target.name === 'split' || e.target.name === 'filter_period') {
+		if (['frequency', 'split', 'filter_period', 'source'].includes(e.target.name)) {
 			toggleScheduleRows();
 		}
 	});
@@ -98,6 +125,51 @@
 		}
 
 		form.submit();
+	});
+
+	// Schedule form: "Run and show" runs the script of the form on the "Scripts" tab, in a new window
+	// (POST with the CSRF token: running a script is not a plain link).
+	document.addEventListener('click', function(e) {
+		const button = e.target.closest('.js-cr-script-preview');
+
+		if (button === null) {
+			return;
+		}
+
+		e.preventDefault();
+
+		const form = button.closest('form');
+		const field = function(name) {
+			const element = form.querySelector('[name="' + name + '"]');
+
+			return element !== null ? element.value : '';
+		};
+		const values = {
+			script: field('script'),
+			script_params: field('script_params'),
+			script_format: checkedValue('script_format') || 'auto',
+			run: '1',
+			[button.dataset.csrfName]: button.dataset.csrfToken
+		};
+
+		const post = document.createElement('form');
+
+		post.method = 'post';
+		post.action = button.dataset.scriptUrl;
+
+		for (const [name, value] of Object.entries(values)) {
+			const input = document.createElement('input');
+
+			input.type = 'hidden';
+			input.name = name;
+			input.value = value;
+			post.appendChild(input);
+		}
+
+		post.target = '_blank';
+		document.body.appendChild(post);
+		post.submit();
+		post.remove();
 	});
 
 	// Delivery history: show / hide the recipients of a run.

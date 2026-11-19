@@ -150,7 +150,9 @@ class Dispatcher {
 	private function createSender(array $media_type, string $channel, array $report, string $format,
 			string $title): callable {
 		$timeout = (int) $this->config['timeout'];
-		$subject = I18n::s('%1$s: %2$s active problem(s)', $title, $report['total']);
+		$subject = self::isScript($report)
+			? ScriptReportRenderer::subject($report, $title)
+			: I18n::s('%1$s: %2$s active problem(s)', $title, $report['total']);
 		$frontend_url = (string) $this->config['frontend_url'];
 
 		switch ($channel) {
@@ -159,18 +161,18 @@ class Dispatcher {
 				$attachments = [];
 
 				if ($format === ReportRenderer::FORMAT_HTML) {
-					$body = ReportRenderer::renderHtml($report, $title, ['frontend_url' => $frontend_url]);
+					$body = self::html($report, $title, $frontend_url);
 					$is_html = true;
 				}
 				elseif ($format === ReportRenderer::FORMAT_CSV || $format === ReportRenderer::FORMAT_PDF) {
-					$body = ReportRenderer::renderText($report, $title, 0, false);
+					$body = self::text($report, $title, 0, false);
 					$is_html = false;
 					[$name, $type, $content] = $this->makeDocument($report, $title, $format);
 					$attachments[] = ['name' => $name, 'type' => $type, 'content' => $content];
 				}
 				else {
 					$is_html = (int) ($media_type['message_format'] ?? 0) == self::MESSAGE_FORMAT_HTML;
-					$body = ReportRenderer::renderText($report, $title, 0, $is_html);
+					$body = self::text($report, $title, 0, $is_html);
 
 					if ($is_html) {
 						$body = '<html><body><pre style="font-family:Arial,sans-serif;white-space:pre-wrap">'.
@@ -193,7 +195,7 @@ class Dispatcher {
 					(string) $this->config['telegram_api_url'], $proxy !== '' ? $proxy : (string) $this->config['proxy'],
 					$timeout
 				);
-				$text = ReportRenderer::renderText($report, $title, (int) $this->config['telegram_max_length'], true);
+				$text = self::text($report, $title, (int) $this->config['telegram_max_length'], true);
 				$document = null;
 
 				if ($format !== ReportRenderer::FORMAT_SUMMARY) {
@@ -215,8 +217,8 @@ class Dispatcher {
 			case self::CHANNEL_SCRIPT:
 				$transport = new ScriptTransport($media_type, (string) $this->config['alert_scripts_path'], $timeout);
 				$message = $format === ReportRenderer::FORMAT_HTML
-					? ReportRenderer::renderHtml($report, $title, ['frontend_url' => $frontend_url])
-					: ReportRenderer::renderText($report, $title, 0, false);
+					? self::html($report, $title, $frontend_url)
+					: self::text($report, $title, 0, false);
 
 				return static function (string $recipient) use ($transport, $subject, $message) {
 					$transport->send($recipient, $subject, $message);
@@ -238,10 +240,10 @@ class Dispatcher {
 		$time = $report['generated'];
 
 		if ($format === ReportRenderer::FORMAT_CSV) {
-			return [ReportRenderer::fileName($title, 'csv', $time), 'text/csv', ReportRenderer::renderCsv($report)];
+			return [ReportRenderer::fileName($title, 'csv', $time), 'text/csv', self::csv($report)];
 		}
 
-		$html = ReportRenderer::renderHtml($report, $title, ['frontend_url' => (string) $this->config['frontend_url']]);
+		$html = self::html($report, $title, (string) $this->config['frontend_url']);
 
 		if ($format === ReportRenderer::FORMAT_PDF) {
 			try {
@@ -258,6 +260,29 @@ class Dispatcher {
 		}
 
 		return [ReportRenderer::fileName($title, 'html', $time), 'text/html', $html];
+	}
+
+	/**
+	 * Reports of external scripts (ScriptReport) have their own renderer.
+	 */
+	public static function isScript(array $report): bool {
+		return ($report['source'] ?? '') === ScriptReport::SOURCE;
+	}
+
+	private static function html(array $report, string $title, string $frontend_url): string {
+		return self::isScript($report)
+			? ScriptReportRenderer::renderHtml($report, $title)
+			: ReportRenderer::renderHtml($report, $title, ['frontend_url' => $frontend_url]);
+	}
+
+	private static function text(array $report, string $title, int $max_length, bool $html): string {
+		return self::isScript($report)
+			? ScriptReportRenderer::renderText($report, $title, $max_length, $html)
+			: ReportRenderer::renderText($report, $title, $max_length, $html);
+	}
+
+	private static function csv(array $report): string {
+		return self::isScript($report) ? ScriptReportRenderer::renderCsv($report) : ReportRenderer::renderCsv($report);
 	}
 
 	private function getSmtpPassword(array $media_type): ?string {

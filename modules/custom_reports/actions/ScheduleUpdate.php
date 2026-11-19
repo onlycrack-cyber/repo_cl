@@ -21,6 +21,7 @@ use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
+use Modules\CustomReports\Lib\ScriptReport;
 
 /**
  * Saves a report schedule (create or update).
@@ -32,6 +33,10 @@ class ScheduleUpdate extends CController {
 			'scheduleid' =>			'string',
 			'name' =>				'required|string',
 			'enabled' =>			'in 0,1',
+			'source' =>				'in '.ScheduleHelper::SOURCE_PROBLEMS.','.ScheduleHelper::SOURCE_SCRIPT,
+			'script' =>				'string',
+			'script_params' =>		'string',
+			'script_format' =>		'in '.implode(',', ScriptReport::FORMATS),
 			'groupids' =>			'array_id',
 			'hostids' =>			'array_id',
 			'severities' =>			'array',
@@ -84,7 +89,7 @@ class ScheduleUpdate extends CController {
 			'include_changes' => $this->getInput('include_changes', 0),
 			'created_by' => CWebUser::$data['userid']
 		];
-		$this->getInputs($input, ['name', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
+		$this->getInputs($input, ['name', 'source', 'script', 'script_params', 'script_format', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
 			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split', 'group_recipients', 'host_recipients', 'problem_name', 'acknowledged',
 			'sortfield', 'sortorder', 'analytics', 'problem_list',
 			'common_recipients'
@@ -92,6 +97,16 @@ class ScheduleUpdate extends CController {
 
 		$schedule = ScheduleHelper::normalize($input);
 		$errors = ScheduleHelper::validate($schedule);
+
+		// The script must exist here; the cron sender checks it again when it runs.
+		if (!$errors && $schedule['source'] === ScheduleHelper::SOURCE_SCRIPT) {
+			try {
+				ScriptReport::getPath(ModuleConfig::get(), $schedule['script']);
+			}
+			catch (Exception $e) {
+				$errors[] = $e->getMessage();
+			}
+		}
 
 		if (!$errors) {
 			try {

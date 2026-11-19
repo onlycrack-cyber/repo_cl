@@ -344,3 +344,40 @@
 	color: inherit;
 	opacity: .7;
 }
+
+/* "Scripts" tab. */
+.cr-script-result {
+	margin-top: 10px;
+	padding: 10px;
+	background-color: #ffffff;
+	border: 1px solid #dfe4e7;
+}
+
+.cr-script-head h4 {
+	display: inline-block;
+	margin: 0 10px 6px 0;
+	font-size: 16px;
+}
+
+.cr-script-actions {
+	margin-bottom: 10px;
+}
+
+.cr-script-actions li {
+	display: inline-block;
+	margin-right: 6px;
+}
+
+.cr-script-stderr {
+	max-height: 160px;
+	overflow: auto;
+	white-space: pre-wrap;
+	margin: 4px 0 10px 0;
+}
+
+/* The report HTML uses its own inline colors (as in e-mails): keep a light background in the dark theme too. */
+.cr-script-report {
+	color: #1f2c33;
+	background-color: #ffffff;
+	overflow-x: auto;
+}

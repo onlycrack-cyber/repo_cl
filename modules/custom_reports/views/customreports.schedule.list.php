@@ -128,13 +128,20 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 		->addItem((new CSubmit('delete', cr_t('Delete')))->addClass(ZBX_STYLE_BTN_LINK));
 
 	$table->addRow([
-		new CLink($schedule['name'], (clone $edit_url)->setArgument('scheduleid', $scheduleid)->getUrl()),
+		[
+			new CLink($schedule['name'], (clone $edit_url)->setArgument('scheduleid', $scheduleid)->getUrl()),
+			($schedule['source'] ?? '') === ScheduleHelper::SOURCE_SCRIPT
+				? (new CDiv(cr_s('Script: %1$s', $schedule['script'])))->addClass(ZBX_STYLE_GREY)
+				: null
+		],
 		$when,
 		array_key_exists($schedule['mediatypeid'], $data['media_types'])
 			? $data['media_types'][$schedule['mediatypeid']]['name']
 			: (new CSpan(cr_t('Inaccessible media type')))->addClass(ZBX_STYLE_RED),
 		$format_labels[$schedule['format']] ?? $schedule['format'],
-		$split_labels[$schedule['split'] ?? ReportSplitter::SPLIT_NONE],
+		($schedule['source'] ?? '') === ScheduleHelper::SOURCE_SCRIPT
+			? '-'
+			: $split_labels[$schedule['split'] ?? ReportSplitter::SPLIT_NONE],
 		implode(', ', $recipients),
 		$schedule['enabled']
 			? (new CSpan(cr_t('Enabled')))->addClass(ZBX_STYLE_GREEN)

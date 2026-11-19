@@ -75,4 +75,26 @@ class Severity {
 
 		return array_values($result);
 	}
+
+	/**
+	 * Severity from a number (0-5) or a name in English or Russian ("disaster", "Чрезвычайная", ...).
+	 */
+	public static function fromText(string $text): ?int {
+		$text = mb_strtolower(trim($text), 'UTF-8');
+
+		if (preg_match('/^[0-5]$/', $text)) {
+			return (int) $text;
+		}
+
+		$names = [
+			'not classified' => self::NOT_CLASSIFIED, 'не классифицировано' => self::NOT_CLASSIFIED,
+			'information' => self::INFORMATION, 'info' => self::INFORMATION, 'информация' => self::INFORMATION,
+			'warning' => self::WARNING, 'предупреждение' => self::WARNING,
+			'average' => self::AVERAGE, 'средняя' => self::AVERAGE,
+			'high' => self::HIGH, 'высокая' => self::HIGH,
+			'disaster' => self::DISASTER, 'чрезвычайная' => self::DISASTER
+		];
+
+		return $names[$text] ?? null;
+	}
 }

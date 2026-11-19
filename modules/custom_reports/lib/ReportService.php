@@ -33,6 +33,23 @@ class ReportService {
 	}
 
 	/**
+	 * Report of a schedule: problems of Zabbix or the output of an external script.
+	 *
+	 * @throws RuntimeException  The script failed.
+	 */
+	public function buildScheduleReport(array $schedule): array {
+		if (($schedule['source'] ?? ScheduleHelper::SOURCE_PROBLEMS) === ScheduleHelper::SOURCE_SCRIPT) {
+			$period = $schedule['frequency'] === ScheduleHelper::FREQUENCY_WEEKLY ? 7 * 86400 : 86400;
+
+			return ScriptReport::build($this->config, $schedule['script'], $schedule['script_params'],
+				$schedule['script_format'], ScriptReport::macros(time(), $period, $schedule['name'])
+			);
+		}
+
+		return $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
+	}
+
+	/**
 	 * Report filter of a schedule: "auto" analytics period follows the schedule frequency.
 	 */
 	private static function getScheduleFilter(array $schedule): array {
@@ -69,7 +86,7 @@ class ReportService {
 				));
 			}
 
-			$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
+			$report = $this->buildScheduleReport($schedule);
 
 			return $this->deliver($media_type, static function () use ($common): array {
 				return $common;
@@ -104,7 +121,7 @@ class ReportService {
 			return array_values(array_unique($sendto));
 		};
 
-		$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
+		$report = $this->buildScheduleReport($schedule);
 
 		return $this->deliver($media_type, $recipients, $report, $schedule['format'], $schedule['name'],
 			$schedule['split'], (bool) $schedule['skip_empty']
@@ -135,7 +152,7 @@ class ReportService {
 			));
 		}
 
-		$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
+		$report = $this->buildScheduleReport($schedule);
 
 		return $this->deliver($media_type, static function () use ($sendto): array {
 			return $sendto;
@@ -165,8 +182,14 @@ class ReportService {
 	private function deliver(array $media_type, callable $recipients, array $report, string $format, string $title,
 			string $split, bool $skip_empty): array {
 		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0,
-			'media_type' => $media_type['name'], 'deliveries' => []
+			'media_type' => $media_type['name'], 'deliveries' => [],
+			'source' => Dispatcher::isScript($report) ? ScheduleHelper::SOURCE_SCRIPT : ScheduleHelper::SOURCE_PROBLEMS
 		];
+
+		// A script report is never split by host group / host.
+		if (Dispatcher::isScript($report)) {
+			$split = ReportSplitter::SPLIT_NONE;
+		}
 
 		foreach (ReportSplitter::split($report, $split, $skip_empty) as $part) {
 			$part_title = $part['name'] === '' ? $title : $title.' - '.$part['name'];
@@ -203,7 +226,7 @@ class ReportService {
 		}
 
 		if ($result['parts'] == 0 && $result['failed'] == 0) {
-			$this->logger->info(sprintf('[%s] nothing to send: no problems match the filter.', $title));
+			$this->logger->info(sprintf('[%s] nothing to send: the report is empty.', $title));
 		}
 
 		return $result;

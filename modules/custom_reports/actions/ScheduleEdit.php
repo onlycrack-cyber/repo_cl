@@ -24,6 +24,7 @@ use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
+use Modules\CustomReports\Lib\ScriptReport;
 
 /**
  * Create / edit form of a report schedule.
@@ -40,6 +41,10 @@ class ScheduleEdit extends CController {
 			'form_refresh' =>		'in 1',
 			'name' =>				'string',
 			'enabled' =>			'in 0,1',
+			'source' =>				'in '.ScheduleHelper::SOURCE_PROBLEMS.','.ScheduleHelper::SOURCE_SCRIPT,
+			'script' =>				'string',
+			'script_params' =>		'string',
+			'script_format' =>		'in '.implode(',', ScriptReport::FORMATS),
 			'groupids' =>			'array_id',
 			'hostids' =>			'array_id',
 			'severities' =>			'array',
@@ -174,6 +179,8 @@ class ScheduleEdit extends CController {
 			'users' => $this->getMultiselectData('user', $schedule['userids']),
 			'usrgrps' => $this->getMultiselectData('usergroup', $schedule['usrgrpids']),
 			'media_types' => $this->getMediaTypes(),
+			'scripts' => ScriptReport::listScripts(ModuleConfig::get()),
+			'scripts_path' => (string) ModuleConfig::get()['external_scripts_path'],
 			'timezone' => ModuleConfig::timezone(),
 			'timezone_problem' => ModuleConfig::timezoneProblem()
 		]);
