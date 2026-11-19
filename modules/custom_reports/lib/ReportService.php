@@ -38,6 +38,10 @@ class ReportService {
 	private static function getScheduleFilter(array $schedule): array {
 		$schedule['analytics'] = PeriodAnalytics::resolvePeriod($schedule['analytics'], $schedule['frequency'])
 			?? PeriodAnalytics::PERIOD_NONE;
+		// The "Changes" block compares the analytics period, or the schedule period if analytics is off.
+		$schedule['changes_period'] = $schedule['analytics'] !== PeriodAnalytics::PERIOD_NONE
+			? $schedule['analytics']
+			: PeriodAnalytics::resolvePeriod(PeriodAnalytics::PERIOD_AUTO, $schedule['frequency']);
 
 		return $schedule;
 	}

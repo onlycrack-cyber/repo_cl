@@ -192,6 +192,13 @@ class ReportRenderer {
 			$html .= self::renderUnresolvedHtml($report, $cell);
 		}
 
+		if (($report['changes'] ?? null) !== null) {
+			$html .= ChangeRenderer::renderSection($report['changes'], $meta);
+		}
+		elseif (($report['changes_error'] ?? null) !== null) {
+			$html .= '<p style="color:#e45959">Changes analysis is not available: '.self::e($report['changes_error']).'</p>';
+		}
+
 		// Problems (in the "summary" mode the grouped section above replaces the full list).
 		$summary_only = self::isSummaryOnly($report);
 
@@ -297,6 +304,14 @@ class ReportRenderer {
 		if ($report['analytics'] !== null) {
 			$lines[] = '';
 			$lines = array_merge($lines, self::renderAnalyticsText($report['analytics'], $b, $e));
+		}
+
+		if (($report['changes'] ?? null) !== null) {
+			$lines[] = '';
+
+			foreach (ChangeRenderer::renderText($report['changes']) as $i => $line) {
+				$lines[] = $i == 0 ? $b($e($line)) : $e($line);
+			}
 		}
 
 		if ($report['top_hosts']) {

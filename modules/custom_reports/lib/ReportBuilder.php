@@ -84,7 +84,12 @@ class ReportBuilder {
 			'analytics' => in_array($filter['analytics'] ?? '', PeriodAnalytics::PERIODS, true)
 				? $filter['analytics']
 				: PeriodAnalytics::PERIOD_NONE,
-			'problem_list' => ($filter['problem_list'] ?? '') === self::LIST_SUMMARY ? self::LIST_SUMMARY : self::LIST_FULL
+			'problem_list' => ($filter['problem_list'] ?? '') === self::LIST_SUMMARY ? self::LIST_SUMMARY : self::LIST_FULL,
+			// "Changes" block in sent reports: comparison with the previous period of the same length.
+			'include_changes' => (int) !empty($filter['include_changes']),
+			'changes_period' => array_key_exists($filter['changes_period'] ?? '', PeriodAnalytics::SECONDS)
+				? $filter['changes_period']
+				: ''
 		];
 	}
 
@@ -110,6 +115,9 @@ class ReportBuilder {
 			'analytics' => null,
 			'analytics_error' => null,
 			'unresolved' => [],
+			'changes_data' => null,
+			'changes' => null,
+			'changes_error' => null,
 			'problems' => [],
 			'total' => 0,
 			'truncated' => false,
@@ -236,10 +244,26 @@ class ReportBuilder {
 			}
 		}
 
+		if ($filter['include_changes']) {
+			$changes_period = $filter['changes_period'] !== ''
+				? $filter['changes_period']
+				: ($period ?? PeriodAnalytics::PERIOD_7D);
+
+			try {
+				$report['changes_data'] = (new ChangeAnalytics($this->api, $this->analytics_limit))
+					->collect($filter, $now - PeriodAnalytics::SECONDS[$changes_period], $now);
+				$report['changes'] = ChangeAnalytics::compute($report['changes_data'], ChangeAnalytics::GROUP_BY_GROUP);
+			}
+			catch (ApiException $e) {
+				$report['changes_error'] = $e->getMessage();
+			}
+		}
+
 		// Hosts of open problems, of new problems of the period and of problems carried over from before it.
 		if ($with_host_groups) {
 			$report['host_groups'] = $this->getHostGroups(array_merge($report['problems'],
-				$report['analytics_data']['events'] ?? [], $report['analytics_data']['carried'] ?? []
+				$report['analytics_data']['events'] ?? [], $report['analytics_data']['carried'] ?? [],
+				$report['changes_data']['problems'] ?? []
 			));
 		}
 
@@ -339,6 +363,10 @@ class ReportBuilder {
 		$report['truncated'] = false;
 		self::aggregate($report);
 
+		if ($report['changes_data'] !== null && $match !== null) {
+			$report['changes'] = ChangeAnalytics::compute($report['changes_data'], ChangeAnalytics::GROUP_BY_GROUP, $match);
+		}
+
 		if ($report['analytics_data'] !== null && $match !== null) {
 			$report['analytics_data'] = PeriodAnalytics::subset($report['analytics_data'], $match);
 			$report['analytics'] = PeriodAnalytics::compute($report['analytics_data']);
@@ -382,7 +410,7 @@ class ReportBuilder {
 	/**
 	 * Severity names and colors as configured in Administration -> General -> Trigger displaying options.
 	 */
-	private function getSeverityMeta(): array {
+	public function getSeverityMeta(): array {
 		$meta = self::emptyReport()['severity_meta'];
 		$output = [];
 

@@ -26,6 +26,7 @@ class Module extends CModule {
 				(new CMenuItem(_('Custom Problem Reports')))
 					->setAction('customreports.dashboard')
 					->setAliases([
+						'customreports.changes',
 						'customreports.schedule.list',
 						'customreports.schedule.edit',
 						'customreports.schedule.history'

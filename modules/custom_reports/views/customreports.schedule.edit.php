@@ -141,6 +141,13 @@ $form_list = (new CFormList('schedule_form_list'))
 		(new CDiv(_('New, resolved and acknowledged problems of the period compared with the previous period, MTTR, MTTA, problems per day, recurring problems. Auto: 24 hours for daily, 7 days for weekly schedules.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
+	->addRow(_('Changes analysis'), [
+		(new CCheckBox('include_changes'))
+			->setChecked($schedule['include_changes'] == 1)
+			->setLabel(_('Compare with the previous period')),
+		(new CDiv(_('Adds the blocks of the "Changes" tab to HTML/PDF reports (by host group: previous -> current, growth and decline, new and disappeared problems, MTTR by severity, heatmap, noisy triggers, time in problem) and a few lines to the short summary. Period: the period analytics period, or the schedule period if analytics is off.')))
+			->addClass(ZBX_STYLE_GREY)
+	])
 	->addRow(new CLabel(_('Sort by'), 'label-sortfield'), [
 		(new CSelect('sortfield'))
 			->setFocusableElementId('label-sortfield')

@@ -51,6 +51,7 @@ class ScheduleEdit extends CController {
 			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'analytics' =>			'in '.implode(',', PeriodAnalytics::PERIODS),
 			'problem_list' =>		'in '.ReportBuilder::LIST_FULL.','.ReportBuilder::LIST_SUMMARY,
+			'include_changes' =>	'in 0,1',
 			'frequency' =>			'in '.ScheduleHelper::FREQUENCY_DAILY.','.ScheduleHelper::FREQUENCY_WEEKLY,
 			'weekday' =>			'in 1,2,3,4,5,6,7',
 			'time' =>				'string',
@@ -113,6 +114,7 @@ class ScheduleEdit extends CController {
 			$input['enabled'] = $this->getInput('enabled', 0);
 			$input['show_suppressed'] = $this->getInput('show_suppressed', 0);
 			$input['skip_empty'] = $this->getInput('skip_empty', 0);
+			$input['include_changes'] = $this->getInput('include_changes', 0);
 
 			foreach (['groupids', 'hostids', 'severities', 'userids', 'usrgrpids'] as $key) {
 				$input[$key] = $this->getInput($key, []);

@@ -2,7 +2,7 @@
 	"manifest_version": 2.0,
 	"id": "custom_reports",
 	"name": "Custom Problem Reports",
-	"version": "1.8.0",
+	"version": "1.9.0",
 	"namespace": "CustomReports",
 	"author": "Custom",
 	"url": "",
@@ -49,6 +49,15 @@
 		},
 		"customreports.schedule.test": {
 			"class": "ScheduleTest"
+		},
+		"customreports.changes": {
+			"class": "Changes",
+			"view": "customreports.changes",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.changes.export": {
+			"class": "ChangesExport",
+			"layout": "layout.customreports.download"
 		}
 	},
 	"assets": {

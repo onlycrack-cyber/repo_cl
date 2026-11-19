@@ -68,6 +68,66 @@ class FrontendHelper {
 		]);
 	}
 
+	private const CHANGES_PREFIX = 'web.customreports.changes.';
+
+	/**
+	 * Filter of the "Changes" tab (stored separately from the dashboard filter).
+	 */
+	public static function updateChangesFilter(array $filter): void {
+		$filter = ChangeAnalytics::normalizeFilter($filter);
+
+		CProfile::updateArray(self::CHANGES_PREFIX.'groupids', $filter['groupids'], PROFILE_TYPE_ID);
+		CProfile::updateArray(self::CHANGES_PREFIX.'hostids', $filter['hostids'], PROFILE_TYPE_ID);
+		CProfile::updateArray(self::CHANGES_PREFIX.'severities', $filter['severities'], PROFILE_TYPE_INT);
+
+		foreach (['problem_name', 'period', 'date_from', 'date_to', 'grouping'] as $key) {
+			CProfile::update(self::CHANGES_PREFIX.$key, $filter[$key], PROFILE_TYPE_STR);
+		}
+	}
+
+	public static function resetChangesFilter(): void {
+		foreach (['groupids', 'hostids', 'severities', 'problem_name', 'period', 'date_from', 'date_to',
+				'grouping'] as $key) {
+			CProfile::deleteIdx(self::CHANGES_PREFIX.$key);
+		}
+	}
+
+	public static function getChangesFilter(): array {
+		return ChangeAnalytics::normalizeFilter([
+			'groupids' => CProfile::getArray(self::CHANGES_PREFIX.'groupids', []),
+			'hostids' => CProfile::getArray(self::CHANGES_PREFIX.'hostids', []),
+			'severities' => CProfile::getArray(self::CHANGES_PREFIX.'severities', []),
+			'problem_name' => CProfile::get(self::CHANGES_PREFIX.'problem_name', ''),
+			'period' => CProfile::get(self::CHANGES_PREFIX.'period', PeriodAnalytics::PERIOD_7D),
+			'date_from' => CProfile::get(self::CHANGES_PREFIX.'date_from', ''),
+			'date_to' => CProfile::get(self::CHANGES_PREFIX.'date_to', ''),
+			'grouping' => CProfile::get(self::CHANGES_PREFIX.'grouping', ChangeAnalytics::GROUP_BY_GROUP)
+		]);
+	}
+
+	/**
+	 * Builds the "Changes" analysis for the filter with the permissions of the current user.
+	 *
+	 * @return array  ['changes' => array|null, 'meta' => severity names/colors, 'error' => string|null]
+	 */
+	public static function buildChanges(array $filter): array {
+		$range = ChangeAnalytics::resolveRange($filter, time());
+		$api = new FrontendApiClient();
+		$meta = (new ReportBuilder($api))->getSeverityMeta();
+
+		try {
+			$data = (new ChangeAnalytics($api, (int) ModuleConfig::get()['analytics_limit']))
+				->collect($filter, $range['from'], $range['till']);
+
+			return ['changes' => ChangeAnalytics::compute($data, $filter['grouping']), 'meta' => $meta,
+				'error' => $range['error']
+			];
+		}
+		catch (ApiException $e) {
+			return ['changes' => null, 'meta' => $meta, 'error' => $e->getMessage()];
+		}
+	}
+
 	public static function createLogger(): Logger {
 		$config = ModuleConfig::get();
 
@@ -151,6 +211,7 @@ class FrontendHelper {
 	public static function makeTabs(string $active, bool $show_schedules): CTag {
 		$tabs = [
 			'customreports.dashboard' => _('Report dashboard'),
+			'customreports.changes' => _('Changes'),
 			'customreports.schedule.list' => _('Schedules and delivery')
 		];
 

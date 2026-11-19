@@ -43,6 +43,7 @@ class ScheduleUpdate extends CController {
 			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
 			'analytics' =>			'in '.implode(',', PeriodAnalytics::PERIODS),
 			'problem_list' =>		'in '.ReportBuilder::LIST_FULL.','.ReportBuilder::LIST_SUMMARY,
+			'include_changes' =>	'in 0,1',
 			'frequency' =>			'required|in '.ScheduleHelper::FREQUENCY_DAILY.','.ScheduleHelper::FREQUENCY_WEEKLY,
 			'weekday' =>			'in 1,2,3,4,5,6,7',
 			'time' =>				'required|string',
@@ -80,6 +81,7 @@ class ScheduleUpdate extends CController {
 			'enabled' => $this->getInput('enabled', 0),
 			'show_suppressed' => $this->getInput('show_suppressed', 0),
 			'skip_empty' => $this->getInput('skip_empty', 0),
+			'include_changes' => $this->getInput('include_changes', 0),
 			'created_by' => CWebUser::$data['userid']
 		];
 		$this->getInputs($input, ['name', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',

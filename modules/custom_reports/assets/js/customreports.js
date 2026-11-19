@@ -44,6 +44,11 @@
 			setRowVisible('cr-weekday-row', checkedValue('frequency') === 'weekly');
 		}
 
+		// "Changes" tab: dates only for "Custom dates".
+		if (checkedValue('filter_period') !== null) {
+			setRowVisible('cr-changes-dates', checkedValue('filter_period') === 'custom');
+		}
+
 		if (checkedValue('split') !== null) {
 			const split = checkedValue('split');
 
@@ -54,7 +59,7 @@
 	}
 
 	document.addEventListener('change', function(e) {
-		if (e.target.name === 'frequency' || e.target.name === 'split') {
+		if (e.target.name === 'frequency' || e.target.name === 'split' || e.target.name === 'filter_period') {
 			toggleScheduleRows();
 		}
 	});

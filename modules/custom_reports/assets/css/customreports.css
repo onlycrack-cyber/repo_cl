@@ -247,3 +247,89 @@
 .cr-analytics-narrow {
 	flex: 1 1 220px;
 }
+
+/* "Changes" tab. */
+
+.cr-changes-summary {
+	margin: 0 0 12px 0;
+	line-height: 20px;
+}
+
+.cr-changes-period {
+	font-weight: bold;
+}
+
+.cr-panels {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+	gap: 14px;
+	margin-bottom: 14px;
+}
+
+.cr-panel {
+	min-width: 0;
+	padding: 10px 12px;
+	border: 1px solid rgba(128, 128, 128, .3);
+}
+
+.cr-panel-wide {
+	grid-column: 1 / -1;
+}
+
+.cr-panel h4 {
+	margin: 0 0 6px 0;
+}
+
+.cr-hbar-box {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 180px;
+}
+
+.cr-hbar {
+	flex: 0 0 auto;
+	max-width: 120px;
+	height: 10px;
+}
+
+.cr-hbar-box .cr-hbar {
+	min-width: 2px;
+}
+
+.cr-hbar-label {
+	white-space: nowrap;
+}
+
+.cr-bar-problem {
+	background: #e45959;
+}
+
+.cr-heatmap {
+	border-collapse: separate;
+	border-spacing: 2px;
+	font-size: 10px;
+}
+
+.cr-heatmap th {
+	padding: 0 2px;
+	font-weight: normal;
+	opacity: .7;
+}
+
+.cr-heatmap td {
+	width: 22px;
+	height: 20px;
+	padding: 0;
+	text-align: center;
+	color: #4f5b63;
+}
+
+.cr-heatmap td.cr-heatmap-day {
+	width: auto;
+	padding-right: 6px;
+	text-align: left;
+	background: none !important;
+	color: inherit;
+	opacity: .7;
+}

@@ -33,8 +33,10 @@
 | Нерешённые проблемы: одна строка на проблему, алерты за период, «whole period» | Расписание: «Unresolved summary only» вместо полного списка |
 | ![Графики](docs/screenshots/13-dashboard-charts.png) | ![Статус доставки](docs/screenshots/14-schedules-delivery-status.png) |
 | Графики: новые по важности; новые / решённые / открытые на конец дня | Расписания: результат, следующий запуск, «Test to me», «History», мониторинг в Zabbix |
-| ![История доставок](docs/screenshots/15-delivery-history.png) | |
-| История доставок: запуски и результат по каждому получателю | |
+| ![История доставок](docs/screenshots/15-delivery-history.png) | ![Вкладка Changes](docs/screenshots/16-changes.png) |
+| История доставок: запуски и результат по каждому получателю | Вкладка Changes: было → стало, рост и снижение |
+| ![Блоки Changes](docs/screenshots/17-changes-blocks.png) | |
+| Новые и исчезнувшие проблемы, MTTR по важности, тепловая карта, шумные триггеры, время в проблеме | |
 
 ## Дерево файлов
 
@@ -51,6 +53,8 @@ custom_reports/
 │   ├── ScheduleUpdate.php            # customreports.schedule.update: сохранение (POST + CSRF)
 │   ├── ScheduleDelete.php            # customreports.schedule.delete (POST + CSRF)
 │   ├── ScheduleRun.php               # customreports.schedule.run: «Send now» для расписания
+│   ├── Changes.php                   # customreports.changes: вкладка «Changes» (сравнение периодов)
+│   ├── ChangesExport.php             # customreports.changes.export: CSV / HTML / PDF / печать вкладки
 │   ├── ScheduleTest.php              # customreports.schedule.test: «Test to me» — отчёт расписания только себе
 │   ├── ScheduleHistory.php           # customreports.schedule.history: история доставок
 │   └── CronUpdate.php                # customreports.cron.update: создать/удалить задание cron
@@ -58,6 +62,7 @@ custom_reports/
 │   ├── customreports.dashboard.php
 │   ├── customreports.schedule.list.php
 │   ├── customreports.schedule.edit.php
+│   ├── customreports.changes.php
 │   ├── customreports.schedule.history.php
 │   └── layout.customreports.download.php  # layout выгрузок: Content-Type/Disposition
 ├── lib/                              # общий код фронтенда и CLI
@@ -77,6 +82,8 @@ custom_reports/
 │   ├── ScheduleHelper.php            # нормализация, валидация, расчёт времени запуска
 │   ├── ScheduleStorage.php           # schedules.json / state.json с flock и атомарной записью
 │   ├── CronManager.php               # crontab пользователя веб-сервера, heartbeat, строка для /etc/cron.d
+│   ├── ChangeAnalytics.php           # сравнение периода с предыдущим: все блоки вкладки «Changes»
+│   ├── ChangeRenderer.php            # блоки «Changes» в HTML/PDF, CSV и тексте Telegram
 │   ├── ZabbixStatus.php              # статус доставки → trapper-элементы Zabbix (history.push)
 │   ├── DbSecretResolver.php          # пароль SMTP из БД (CLI), API его не отдаёт
 │   ├── FrontendHelper.php            # фильтр в профиле пользователя, вкладки, media текущего пользователя
@@ -163,6 +170,24 @@ Ack (повторный клик меняет направление, выбор
   При разбивке по хостам и фильтре только по группам хост из строки должен входить в эти группы, иначе отчёта
   по нему не будет.
 - Способ доставки (media type) и формат у всех получателей одного расписания общие.
+
+**Вкладка «Changes» — что изменилось за период.** Выбранный период сравнивается с предыдущим той же длины
+(7 дней — с предыдущими 7 днями). Блоки не повторяют дашборд:
+
+| Блок | Что показывает |
+|---|---|
+| Было → стало | по группам хостов / хостам / триггерам: новые проблемы и медиана времени решения, раньше и сейчас, изменение ▲▼ |
+| Biggest growth / decline | топ-5 с наибольшим ростом и снижением числа проблем |
+| New / disappeared problems | триггеры, сработавшие впервые (в прошлом периоде их не было), и те, что перестали срабатывать (и сейчас не открыты) |
+| MTTR by severity | медиана времени решения по каждому уровню важности, раньше и сейчас |
+| When problems start | тепловая карта «день недели × час» по новым проблемам периода |
+| Noisy triggers | частые и короткоживущие (решены быстрее 5 минут) проблемы — кандидаты на настройку порогов и гистерезиса |
+| Time in problem | время, когда у группы (или хоста) была открыта хотя бы одна проблема High/Disaster, пересечения считаются один раз; в % периода |
+
+Фильтры: группы хостов, хосты, важность, часть названия проблемы, период (24 ч / 7 / 30 дней или произвольные
+даты с календарём, до 92 дней), группировка таблиц (группы хостов / хосты / триггеры). Фильтр запоминается.
+Экспорт: CSV (по разделам), HTML, PDF, печать. В расписании флажок **Changes analysis** добавляет эти блоки в
+HTML/PDF-отчёт и несколько строк в краткую сводку (при разбивке — для каждой части свои).
 
 **Статус и проверка доставки.** На вкладке *Schedules and delivery*:
 
