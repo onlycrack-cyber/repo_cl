@@ -58,7 +58,8 @@ class SendNow extends CController {
 				_('Problem report (test)'), $split, (bool) $this->getInput('skip_empty', 0)
 			);
 
-			if ($result['parts'] == 0) {
+			// Failures first: a part without recipients is counted in "failed", but not in "parts".
+			if ($result['failed'] == 0 && $result['parts'] == 0) {
 				CMessageHelper::setSuccessTitle(_('Nothing to send: no problems match the filter'));
 			}
 			elseif ($result['failed'] == 0) {

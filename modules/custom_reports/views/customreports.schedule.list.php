@@ -140,6 +140,14 @@ if ($data['error'] !== null) {
 	));
 }
 
+if ($data['timezone_problem'] !== null) {
+	$page->addItem(makeMessageBox(ZBX_STYLE_MSG_WARNING, [[
+		'message' => $data['timezone_problem'] === 'invalid'
+			? _('The "timezone" in conf/config.php is not a valid timezone: the cron job does not send reports until it is fixed.')
+			: _('Set "timezone" in conf/config.php (e.g. "Europe/Moscow"). Until then schedule times are in UTC.')
+	]], _('Timezone of schedules is not configured'), true, false));
+}
+
 // Cron job of the sender.
 $cron = $data['cron'];
 $heartbeat = $cron['heartbeat'];

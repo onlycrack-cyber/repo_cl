@@ -15,6 +15,10 @@ use RuntimeException;
  */
 class TelegramTransport {
 
+	// Parameter names of the stock Zabbix Telegram webhook (7.0: api_*, older versions: Token / To) and common forks.
+	private const TELEGRAM_TOKEN_PARAMS = ['api_token', 'Token', 'telegramToken'];
+	private const TELEGRAM_CHAT_PARAMS = ['api_chat_id', 'ChatID', 'To', 'telegramChatId'];
+
 	private string $token;
 	private string $api_url;
 	private string $proxy;
@@ -52,18 +56,24 @@ class TelegramTransport {
 	}
 
 	/**
-	 * Detects a Telegram webhook by its parameters or script.
+	 * Detects a Telegram webhook: by its script (calls api.telegram.org), by its name, or by the pair of
+	 * Telegram-specific parameters (bot token + chat ID). Generic names such as "token" or "bot_token" alone are
+	 * not enough: Slack, Mattermost, Pushover and other webhooks use them too.
 	 */
 	public static function isTelegram(array $media_type): bool {
+		if (stripos($media_type['script'] ?? '', 'api.telegram.org') !== false
+				|| stripos($media_type['name'] ?? '', 'telegram') !== false) {
+			return true;
+		}
+
 		$parameters = self::getParameters($media_type);
 
-		return self::findToken($parameters) !== ''
-			|| stripos($media_type['name'] ?? '', 'telegram') !== false
-			|| stripos($media_type['script'] ?? '', 'api.telegram.org') !== false;
+		return array_intersect_key($parameters, array_flip(self::TELEGRAM_TOKEN_PARAMS))
+			&& array_intersect_key($parameters, array_flip(self::TELEGRAM_CHAT_PARAMS));
 	}
 
 	public static function findToken(array $parameters): string {
-		foreach (['Token', 'api_token', 'token', 'telegramToken', 'bot_token'] as $name) {
+		foreach (array_merge(self::TELEGRAM_TOKEN_PARAMS, ['token', 'bot_token']) as $name) {
 			if (array_key_exists($name, $parameters) && $parameters[$name] !== '') {
 				return $parameters[$name];
 			}

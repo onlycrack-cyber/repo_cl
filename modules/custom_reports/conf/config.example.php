@@ -17,7 +17,8 @@ return [
 	'verify_ssl' => true,
 	'timeout' => 30,
 
-	// Timezone of schedule times (e.g. "Europe/Moscow"); empty = PHP default timezone.
+	// Timezone of schedule times, e.g. "Europe/Moscow". Set it explicitly: the frontend and the cron job have
+	// different PHP default timezones. Empty = UTC (a warning is shown on the "Schedules and delivery" tab).
 	'timezone' => '',
 
 	// Schedules, delivery state and logs. Must be writable by the web server user and must NOT be

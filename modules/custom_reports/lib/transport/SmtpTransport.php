@@ -187,13 +187,13 @@ class SmtpTransport {
 	private function buildMessage(string $from_name, string $from_address, string $to, string $subject, string $body,
 			bool $is_html, array $attachments): string {
 		$domain = substr(strrchr($from_address, '@') ?: '@localhost', 1);
-		$from = $from_name !== '' ? self::encodeHeader($from_name).' <'.$from_address.'>' : $from_address;
+		$from = $from_name !== '' ? self::encodeHeader($from_name, strlen('From: ')).' <'.$from_address.'>' : $from_address;
 
 		$headers = [
 			'Date: '.date('r'),
 			'From: '.$from,
 			'To: <'.$to.'>',
-			'Subject: '.self::encodeHeader($subject),
+			'Subject: '.self::encodeHeader($subject, strlen('Subject: ')),
 			'Message-ID: <'.bin2hex(random_bytes(12)).'@'.$domain.'>',
 			'MIME-Version: 1.0',
 			'Auto-Submitted: auto-generated'
@@ -241,9 +241,18 @@ class SmtpTransport {
 		return ['', $value];
 	}
 
-	private static function encodeHeader(string $value): string {
+	/**
+	 * RFC 2047: non-ASCII text as encoded-words of at most 75 characters, folded onto continuation lines.
+	 *
+	 * @param int $indent  Length of the header name and ": " on the first line.
+	 */
+	private static function encodeHeader(string $value, int $indent = 0): string {
 		$value = str_replace(["\r", "\n"], ' ', $value);
 
-		return preg_match('/[^\x20-\x7E]/', $value) ? '=?UTF-8?B?'.base64_encode($value).'?=' : $value;
+		if (!preg_match('/[^\x20-\x7E]/', $value)) {
+			return $value;
+		}
+
+		return mb_encode_mimeheader($value, 'UTF-8', 'B', "\r\n", $indent);
 	}
 }

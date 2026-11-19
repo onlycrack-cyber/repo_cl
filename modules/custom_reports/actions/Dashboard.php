@@ -72,7 +72,7 @@ class Dashboard extends CController {
 				'show_suppressed' => $this->getInput('filter_show_suppressed', 0),
 				'problem_name' => $this->getInput('filter_problem_name', ''),
 				'acknowledged' => $this->getInput('filter_acknowledged', ReportBuilder::ACK_ALL),
-				'analytics' => $this->getInput('filter_analytics', PeriodAnalytics::PERIOD_7D)
+				'analytics' => $this->getInput('filter_analytics', PeriodAnalytics::PERIOD_24H)
 			]);
 		}
 		elseif ($this->hasInput('filter_rst')) {
@@ -89,7 +89,8 @@ class Dashboard extends CController {
 
 		// Problems are read with the permissions of the current user.
 		try {
-			$report = (new ReportBuilder(new FrontendApiClient(), $limit))->build($filter);
+			$report = (new ReportBuilder(new FrontendApiClient(), $limit, (int) ModuleConfig::get()['analytics_limit']))
+				->build($filter);
 		}
 		catch (Exception $e) {
 			$report = ReportBuilder::emptyReport($filter);

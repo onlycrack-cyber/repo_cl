@@ -83,6 +83,15 @@ catch (Throwable $e) {
 }
 
 $logger = new Logger($config['log_file'], $config['log_level'], $verbose);
+
+// A wrong timezone would make every schedule fire at an unexpected hour (or fail): stop with a clear error.
+if (ModuleConfig::timezoneProblem() === 'invalid') {
+	$logger->error(sprintf('Configuration error: unknown timezone "%s" in conf/config.php (e.g. "Europe/Moscow").',
+		$config['timezone']
+	));
+	exit(CR_EXIT_CONFIG);
+}
+
 $storage = new ScheduleStorage($config['data_dir']);
 $timezone = ModuleConfig::timezone();
 $now = time();
@@ -123,14 +132,17 @@ if ($lock === false) {
 	exit(CR_EXIT_CONFIG);
 }
 
-if (!flock($lock, LOCK_EX | LOCK_NB)) {
-	$logger->warning('Another instance is still running, exiting.');
-	exit(CR_EXIT_LOCKED);
+$locked = flock($lock, LOCK_EX | LOCK_NB);
+
+// Scheduled runs report that cron works (shown on the "Schedules and delivery" tab), also while a previous run
+// is still busy sending, so that a long delivery does not look like a stopped cron.
+if (!isset($options['run']) && !isset($options['dry-run'])) {
+	CronManager::writeHeartbeat($config['data_dir'], ['php' => PHP_BINARY, 'busy' => !$locked]);
 }
 
-// Scheduled runs report that cron works (shown on the "Schedules and delivery" tab).
-if (!isset($options['run']) && !isset($options['dry-run'])) {
-	CronManager::writeHeartbeat($config['data_dir'], ['php' => PHP_BINARY]);
+if (!$locked) {
+	$logger->warning('Another instance is still running, exiting.');
+	exit(CR_EXIT_LOCKED);
 }
 
 try {

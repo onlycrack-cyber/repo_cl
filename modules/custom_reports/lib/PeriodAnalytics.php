@@ -131,7 +131,8 @@ class PeriodAnalytics {
 			'carried' => [],
 			'prev_events' => [],
 			'alerts' => null,
-			'alerts_truncated' => false
+			'alerts_truncated' => false,
+			'prev_truncated' => false
 		];
 
 		foreach ($events as $event) {
@@ -141,7 +142,9 @@ class PeriodAnalytics {
 					'clock' => (int) $event['clock'],
 					'resolved' => $recovery[$event['r_eventid']] ?? null,
 					'severity' => (int) $event['severity'],
-					'hosts' => array_column($event['hosts'], 'hostid')
+					'hosts' => array_map(static function (array $host): array {
+						return ['hostid' => $host['hostid'], 'name' => $host['name']];
+					}, $event['hosts'])
 				];
 
 				continue;
@@ -178,6 +181,8 @@ class PeriodAnalytics {
 			'time_till' => $from - 1
 		]);
 
+		$data['prev_truncated'] = count($prev) > $this->limit;
+
 		foreach (array_slice($prev, 0, $this->limit) as $event) {
 			$data['prev_events'][] = [
 				'severity' => (int) $event['severity'],
@@ -207,6 +212,7 @@ class PeriodAnalytics {
 		$alerts = [];
 
 		try {
+			// One budget for all chunks: once it is used up, the counts are marked as truncated.
 			foreach (array_chunk($eventids, 1000) as $chunk) {
 				$alerts = array_merge($alerts, $this->api->call('alert.get', [
 					// alert.get cannot filter by "alerttype": remote command results are skipped below.
@@ -214,8 +220,12 @@ class PeriodAnalytics {
 					'eventids' => $chunk,
 					'time_from' => $data['from'],
 					'time_till' => $data['till'],
-					'limit' => $limit + 1
+					'limit' => $limit - count($alerts) + 1
 				]));
+
+				if (count($alerts) > $limit) {
+					break;
+				}
 			}
 		}
 		catch (ApiException $e) {
@@ -364,7 +374,7 @@ class PeriodAnalytics {
 		));
 		$data['carried'] = array_values(array_filter($data['carried'] ?? [],
 			static function (array $event) use ($match): bool {
-				return $match($event['hosts']);
+				return $match(array_column($event['hosts'], 'hostid'));
 			}
 		));
 
@@ -421,7 +431,8 @@ class PeriodAnalytics {
 			'period' => $data['period'],
 			'from' => $data['from'],
 			'till' => $data['till'],
-			'truncated' => $data['truncated'],
+			// Any of the inputs was limited by "analytics_limit": the report says so.
+			'truncated' => $data['truncated'] || !empty($data['prev_truncated']) || !empty($data['alerts_truncated']),
 			'new' => $total,
 			'new_by_severity' => $by_severity,
 			'prev' => $prev_total,

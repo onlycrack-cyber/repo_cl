@@ -60,7 +60,8 @@ class FrontendHelper {
 			'show_suppressed' => CProfile::get(self::PROFILE_PREFIX.'show_suppressed', 0),
 			'problem_name' => CProfile::get(self::PROFILE_PREFIX.'problem_name', ''),
 			'acknowledged' => CProfile::get(self::PROFILE_PREFIX.'acknowledged', ReportBuilder::ACK_ALL),
-			'analytics' => CProfile::get(self::PROFILE_PREFIX.'analytics', PeriodAnalytics::PERIOD_7D),
+			// 24 hours by default: the dashboard is opened often, 7/30 days read much more history.
+			'analytics' => CProfile::get(self::PROFILE_PREFIX.'analytics', PeriodAnalytics::PERIOD_24H),
 			'sortfield' => CProfile::get('web.customreports.sort', ReportBuilder::SORT_SEVERITY),
 			'sortorder' => CProfile::get('web.customreports.sortorder', ReportBuilder::SORT_DESC)
 		]);

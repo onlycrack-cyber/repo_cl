@@ -82,6 +82,30 @@ class CronManager {
 			}
 		}
 
+		// get_current_user() returns the owner of the script file (usually root), not the user running PHP.
+		foreach (['USER', 'LOGNAME'] as $variable) {
+			$user = getenv($variable);
+
+			if (is_string($user) && $user !== '') {
+				return $user;
+			}
+		}
+
+		foreach (['/usr/bin/id', '/bin/id'] as $id) {
+			if (is_file($id) && is_executable($id)) {
+				try {
+					[$exit_code, $output] = ProcessRunner::run([$id, '-un'], 5);
+
+					if ($exit_code == 0 && trim($output) !== '') {
+						return trim($output);
+					}
+				}
+				catch (RuntimeException $e) {
+					// Fall through.
+				}
+			}
+		}
+
 		return get_current_user();
 	}
 

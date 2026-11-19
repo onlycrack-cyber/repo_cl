@@ -80,9 +80,10 @@ class ReportBuilder {
 				? $filter['sortfield']
 				: self::SORT_SEVERITY,
 			'sortorder' => ($filter['sortorder'] ?? '') === self::SORT_ASC ? self::SORT_ASC : self::SORT_DESC,
+			// Period analytics reads the event history (several API queries): only when it is asked for.
 			'analytics' => in_array($filter['analytics'] ?? '', PeriodAnalytics::PERIODS, true)
 				? $filter['analytics']
-				: PeriodAnalytics::PERIOD_7D,
+				: PeriodAnalytics::PERIOD_NONE,
 			'problem_list' => ($filter['problem_list'] ?? '') === self::LIST_SUMMARY ? self::LIST_SUMMARY : self::LIST_FULL
 		];
 	}
@@ -235,9 +236,10 @@ class ReportBuilder {
 			}
 		}
 
+		// Hosts of open problems, of new problems of the period and of problems carried over from before it.
 		if ($with_host_groups) {
 			$report['host_groups'] = $this->getHostGroups(array_merge($report['problems'],
-				$report['analytics_data']['events'] ?? []
+				$report['analytics_data']['events'] ?? [], $report['analytics_data']['carried'] ?? []
 			));
 		}
 

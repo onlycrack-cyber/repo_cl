@@ -21,7 +21,7 @@ class ModuleConfig {
 		'verify_ssl' => true,
 		'timeout' => 30,
 
-		// Timezone in which schedule times are evaluated; empty = PHP default.
+		// Timezone in which schedule times are evaluated, e.g. "Europe/Moscow"; empty = UTC.
 		'timezone' => '',
 
 		// Storage and logging; empty values = <module>/data and <module>/data/logs/custom_reports.log.
@@ -106,10 +106,25 @@ class ModuleConfig {
 
 	/**
 	 * Timezone used to evaluate schedule times.
+	 *
+	 * The same value must be used by the frontend (it shows the timezone in the forms) and by the cron sender.
+	 * The PHP default cannot be used: the frontend switches it to the timezone of the logged-in user, and the CLI
+	 * reads its own php.ini. Without a valid "timezone" in conf/config.php both use UTC (see timezoneProblem()).
 	 */
 	public static function timezone(): string {
-		$timezone = self::get()['timezone'];
+		return self::timezoneProblem() === null ? self::get()['timezone'] : 'UTC';
+	}
 
-		return $timezone !== '' ? $timezone : date_default_timezone_get();
+	/**
+	 * @return string|null  null if "timezone" is set and valid, "not_set" or "invalid" otherwise.
+	 */
+	public static function timezoneProblem(): ?string {
+		$timezone = (string) self::get()['timezone'];
+
+		if ($timezone === '') {
+			return 'not_set';
+		}
+
+		return in_array($timezone, timezone_identifiers_list(), true) ? null : 'invalid';
 	}
 }

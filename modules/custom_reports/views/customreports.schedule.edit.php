@@ -180,7 +180,12 @@ $form_list = (new CFormList('schedule_form_list'))
 			->setWidth(ZBX_TEXTAREA_TINY_WIDTH)
 			->setAttribute('placeholder', 'hh:mm')
 			->setAriaRequired(),
-		(new CSpan(_s('timezone: %1$s', $data['timezone'])))->addClass(ZBX_STYLE_GREY)->addStyle('margin-left: 10px;')
+		(new CSpan(_s('timezone: %1$s', $data['timezone'])))
+			->addClass($data['timezone_problem'] === null ? ZBX_STYLE_GREY : ZBX_STYLE_RED)
+			->addStyle('margin-left: 10px;'),
+		$data['timezone_problem'] === null
+			? null
+			: (new CSpan(_('(set "timezone" in conf/config.php)')))->addClass(ZBX_STYLE_RED)->addStyle('margin-left: 5px;')
 	])
 
 	// Delivery.

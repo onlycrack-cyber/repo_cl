@@ -84,6 +84,7 @@ class ScheduleList extends CController {
 			'state' => $state,
 			'media_types' => $media_types,
 			'timezone' => ModuleConfig::timezone(),
+			'timezone_problem' => ModuleConfig::timezoneProblem(),
 			'data_dir' => $config['data_dir'],
 			'error' => $error
 		]);

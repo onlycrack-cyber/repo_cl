@@ -57,7 +57,8 @@ class ScheduleRun extends CController {
 					: _s('Reports: %1$s, messages sent: %2$s', $result['parts'], $result['sent'])
 			]);
 
-			if ($result['parts'] == 0) {
+			// Failures first: a part without recipients is counted in "failed", but not in "parts".
+			if ($result['failed'] == 0 && $result['parts'] == 0) {
 				CMessageHelper::setSuccessTitle(_s('Report "%1$s": nothing to send, no problems match the filter',
 					$schedule['name']
 				));

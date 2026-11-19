@@ -166,7 +166,7 @@ class ReportService {
 			$result['errors'] = array_merge($result['errors'], $part_result['errors']);
 		}
 
-		if ($result['parts'] == 0) {
+		if ($result['parts'] == 0 && $result['failed'] == 0) {
 			$this->logger->info(sprintf('[%s] nothing to send: no problems match the filter.', $title));
 		}
 

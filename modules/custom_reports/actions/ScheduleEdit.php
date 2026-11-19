@@ -172,7 +172,8 @@ class ScheduleEdit extends CController {
 			'users' => $this->getMultiselectData('user', $schedule['userids']),
 			'usrgrps' => $this->getMultiselectData('usergroup', $schedule['usrgrpids']),
 			'media_types' => $this->getMediaTypes(),
-			'timezone' => ModuleConfig::timezone()
+			'timezone' => ModuleConfig::timezone(),
+			'timezone_problem' => ModuleConfig::timezoneProblem()
 		]);
 		$response->setTitle($scheduleid === '' ? _('New report schedule') : _('Report schedule'));
 		$this->setResponse($response);

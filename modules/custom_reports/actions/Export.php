@@ -45,7 +45,8 @@ class Export extends CController {
 		$limit = (int) CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		try {
-			$report = (new ReportBuilder(new FrontendApiClient(), $limit))->build(FrontendHelper::getFilter());
+			$report = (new ReportBuilder(new FrontendApiClient(), $limit, (int) ModuleConfig::get()['analytics_limit']))
+				->build(FrontendHelper::getFilter());
 		}
 		catch (Exception $e) {
 			error($e->getMessage());

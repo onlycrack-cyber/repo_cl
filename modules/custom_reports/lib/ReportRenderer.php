@@ -48,7 +48,19 @@ class ReportRenderer {
 		return $problem['hosts'] ? implode(', ', array_column($problem['hosts'], 'name')) : '-';
 	}
 
-	public static function filterDescription(array $report): string {
+	/**
+	 * @param int $max_items  Maximum number of host groups / hosts to list (0 - all), the rest is "and N more".
+	 */
+	public static function filterDescription(array $report, int $max_items = 0): string {
+		$list = static function (array $names) use ($max_items): string {
+			$names = array_values($names);
+
+			if ($max_items > 0 && count($names) > $max_items) {
+				return implode(', ', array_slice($names, 0, $max_items)).' and '.(count($names) - $max_items).' more';
+			}
+
+			return implode(', ', $names);
+		};
 		$info = $report['filter_info'];
 		$parts = [];
 
@@ -68,11 +80,11 @@ class ReportRenderer {
 		}
 
 		if ($info['groups']) {
-			$parts[] = 'Host groups: '.implode(', ', $info['groups']);
+			$parts[] = 'Host groups: '.$list($info['groups']);
 		}
 
 		if ($info['hosts']) {
-			$parts[] = 'Hosts: '.implode(', ', $info['hosts']);
+			$parts[] = 'Hosts: '.$list($info['hosts']);
 		}
 
 		return implode('; ', $parts);
@@ -85,6 +97,16 @@ class ReportRenderer {
 		return ($base !== '' ? $base : 'problem_report').'_'.date('Ymd_Hi', $time).'.'.$extension;
 	}
 
+	/**
+	 * Protects against CSV formula injection: problem and host names can contain item values (trigger name macros),
+	 * and a cell starting with "=", "+", "-", "@", tab or CR would be run as a formula by spreadsheet applications.
+	 */
+	public static function csvCell($value): string {
+		$value = (string) $value;
+
+		return ($value !== '' && strpos("=+-@\t\r", $value[0]) !== false) ? "'".$value : $value;
+	}
+
 	public static function renderCsv(array $report): string {
 		$fh = fopen('php://temp', 'r+');
 
@@ -93,7 +115,7 @@ class ReportRenderer {
 		fputcsv($fh, ['Time', 'Duration', 'Severity', 'Host', 'Problem', 'Acknowledged', 'Event ID'], ',', '"', '');
 
 		foreach ($report['problems'] as $problem) {
-			fputcsv($fh, [
+			fputcsv($fh, array_map([self::class, 'csvCell'], [
 				date('Y-m-d H:i:s', $problem['clock']),
 				self::formatDuration($problem['age']),
 				$report['severity_meta'][$problem['severity']]['name'],
@@ -101,7 +123,7 @@ class ReportRenderer {
 				$problem['name'],
 				$problem['acknowledged'] ? 'Yes' : 'No',
 				$problem['eventid']
-			], ',', '"', '');
+			]), ',', '"', '');
 		}
 
 		rewind($fh);
@@ -251,7 +273,7 @@ class ReportRenderer {
 		$lines = [];
 		$lines[] = $b("\u{1F4CA} ".$e($title));
 		$lines[] = $e('Generated: '.date('Y-m-d H:i', $report['generated']));
-		$lines[] = $e(self::filterDescription($report));
+		$lines[] = $e(self::filterDescription($report, 10));
 		$lines[] = '';
 		$lines[] = $b('Active problems: '.$report['total']);
 
@@ -333,7 +355,15 @@ class ReportRenderer {
 		}
 
 		if ($max_length > 0 && mb_strlen($text, 'UTF-8') > $max_length) {
-			$text = mb_substr(strip_tags($text), 0, $max_length - 3, 'UTF-8').'...';
+			if ($html) {
+				// Cutting HTML could split a tag or an entity ("&am...") and Telegram would reject the message:
+				// cut the plain text instead and escape it again (escaping does not change the visible length).
+				return htmlspecialchars(self::renderText($report, $title, $max_length, false), ENT_NOQUOTES | ENT_SUBSTITUTE,
+					'UTF-8'
+				);
+			}
+
+			$text = mb_substr($text, 0, $max_length - 3, 'UTF-8').'...';
 		}
 
 		return $text;
@@ -536,7 +566,8 @@ class ReportRenderer {
 		}
 
 		if ($analytics['truncated']) {
-			$html .= '<p style="color:#e45959">Period analytics is limited by "analytics_limit" events.</p>';
+			$html .= '<p style="color:#e45959">Period analytics is limited by "analytics_limit": the numbers (including '.
+				'alert counts) may be lower than in reality.</p>';
 		}
 
 		return $html;
@@ -668,6 +699,10 @@ class ReportRenderer {
 
 		foreach (self::analyticsMetrics($analytics) as $label => $value) {
 			$lines[] = $e($label.': '.$value);
+		}
+
+		if ($analytics['truncated']) {
+			$lines[] = $e('(limited by "analytics_limit": the numbers may be lower than in reality)');
 		}
 
 		$unit = self::chartUnit($analytics);

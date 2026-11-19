@@ -48,11 +48,21 @@ class ReportSplitter {
 
 		if ($skip_empty) {
 			$parts = array_values(array_filter($parts, static function (array $part): bool {
-				return $part['report']['total'] > 0 || ($part['report']['analytics']['new'] ?? 0) > 0;
+				$analytics = $part['report']['analytics'];
+
+				return $part['report']['total'] > 0
+					|| ($analytics !== null && ($analytics['new'] > 0 || $analytics['open_start'] > 0));
 			}));
 		}
 
 		return $parts;
+	}
+
+	/**
+	 * Problems of the analytics period: new ones and those carried over from before it.
+	 */
+	private static function periodProblems(array $report): array {
+		return array_merge($report['analytics_data']['events'] ?? [], $report['analytics_data']['carried'] ?? []);
 	}
 
 	private static function splitByGroup(array $report): array {
@@ -82,7 +92,7 @@ class ReportSplitter {
 
 		// Groups that had problems during the analytics period, even if nothing is open now.
 		if (!$report['filter']['groupids']) {
-			foreach ($report['analytics_data']['events'] ?? [] as $event) {
+			foreach (self::periodProblems($report) as $event) {
 				foreach ($event['hosts'] as $host) {
 					$groups += $report['host_groups'][$host['hostid']] ?? [];
 				}
@@ -134,7 +144,7 @@ class ReportSplitter {
 
 		// Hosts that had problems during the analytics period, even if nothing is open now.
 		if (!$report['filter']['hostids']) {
-			foreach ($report['analytics_data']['events'] ?? [] as $event) {
+			foreach (self::periodProblems($report) as $event) {
 				foreach ($event['hosts'] as $host) {
 					$hosts += [$host['hostid'] => $host['name']];
 				}
