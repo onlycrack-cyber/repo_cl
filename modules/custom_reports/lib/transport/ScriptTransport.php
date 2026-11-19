@@ -63,6 +63,8 @@ class ScriptTransport {
 
 		$env = getenv();
 		$env = is_array($env) ? $env : [];
+		// Lets a script tell a report of this module from an ordinary Zabbix alert.
+		$env['CR_REPORT'] = '1';
 
 		if ($file !== null) {
 			$env['CR_REPORT_FILE'] = $file['path'];

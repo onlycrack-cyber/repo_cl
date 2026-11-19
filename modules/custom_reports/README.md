@@ -117,6 +117,7 @@ custom_reports/
 │   └── js/customreports.js
 ├── bin/send_reports.php              # cron-рассыльщик
 ├── conf/config.example.php           # → conf/config.php
+├── examples/alertscripts/cr_telegram.py  # скрипт Telegram для способа оповещения «Скрипт»: сообщение + файл отчёта
 ├── examples/externalscripts/         # примеры: cr_disk_usage.sh, cr_top_processes.sh, cluster_resources_csv.py, cr_vcenter_capacity.py
 ├── zabbix/zbx_template_custom_reports.yaml  # шаблон Zabbix: «рассылка не работает / доставка не удалась»
 └── data/                             # хранилище по умолчанию (лучше вынести, см. ниже)
@@ -159,7 +160,24 @@ Zabbix API (JSON-RPC, API token) и отправляет его. Результ�
   `CR_REPORT_FILE`, `CR_REPORT_FILENAME`, `CR_REPORT_MIME`; после отправки файл удаляется. Скрипт, который о них
   не знает, просто отправит сводку.
 
-Для Telegram проще и полнее встроенный тип **Webhook Telegram** из Zabbix: модуль сам отправляет сообщения (с
+Готовый скрипт для Telegram — `examples/alertscripts/cr_telegram.py` (Python 3, только стандартная библиотека):
+отправляет сообщение и, если модуль передал файл отчёта, — этот файл документом; таблицы с
+`'script_message_format' => 'html'` приходят моноширинными блоками; лог пишет только в stderr (не нужны права на
+лог-файлы); обычные алерты Zabbix тоже отправляет. Установка:
+
+```bash
+cp /usr/share/zabbix/modules/custom_reports/examples/alertscripts/cr_telegram.py /usr/lib/zabbix/alertscripts/
+```
+
+```bash
+chmod 755 /usr/lib/zabbix/alertscripts/cr_telegram.py
+```
+
+Способ оповещения: тип «Скрипт», имя скрипта `cr_telegram.py`, параметры `{ALERT.SENDTO}`, `{ALERT.SUBJECT}`,
+`{ALERT.MESSAGE}` и токен бота (или файл `/etc/zabbix/cr_telegram.conf` со строкой `token=...`, доступный
+пользователям `zabbix` и веб-сервера). В `conf/config.php` модуля: `'script_message_format' => 'html'`.
+
+Для Telegram подходит и встроенный тип **Webhook Telegram** из Zabbix: модуль сам отправляет сообщения (с
 HTML-разметкой) и документ, скрипт не нужен.
 
 **Фильтры и сортировка.** На дашборде и в расписаниях одинаковые условия отбора:
