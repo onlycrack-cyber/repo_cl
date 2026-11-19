@@ -468,3 +468,45 @@
 	border-top: 1px dashed currentColor;
 	opacity: .6;
 }
+
+/* Collapsed "Unresolved problems": severities right in the header. */
+.cr-details > summary .cr-severity-inline {
+	display: inline-flex;
+	margin: 0 0 0 8px;
+	vertical-align: middle;
+	font-weight: normal;
+}
+
+/* Structure of open problems. */
+.cr-structure .cr-panel .list-table {
+	margin-top: 4px;
+}
+
+.cr-heat-cell {
+	text-align: center;
+	background: rgba(228, 89, 89, var(--cr-heat, 0));
+}
+
+.cr-total-cell {
+	text-align: center;
+	font-weight: bold;
+}
+
+.cr-sev-bar-cell {
+	width: 35%;
+}
+
+.cr-sev-bar {
+	display: flex;
+	min-width: 4px;
+	height: 14px;
+}
+
+.cr-sev-bar > div {
+	min-width: 3px;
+}
+
+.cr-big-number {
+	font-size: 20px;
+	font-weight: bold;
+}

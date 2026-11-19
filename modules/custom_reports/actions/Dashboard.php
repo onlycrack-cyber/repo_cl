@@ -90,7 +90,7 @@ class Dashboard extends CController {
 		// Problems are read with the permissions of the current user.
 		try {
 			$report = (new ReportBuilder(new FrontendApiClient(), $limit, (int) ModuleConfig::get()['analytics_limit']))
-				->build($filter);
+				->build($filter, null, true);
 		}
 		catch (Exception $e) {
 			$report = ReportBuilder::emptyReport($filter);

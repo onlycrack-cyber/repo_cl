@@ -10,6 +10,7 @@
  */
 
 use Modules\CustomReports\Lib\FrontendHelper;
+use Modules\CustomReports\Lib\OpenStructure;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\PeriodAnalytics;
 use Modules\CustomReports\Lib\SvgChart;
@@ -374,6 +375,19 @@ if ($analytics !== null) {
 		return $item['whole_period'];
 	}));
 
+	// Severities of the unresolved problems in the collapsed header.
+	$unresolved_by_severity = (new CList())->addClass('cr-severity-list cr-severity-inline');
+	$counts = array_count_values(array_column($report['unresolved'], 'severity'));
+
+	foreach (array_reverse(FrontendHelper::getSeverities()) as $severity) {
+		if (($counts[$severity['value']] ?? 0) > 0) {
+			$unresolved_by_severity->addItem(
+				(new CSpan($severity['label'].': '.$counts[$severity['value']]))
+					->addClass(CSeverityHelper::getStyle((int) $severity['value']))
+			);
+		}
+	}
+
 	$analytics_block = (new CDiv([
 		new CTag('h4', true, cr_s('Period analytics: %1$s (%2$s - %3$s)', $period_labels_an[$analytics['period']],
 			zbx_date2str(DATE_TIME_FORMAT, $analytics['from']), zbx_date2str(DATE_TIME_FORMAT, $analytics['till'])
@@ -385,17 +399,188 @@ if ($analytics !== null) {
 			(new CDiv($recurring))->addClass('cr-analytics-table'),
 			(new CDiv($top_new))->addClass('cr-analytics-table cr-analytics-narrow')
 		]))->addClass('cr-analytics-tables'),
-		new CTag('h4', true, cr_s('Unresolved problems: %1$s, open the whole period: %2$s', count($report['unresolved']),
-			$whole_period
-		)),
-		(new CDiv(cr_t('One line per problem: alerts and repeated events of the period are counted instead of being listed.')))
-			->addClass('cr-note'),
-		$unresolved,
+		// Collapsible: a long list should not push the rest of the page down.
+		(new CTag('details', true, [
+			new CTag('summary', true, [
+				cr_s('Unresolved problems: %1$s, open the whole period: %2$s', count($report['unresolved']), $whole_period),
+				' ',
+				$unresolved_by_severity
+			]),
+			(new CDiv(cr_t('One line per problem: alerts and repeated events of the period are counted instead of being listed.')))
+				->addClass('cr-note'),
+			$unresolved
+		]))
+			->addClass('cr-details')
+			->setAttribute('data-cr-remember', 'cr-dashboard-unresolved'),
 		$analytics['truncated']
 			? (new CDiv(cr_t('Period analytics is limited by "analytics_limit" events.')))->addClass(ZBX_STYLE_RED)
 			: null
 	]))->addClass('cr-analytics');
 }
+
+// Structure of open problems: age, host groups, not acknowledged, alerts.
+$structure = OpenStructure::compute($report);
+$severities = array_reverse(FrontendHelper::getSeverities());
+$severity_names = array_column($severities, 'label', 'value');
+$structure_panel = static function (string $title, $body, string $hint = '') {
+	return (new CDiv([
+		new CTag('h4', true, $title),
+		$hint !== '' ? (new CDiv($hint))->addClass('cr-note') : null,
+		$body
+	]))->addClass('cr-panel');
+};
+
+// 1. Age x severity: the older and the more severe, the darker.
+$age_labels = ['hour' => cr_t('up to 1 hour'), 'day' => cr_t('1 hour - 1 day'), 'week' => cr_t('1 - 7 days'),
+	'older' => cr_t('over 7 days')
+];
+$age_table = (new CTableInfo())->setHeader(array_merge([cr_t('Severity')], array_values($age_labels), [cr_t('Total')]));
+$age_max = 1;
+
+foreach ($structure['ages'] as $row) {
+	$age_max = max($age_max, max($row));
+}
+
+foreach ($severities as $severity) {
+	$row = $structure['ages'][$severity['value']];
+
+	if (array_sum($row) == 0) {
+		continue;
+	}
+
+	$cells = [CSeverityHelper::makeSeverityCell((int) $severity['value'])];
+
+	foreach ($row as $count) {
+		$cells[] = (new CCol($count > 0 ? $count : ''))
+			->addClass('cr-heat-cell')
+			->addStyle($count > 0 ? '--cr-heat: '.round(0.15 + 0.6 * $count / $age_max, 2).';' : '');
+	}
+
+	$cells[] = (new CCol(array_sum($row)))->addClass('cr-total-cell');
+	$age_table->addRow($cells);
+}
+
+$age_table->setNoDataMessage(cr_t('No open problems.'));
+
+// 2. Host groups with open problems: stacked severity bar.
+$group_table = (new CTableInfo())
+	->setHeader([cr_t('Host group'), cr_t('Open'), cr_t('High and Disaster'), cr_t('Unacknowledged'), cr_t('By severity')])
+	->setNoDataMessage(cr_t('No open problems.'));
+$group_max = max(1, max(array_column($structure['groups'], 'total') ?: [0]));
+
+foreach ($structure['groups'] as $group) {
+	$bar = (new CDiv())->addClass('cr-sev-bar')->addStyle('width: '.round($group['total'] * 100 / $group_max).'%;');
+
+	foreach ($severities as $severity) {
+		$count = $group['by_severity'][$severity['value']];
+
+		if ($count > 0) {
+			$bar->addItem((new CDiv())
+				->addClass(CSeverityHelper::getStyle((int) $severity['value']))
+				->addStyle('flex: '.$count.' 1 0;')
+				->setTitle($severity['label'].': '.$count)
+			);
+		}
+	}
+
+	$group_table->addRow([$group['name'], $group['total'],
+		$group['high'] > 0 ? (new CSpan($group['high']))->addClass(ZBX_STYLE_RED) : '0',
+		$group['unacknowledged'], (new CCol($bar))->addClass('cr-sev-bar-cell')
+	]);
+}
+
+// 3. Not acknowledged.
+$unack_list = (new CList())->addClass('cr-severity-list');
+
+foreach ($severities as $severity) {
+	if ($structure['unack_by_severity'][$severity['value']] > 0) {
+		$unack_list->addItem((new CSpan($severity['label'].': '.$structure['unack_by_severity'][$severity['value']]))
+			->addClass(CSeverityHelper::getStyle((int) $severity['value']))
+		);
+	}
+}
+
+$oldest_table = (new CTableInfo())
+	->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Problem'), cr_t('Duration')])
+	->setNoDataMessage(cr_t('No High or Disaster problems without acknowledgement.'));
+
+foreach ($structure['oldest_unacknowledged'] as $problem) {
+	$oldest_table->addRow([CSeverityHelper::makeSeverityCell($problem['severity']), ReportRenderer::hostNames($problem),
+		$problem['name'], (new CCol(ReportRenderer::formatDuration($problem['age'])))->addClass(ZBX_STYLE_NOWRAP)
+	]);
+}
+
+$unack_body = [
+	(new CDiv([
+		(new CSpan($structure['unacknowledged']))->addClass('cr-big-number'),
+		' ',
+		cr_s('of %1$s open problems are not acknowledged', $structure['total']),
+		$structure['total'] > 0
+			? ' ('.round($structure['unacknowledged'] * 100 / $structure['total']).'%)'
+			: ''
+	])),
+	$unack_list,
+	(new CDiv(cr_t('The oldest High and Disaster problems without acknowledgement:')))->addClass('cr-note'),
+	$oldest_table
+];
+
+// 4. Alerts of the period for the unresolved problems.
+$alerts_body = null;
+
+if ($structure['alerts'] !== null) {
+	$alerts_table = (new CTableInfo())
+		->setHeader([cr_t('Host'), cr_t('Problem'), cr_t('Alerts sent')])
+		->setNoDataMessage(cr_t('No alerts in the period.'));
+
+	foreach ($structure['alerts']['top'] as $item) {
+		$alerts_table->addRow([implode(', ', array_column($item['hosts'], 'name')), $item['name'],
+			[$item['alerts_sent'], $item['alerts_failed']
+				? (new CSpan(' '.cr_s('(%1$s failed)', $item['alerts_failed'])))->addClass(ZBX_STYLE_RED)
+				: null
+			]
+		]);
+	}
+
+	$alerts_body = [
+		(new CDiv([
+			(new CSpan($structure['alerts']['sent']))->addClass('cr-big-number'), ' ', cr_t('alerts sent for the open problems'),
+			$structure['alerts']['failed'] > 0
+				? [', ', (new CSpan(cr_s('failed: %1$s', $structure['alerts']['failed'])))->addClass(ZBX_STYLE_RED)]
+				: null
+		])),
+		$structure['alerts']['silent'] > 0
+			? (new CDiv(cr_s('Open problems without any alert in the period: %1$s - check the actions.',
+				$structure['alerts']['silent']
+			)))->addClass(ZBX_STYLE_ORANGE)
+			: null,
+		(new CDiv(cr_t('Problems with the most alerts:')))->addClass('cr-note'),
+		$alerts_table
+	];
+}
+
+$structure_block = $structure['total'] > 0
+	? (new CDiv([
+		new CTag('h4', true, cr_t('Structure of open problems')),
+		(new CDiv([
+			$structure_panel(cr_t('Age of open problems'), $age_table,
+				cr_t('How long the problems have been open, by severity: old severe problems first of all.')
+			),
+			$structure_panel(cr_t('Where the problems are'), [
+				$group_table,
+				$structure['groups_total'] > count($structure['groups'])
+					? (new CDiv(cr_s('Top %1$s of %2$s.', count($structure['groups']), $structure['groups_total'])))
+						->addClass('cr-note')
+					: null
+			], cr_t('Host groups with open problems; a problem of hosts in several groups counts in each.')),
+			$structure_panel(cr_t('Not acknowledged'), $unack_body),
+			$alerts_body !== null
+				? $structure_panel(cr_t('Alerts for the open problems'), $alerts_body,
+					cr_t('Alerts of the period analytics sent by Zabbix actions for the problems that are still open.')
+				)
+				: null
+		]))->addClass('cr-panels cr-structure')
+	]))->addClass('cr-analytics')
+	: null;
 
 // Test delivery.
 $send_block = null;
@@ -503,6 +688,10 @@ if ($data['error'] !== null) {
 $page->addItem($kpi);
 $page->addItem($open_stats);
 
+if ($structure_block !== null) {
+	$page->addItem($structure_block);
+}
+
 if ($analytics_block !== null) {
 	$page->addItem($analytics_block);
 }
@@ -516,12 +705,16 @@ if ($send_block !== null) {
 	$page->addItem($send_block);
 }
 
-if ($report['truncated']) {
-	$page->addItem((new CDiv(cr_s('Only the first %1$s problems are shown. Narrow down the filter.', $report['total'])))
-		->addClass('cr-note')
-	);
+// With period analytics the problems are listed in "Unresolved problems" (one line per problem, collapsible);
+// the full table is shown only without it.
+if ($analytics_block === null) {
+	if ($report['truncated']) {
+		$page->addItem((new CDiv(cr_s('Only the first %1$s problems are shown. Narrow down the filter.', $report['total'])))
+			->addClass('cr-note')
+		);
+	}
+
+	$page->addItem($table);
 }
 
-$page
-	->addItem($table)
-	->show();
+$page->show();

@@ -209,27 +209,26 @@
 	});
 
 	// "Changes" tab: remember whether the detailed analysis is expanded (per browser, optional).
+	// <details data-cr-remember="key">: the open / collapsed state is remembered in the browser (collapsed by default).
 	function restoreDetails() {
-		const details = document.getElementById('cr-changes-details');
+		document.querySelectorAll('details[data-cr-remember]').forEach(function(details) {
+			const key = details.getAttribute('data-cr-remember');
 
-		if (details === null) {
-			return;
-		}
-
-		try {
-			details.open = window.localStorage.getItem('cr-changes-details') === '1';
-		}
-		catch (e) {
-			// Storage is not available: keep the default (collapsed).
-		}
-
-		details.addEventListener('toggle', function() {
 			try {
-				window.localStorage.setItem('cr-changes-details', details.open ? '1' : '0');
+				details.open = window.localStorage.getItem(key) === '1';
 			}
 			catch (e) {
-				// Ignore.
+				// Storage is not available: keep the default (collapsed).
 			}
+
+			details.addEventListener('toggle', function() {
+				try {
+					window.localStorage.setItem(key, details.open ? '1' : '0');
+				}
+				catch (e) {
+					// Ignore.
+				}
+			});
 		});
 	}
 

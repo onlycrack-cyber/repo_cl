@@ -494,7 +494,8 @@ $details = (new CTag('details', true, [
 	$grid
 ]))
 	->addClass('cr-details')
-	->setId('cr-changes-details');
+	->setId('cr-changes-details')
+	->setAttribute('data-cr-remember', 'cr-changes-details');
 
 $page->addItem($overview_block)->addItem($details);
 
