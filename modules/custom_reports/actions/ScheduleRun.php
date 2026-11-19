@@ -63,7 +63,7 @@ class ScheduleRun extends CController {
 
 			$service = FrontendHelper::createService();
 			$result = $test
-				? $service->testSchedule($schedule, FrontendHelper::getCurrentUserMedia()[$schedule['mediatypeid']] ?? [])
+				? $service->testSchedule($schedule, FrontendHelper::getCurrentUserMedia())
 				: $service->runSchedule($schedule);
 			$run = ScheduleHelper::makeRun($trigger, $started, $result, null, $user);
 		}

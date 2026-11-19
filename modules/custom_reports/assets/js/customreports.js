@@ -76,6 +76,15 @@
 			setRowVisible('cr-split-hint-row', !script);
 		}
 
+		// "Own media of every user": the media type is optional (only for the additional recipients).
+		if (checkedValue('media_mode') !== null) {
+			const label = document.querySelector('label[for="label-mediatypeid"]');
+
+			if (label !== null) {
+				label.classList.toggle('form-label-asterisk', checkedValue('media_mode') !== 'user');
+			}
+		}
+
 		if (checkedValue('split') !== null) {
 			const split = script ? 'none' : checkedValue('split');
 
@@ -86,7 +95,7 @@
 	}
 
 	document.addEventListener('change', function(e) {
-		if (['frequency', 'split', 'filter_period', 'source'].includes(e.target.name)) {
+		if (['frequency', 'split', 'filter_period', 'source', 'media_mode'].includes(e.target.name)) {
 			toggleScheduleRows();
 		}
 	});

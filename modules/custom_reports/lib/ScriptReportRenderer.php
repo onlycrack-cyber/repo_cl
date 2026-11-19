@@ -320,6 +320,52 @@ class ScriptReportRenderer {
 		return $messages;
 	}
 
+	public static function renderCsv(array $report): string {
+		$fh = fopen('php://temp', 'r+');
+		fwrite($fh, "\xEF\xBB\xBF");
+		$put = static function (array $row) use ($fh): void {
+			fputcsv($fh, array_map([ReportRenderer::class, 'csvCell'], $row), ',', '"', '');
+		};
+
+		$several = count($report['tables']) > 1 || $report['kpi'];
+
+		if ($report['kpi']) {
+			foreach ($report['kpi'] as $kpi) {
+				$put([$kpi['label'], $kpi['value']]);
+			}
+
+			$put([]);
+		}
+
+		foreach ($report['tables'] as $index => $table) {
+			if ($several && $index > 0) {
+				$put([]);
+			}
+
+			if ($several && $table['title'] !== '') {
+				$put([$table['title']]);
+			}
+
+			$put($table['columns']);
+
+			foreach ($table['rows'] as $row) {
+				$put(array_column($row, 'value'));
+			}
+		}
+
+		if (!$report['tables'] && $report['text'] !== '') {
+			foreach (preg_split('/\r\n|\r|\n/', $report['text']) as $line) {
+				$put([$line]);
+			}
+		}
+
+		rewind($fh);
+		$csv = stream_get_contents($fh);
+		fclose($fh);
+
+		return $csv;
+	}
+
 	/**
 	 * A table as aligned monospace lines: [header line, row lines, any highlighted value?].
 	 * Columns: "summary_columns" with "summary_headers" of the table, or all of them.

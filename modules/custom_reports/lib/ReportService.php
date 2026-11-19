@@ -67,28 +67,38 @@ class ReportService {
 	 * Builds the report of a schedule and sends it to all its recipients
 	 * (one message per host group / host if the schedule is split).
 	 *
+	 * Media: one media type for everybody ("fixed"), or every user gets the report through his own active media
+	 * ("user": e.g. a Telegram script with its own bot per host group); the media type of the schedule is then
+	 * used only for the additional addresses.
+	 *
 	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[], 'problems' => int, 'parts' => int,
 	 *                 'media_type' => string, 'deliveries' => list of ['part', 'recipient', 'status', 'error', 'time']]
 	 *
 	 * @throws RuntimeException
 	 */
 	public function runSchedule(array $schedule): array {
-		$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
-		$resolver = new RecipientResolver($this->api);
-		$common = $this->resolveRecipients($resolver, $schedule, $schedule['mediatypeid']);
+		$user_media = ($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER;
 
+		// A disabled or missing media type of a fixed schedule is an error of the whole run.
+		$media_type = !$user_media || $schedule['mediatypeid'] !== '0'
+			? $this->dispatcher->getMediaType($schedule['mediatypeid'])
+			: null;
+
+		$resolver = new RecipientResolver($this->api);
+		$common = $this->resolveTargets($resolver, $schedule, $schedule);
 		$active_rules = ScheduleHelper::getActiveRecipientRules($schedule);
 
 		if ($active_rules === null) {
-			if (!$common) {
-				throw new RuntimeException(I18n::s('No recipients: selected users have no active media of type "%1$s".',
-					$media_type['name']
-				));
+			if (!self::countTargets($common)) {
+				throw new RuntimeException($user_media
+					? I18n::t('No recipients: selected users have no active media.')
+					: I18n::s('No recipients: selected users have no active media of type "%1$s".', $media_type['name'])
+				);
 			}
 
 			$report = $this->buildScheduleReport($schedule);
 
-			return $this->deliver($media_type, static function () use ($common): array {
+			return $this->deliver(static function () use ($common): array {
 				return $common;
 			}, $report, $schedule['format'], $schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
 		}
@@ -97,10 +107,10 @@ class ReportService {
 		$by_part = [];
 
 		foreach ($active_rules['rules'] as $rule) {
-			$sendto = $this->resolveRecipients($resolver, $rule, $schedule['mediatypeid']);
+			$targets = $this->resolveTargets($resolver, $rule, $schedule);
 
 			foreach ($rule[$active_rules['key']] as $id) {
-				$by_part[$id] = array_merge($by_part[$id] ?? [], $sendto);
+				$by_part[$id] = self::mergeTargets($by_part[$id] ?? [], $targets);
 			}
 		}
 
@@ -116,47 +126,119 @@ class ReportService {
 			}
 
 			$own = $by_part[$part['id']] ?? [];
-			$sendto = ($has_rule && $fallback_only) ? $own : array_merge($own, $common);
 
-			return array_values(array_unique($sendto));
+			return ($has_rule && $fallback_only) ? $own : self::mergeTargets($own, $common);
 		};
 
 		$report = $this->buildScheduleReport($schedule);
 
-		return $this->deliver($media_type, $recipients, $report, $schedule['format'], $schedule['name'],
-			$schedule['split'], (bool) $schedule['skip_empty']
+		return $this->deliver($recipients, $report, $schedule['format'], $schedule['name'], $schedule['split'],
+			(bool) $schedule['skip_empty']
 		);
 	}
 
 	/**
-	 * Addresses of users, user groups and additional addresses of a schedule or of a group recipient rule.
+	 * Addresses of users, user groups and additional addresses of a schedule or of a recipient rule:
+	 * [mediatypeid => string[]].
 	 */
-	private function resolveRecipients(RecipientResolver $resolver, array $recipients, string $mediatypeid): array {
-		$sendto = $resolver->resolve($recipients['userids'], $recipients['usrgrpids'], $mediatypeid);
+	private function resolveTargets(RecipientResolver $resolver, array $recipients, array $schedule): array {
+		$mediatypeid = (string) $schedule['mediatypeid'];
 
-		return array_values(array_unique(array_merge($sendto, $recipients['extra_sendto'])));
+		if (($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER) {
+			// Media the module cannot use (SMS, other webhooks, disabled media types) are left out, not failed.
+			$targets = array_filter($resolver->resolveAll($recipients['userids'], $recipients['usrgrpids']),
+				function ($id): bool {
+					return $this->isUsableMediaType((string) $id);
+				}, ARRAY_FILTER_USE_KEY
+			);
+		}
+		else {
+			$targets = [$mediatypeid => $resolver->resolve($recipients['userids'], $recipients['usrgrpids'], $mediatypeid)];
+		}
+
+		// Additional addresses always go through the media type of the schedule.
+		if ($recipients['extra_sendto'] && $mediatypeid !== '0') {
+			$targets = self::mergeTargets($targets, [$mediatypeid => $recipients['extra_sendto']]);
+		}
+
+		return self::mergeTargets($targets, []);
+	}
+
+	/** @var bool[] */
+	private array $usable = [];
+
+	private function isUsableMediaType(string $mediatypeid): bool {
+		if (!array_key_exists($mediatypeid, $this->usable)) {
+			try {
+				$this->usable[$mediatypeid] = Dispatcher::getChannel($this->dispatcher->getMediaType($mediatypeid))
+					!== Dispatcher::CHANNEL_UNSUPPORTED;
+			}
+			catch (RuntimeException $e) {
+				$this->usable[$mediatypeid] = false;
+			}
+		}
+
+		return $this->usable[$mediatypeid];
+	}
+
+	private static function mergeTargets(array $a, array $b): array {
+		foreach ($b as $mediatypeid => $sendto) {
+			$a[$mediatypeid] = array_merge($a[$mediatypeid] ?? [], $sendto);
+		}
+
+		foreach ($a as $mediatypeid => $sendto) {
+			$a[$mediatypeid] = array_values(array_unique($sendto));
+
+			if (!$a[$mediatypeid]) {
+				unset($a[$mediatypeid]);
+			}
+		}
+
+		ksort($a);
+
+		return $a;
+	}
+
+	private static function countTargets(array $targets): int {
+		return array_sum(array_map('count', $targets));
 	}
 
 	/**
 	 * "Test to me": the report of a schedule with all its settings (filter, format, split, analytics), delivered
-	 * only to the given addresses instead of the schedule recipients.
+	 * only to the current user instead of the schedule recipients.
+	 *
+	 * @param array $user_media  Active media of the current user: [mediatypeid => string[]].
 	 *
 	 * @throws RuntimeException
 	 */
-	public function testSchedule(array $schedule, array $sendto): array {
-		$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
+	public function testSchedule(array $schedule, array $user_media): array {
+		if (($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER) {
+			$targets = self::mergeTargets(array_filter($user_media, function ($id): bool {
+				return $this->isUsableMediaType((string) $id);
+			}, ARRAY_FILTER_USE_KEY), []);
 
-		if (!$sendto) {
-			throw new RuntimeException(I18n::s('You have no active media of type "%1$s": add it in User settings -> '.
-				'Profile -> Media.', $media_type['name']
-			));
+			if (!$targets) {
+				throw new RuntimeException(I18n::t('You have no active media: add it in User settings -> Profile -> Media.'));
+			}
+		}
+		else {
+			$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
+			$targets = self::mergeTargets([], [$schedule['mediatypeid'] => $user_media[$schedule['mediatypeid']] ?? []]);
+
+			if (!$targets) {
+				throw new RuntimeException(I18n::s('You have no active media of type "%1$s": add it in User settings -> '.
+					'Profile -> Media.', $media_type['name']
+				));
+			}
 		}
 
 		$report = $this->buildScheduleReport($schedule);
 
-		return $this->deliver($media_type, static function () use ($sendto): array {
-			return $sendto;
-		}, $report, $schedule['format'], '['.I18n::t('Test').'] '.$schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
+		return $this->deliver(static function () use ($targets): array {
+			return $targets;
+		}, $report, $schedule['format'], '['.I18n::t('Test').'] '.$schedule['name'], $schedule['split'],
+			(bool) $schedule['skip_empty']
+		);
 	}
 
 	/**
@@ -170,19 +252,21 @@ class ReportService {
 			throw new RuntimeException(I18n::s('No recipients for media type "%1$s".', $media_type['name']));
 		}
 
-		return $this->deliver($media_type, static function () use ($sendto): array {
-			return $sendto;
+		$targets = [$mediatypeid => array_values(array_unique($sendto))];
+
+		return $this->deliver(static function () use ($targets): array {
+			return $targets;
 		}, $report, $format, $title, $split, $skip_empty);
 	}
 
 	/**
-	 * @param callable $recipients  function (array $part): ?string[] - addresses for a report part,
+	 * @param callable $recipients  function (array $part): ?array - [mediatypeid => addresses] for a report part,
 	 *                              null if nobody is meant to receive this part.
 	 */
-	private function deliver(array $media_type, callable $recipients, array $report, string $format, string $title,
-			string $split, bool $skip_empty): array {
+	private function deliver(callable $recipients, array $report, string $format, string $title, string $split,
+			bool $skip_empty): array {
 		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0,
-			'media_type' => $media_type['name'], 'deliveries' => [],
+			'media_type' => '', 'deliveries' => [],
 			'source' => Dispatcher::isScript($report) ? ScheduleHelper::SOURCE_SCRIPT : ScheduleHelper::SOURCE_PROBLEMS
 		];
 
@@ -191,39 +275,85 @@ class ReportService {
 			$split = ReportSplitter::SPLIT_NONE;
 		}
 
+		$media_types = [];
+		$used = [];
+
+		// Media type by ID (cached); an exception - disabled, deleted or not supported.
+		$get_media_type = function (string $mediatypeid) use (&$media_types): array {
+			if (!array_key_exists($mediatypeid, $media_types)) {
+				try {
+					$media_type = $this->dispatcher->getMediaType($mediatypeid);
+					$media_types[$mediatypeid] = Dispatcher::getChannel($media_type) === Dispatcher::CHANNEL_UNSUPPORTED
+						? I18n::s('Media type "%1$s" is not supported: only Email, Script and Telegram webhook media types '.
+							'can deliver reports.', $media_type['name'])
+						: $media_type;
+				}
+				catch (RuntimeException $e) {
+					$media_types[$mediatypeid] = $e->getMessage();
+				}
+			}
+
+			if (is_string($media_types[$mediatypeid])) {
+				throw new RuntimeException($media_types[$mediatypeid]);
+			}
+
+			return $media_types[$mediatypeid];
+		};
+
 		foreach (ReportSplitter::split($report, $split, $skip_empty) as $part) {
 			$part_title = $part['name'] === '' ? $title : $title.' - '.$part['name'];
-			$sendto = $recipients($part);
+			$targets = $recipients($part);
 
-			if ($sendto === null) {
+			if ($targets === null) {
 				$this->logger->info(sprintf('[%s] no recipients are configured for this part, skipped.', $part_title));
 				continue;
 			}
 
-			if (!$sendto) {
-				$message = I18n::s('[%1$s] no recipients with an active "%2$s" media, the report is not sent.', $part_title,
-					$media_type['name']
-				);
+			if (!self::countTargets($targets)) {
+				$message = I18n::s('[%1$s] no recipients with an active media, the report is not sent.', $part_title);
 				$this->logger->warning($message);
 				$result['errors'][] = $message;
 				$result['failed']++;
 				$result['deliveries'][] = ['part' => $part['name'], 'recipient' => '', 'status' => 'failed',
-					'error' => I18n::s('No recipients with an active "%1$s" media.', $media_type['name']), 'time' => time()
+					'error' => I18n::t('No recipients with an active media.'), 'time' => time()
 				];
 				continue;
 			}
 
-			$part_result = $this->dispatcher->dispatch($media_type, $sendto, $part['report'], $format, $part_title);
-
 			$result['parts']++;
-			$result['sent'] += $part_result['sent'];
-			$result['failed'] += $part_result['failed'];
-			$result['errors'] = array_merge($result['errors'], $part_result['errors']);
 
-			foreach ($part_result['deliveries'] as $delivery) {
-				$result['deliveries'][] = ['part' => $part['name']] + $delivery;
+			foreach ($targets as $mediatypeid => $sendto) {
+				try {
+					$media_type = $get_media_type((string) $mediatypeid);
+				}
+				catch (RuntimeException $e) {
+					$this->logger->warning(sprintf('[%s] %s', $part_title, $e->getMessage()));
+					$result['errors'][] = $e->getMessage();
+
+					foreach ($sendto as $recipient) {
+						$result['failed']++;
+						$result['deliveries'][] = ['part' => $part['name'], 'recipient' => $recipient, 'status' => 'failed',
+							'error' => $e->getMessage(), 'time' => time()
+						];
+					}
+
+					continue;
+				}
+
+				$used[$media_type['name']] = true;
+				$part_result = $this->dispatcher->dispatch($media_type, $sendto, $part['report'], $format, $part_title);
+
+				$result['sent'] += $part_result['sent'];
+				$result['failed'] += $part_result['failed'];
+				$result['errors'] = array_merge($result['errors'], $part_result['errors']);
+
+				foreach ($part_result['deliveries'] as $delivery) {
+					$result['deliveries'][] = ['part' => $part['name']] + $delivery;
+				}
 			}
 		}
+
+		$result['media_type'] = implode(', ', array_keys($used));
 
 		if ($result['parts'] == 0 && $result['failed'] == 0) {
 			$this->logger->info(sprintf('[%s] nothing to send: the report is empty.', $title));

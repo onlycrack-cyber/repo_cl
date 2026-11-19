@@ -268,6 +268,14 @@ $form_list = (new CFormList('schedule_form_list'))
 
 	// Delivery.
 	->addRow(new CTag('h4', true, cr_t('Delivery')))
+	->addRow(cr_t('Send through'), [
+		(new CRadioButtonList('media_mode', $schedule['media_mode']))
+			->addValue(cr_t('One media type'), ScheduleHelper::MEDIA_FIXED)
+			->addValue(cr_t('Own media of every user'), ScheduleHelper::MEDIA_USER)
+			->setModern(true),
+		(new CDiv(cr_t('Own media of every user: each selected user (and member of the selected user groups) gets the report through his own active media - Email, Script (e.g. a Telegram script with its own bot) or Telegram webhook. The media type below is then used only for the additional recipients.')))
+			->addClass(ZBX_STYLE_GREY)
+	])
 	->addRow((new CLabel(cr_t('Media type'), 'label-mediatypeid'))->setAsteriskMark(), $media_type_select)
 	->addRow(new CLabel(cr_t('Users'), 'userids__ms'),
 		(new CMultiSelect([

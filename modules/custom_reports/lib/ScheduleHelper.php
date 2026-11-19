@@ -18,6 +18,10 @@ class ScheduleHelper {
 	public const SOURCE_PROBLEMS = 'problems';
 	public const SOURCE_SCRIPT = 'script';
 
+	// Media: one media type for all recipients / every user through his own active media.
+	public const MEDIA_FIXED = 'fixed';
+	public const MEDIA_USER = 'user';
+
 	public const FREQUENCY_DAILY = 'daily';
 	public const FREQUENCY_WEEKLY = 'weekly';
 
@@ -78,6 +82,7 @@ class ScheduleHelper {
 			'usrgrpids' => [],
 			'extra_sendto' => [],
 			'mediatypeid' => '0',
+			'media_mode' => self::MEDIA_FIXED,
 			'format' => ReportRenderer::FORMAT_SUMMARY,
 			'split' => ReportSplitter::SPLIT_NONE,
 			'skip_empty' => 0,
@@ -132,6 +137,7 @@ class ScheduleHelper {
 			'usrgrpids' => ReportBuilder::ids($schedule['usrgrpids']),
 			'extra_sendto' => RecipientResolver::normalizeSendto($extra_sendto),
 			'mediatypeid' => (string) $schedule['mediatypeid'],
+			'media_mode' => $schedule['media_mode'] === self::MEDIA_USER ? self::MEDIA_USER : self::MEDIA_FIXED,
 			'format' => in_array($schedule['format'], ReportRenderer::FORMATS, true)
 				? $schedule['format']
 				: ReportRenderer::FORMAT_SUMMARY,
@@ -198,6 +204,23 @@ class ScheduleHelper {
 		return $result;
 	}
 
+	/**
+	 * Additional addresses of the schedule or of its active recipient rules.
+	 */
+	public static function hasExtraSendto(array $schedule): bool {
+		if ($schedule['extra_sendto']) {
+			return true;
+		}
+
+		foreach (self::getActiveRecipientRules($schedule)['rules'] ?? [] as $rule) {
+			if ($rule['extra_sendto']) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	public static function hasRecipients(array $recipients): bool {
 		return $recipients['userids'] || $recipients['usrgrpids'] || $recipients['extra_sendto'];
 	}
@@ -243,8 +266,17 @@ class ScheduleHelper {
 			}
 		}
 
-		if (!ctype_digit($schedule['mediatypeid']) || $schedule['mediatypeid'] === '0') {
+		if (!ctype_digit($schedule['mediatypeid'])) {
 			$errors[] = I18n::t('Incorrect value for field "Media type": a media type must be selected.');
+		}
+		elseif ($schedule['mediatypeid'] === '0') {
+			// "Own media of every user": the media type is needed only for additional addresses.
+			if ($schedule['media_mode'] !== self::MEDIA_USER) {
+				$errors[] = I18n::t('Incorrect value for field "Media type": a media type must be selected.');
+			}
+			elseif (self::hasExtraSendto($schedule)) {
+				$errors[] = I18n::t('Select a media type for the additional recipients (chat ID, e-mail, ...), or remove them.');
+			}
 		}
 
 		$active_rules = self::getActiveRecipientRules($schedule);

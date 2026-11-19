@@ -27,6 +27,15 @@ class RecipientResolver {
 	 * @throws ApiException
 	 */
 	public function resolve(array $userids, array $usrgrpids, string $mediatypeid): array {
+		return $this->resolveAll($userids, $usrgrpids)[$mediatypeid] ?? [];
+	}
+
+	/**
+	 * Active media of the users and of the members of the user groups: [mediatypeid => string[]].
+	 *
+	 * @throws ApiException
+	 */
+	public function resolveAll(array $userids, array $usrgrpids): array {
 		$userids = ReportBuilder::ids($userids);
 		$usrgrpids = ReportBuilder::ids($usrgrpids);
 
@@ -64,13 +73,20 @@ class RecipientResolver {
 
 		foreach ($users as $user) {
 			foreach ($user['medias'] as $media) {
-				if ((string) $media['mediatypeid'] === $mediatypeid && (int) $media['active'] == self::MEDIA_STATUS_ACTIVE) {
-					$sendto = array_merge($sendto, self::normalizeSendto($media['sendto']));
+				if ((int) $media['active'] == self::MEDIA_STATUS_ACTIVE) {
+					$id = (string) $media['mediatypeid'];
+					$sendto[$id] = array_merge($sendto[$id] ?? [], self::normalizeSendto($media['sendto']));
 				}
 			}
 		}
 
-		return array_values(array_unique($sendto));
+		foreach ($sendto as $id => $addresses) {
+			$sendto[$id] = array_values(array_unique($addresses));
+		}
+
+		ksort($sendto);
+
+		return $sendto;
 	}
 
 	/**

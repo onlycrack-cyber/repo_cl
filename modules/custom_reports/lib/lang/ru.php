@@ -487,6 +487,18 @@ return [
 
 	'Cannot create data directory "%1$s". Create it as root: install -d -o %2$s -g %2$s -m 750 %1$s' => 'Не удалось создать каталог данных «%1$s». Создайте его от root: install -d -o %2$s -g %2$s -m 750 %1$s',
 
+	// Own media of every user.
+	'Send through' => 'Отправлять через',
+	'One media type' => 'Один способ оповещения',
+	'Own media of every user' => 'Свой у каждого пользователя',
+	'Own media of every user: each selected user (and member of the selected user groups) gets the report through his own active media - Email, Script (e.g. a Telegram script with its own bot) or Telegram webhook. The media type below is then used only for the additional recipients.' => 'Свой у каждого пользователя: каждый выбранный пользователь (и участник выбранных групп) получает отчёт через свои активные оповещения — Email, скрипт (например, Telegram-скрипт со своим ботом) или вебхук Telegram. Способ оповещения ниже тогда нужен только для дополнительных получателей.',
+	'additional: %1$s' => 'доп. адреса: %1$s',
+	'No recipients: selected users have no active media.' => 'Нет получателей: у выбранных пользователей нет активных оповещений.',
+	'You have no active media: add it in User settings -> Profile -> Media.' => 'У вас нет активных оповещений: добавьте их в Настройки пользователя → Профиль → Оповещения.',
+	'[%1$s] no recipients with an active media, the report is not sent.' => '[%1$s] нет получателей с активными оповещениями, отчёт не отправлен.',
+	'No recipients with an active media.' => 'Нет получателей с активными оповещениями.',
+	'Select a media type for the additional recipients (chat ID, e-mail, ...), or remove them.' => 'Выберите способ оповещения для дополнительных получателей (chat ID, e-mail и т. п.) или удалите их.',
+
 	// Severities (default names of Zabbix).
 	'Not classified' => 'Не классифицировано',
 	'Information' => 'Информация',

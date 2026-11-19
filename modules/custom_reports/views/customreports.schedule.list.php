@@ -135,9 +135,18 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 				: null
 		],
 		$when,
-		array_key_exists($schedule['mediatypeid'], $data['media_types'])
-			? $data['media_types'][$schedule['mediatypeid']]['name']
-			: (new CSpan(cr_t('Inaccessible media type')))->addClass(ZBX_STYLE_RED),
+		($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER
+			? [
+				cr_t('Own media of every user'),
+				$schedule['mediatypeid'] !== '0'
+					? (new CDiv(cr_s('additional: %1$s',
+						$data['media_types'][$schedule['mediatypeid']]['name'] ?? cr_t('Inaccessible media type')
+					)))->addClass(ZBX_STYLE_GREY)
+					: null
+			]
+			: (array_key_exists($schedule['mediatypeid'], $data['media_types'])
+				? $data['media_types'][$schedule['mediatypeid']]['name']
+				: (new CSpan(cr_t('Inaccessible media type')))->addClass(ZBX_STYLE_RED)),
 		$format_labels[$schedule['format']] ?? $schedule['format'],
 		($schedule['source'] ?? '') === ScheduleHelper::SOURCE_SCRIPT
 			? '-'

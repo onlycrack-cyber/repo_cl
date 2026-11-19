@@ -191,37 +191,23 @@ class Dispatcher {
 			case self::CHANNEL_TELEGRAM:
 				$parameters = TelegramTransport::getParameters($media_type);
 				$proxy = TelegramTransport::findProxy($parameters);
-				$transport = new TelegramTransport(TelegramTransport::findToken($parameters),
-					(string) $this->config['telegram_api_url'], $proxy !== '' ? $proxy : (string) $this->config['proxy'],
-					$timeout
+
+				return $this->telegramSender(TelegramTransport::findToken($parameters), $proxy, $report, $format, $title,
+					$subject, true
 				);
-				// A script report may need several messages (a long table continues in the next one).
-				$texts = self::isScript($report)
-					? ScriptReportRenderer::renderMessages($report, $title, (int) $this->config['telegram_max_length'], true)
-					: [self::text($report, $title, (int) $this->config['telegram_max_length'], true)];
-				$document = null;
-
-				if ($format !== ReportRenderer::FORMAT_SUMMARY) {
-					$document = $this->makeDocument($report, $title, $format);
-				}
-
-				return static function (string $recipient) use ($transport, $texts, $document, $subject) {
-					if (!preg_match('/^-?\d+$|^@[A-Za-z0-9_]{5,}$/', $recipient)) {
-						throw new RuntimeException(I18n::t('Invalid Telegram chat ID.'));
-					}
-
-					foreach ($texts as $text) {
-						$transport->sendMessage($recipient, $text);
-					}
-
-					if ($document !== null) {
-						$transport->sendDocument($recipient, $document[0], $document[2], $document[1], $subject);
-					}
-				};
 
 			case self::CHANNEL_SCRIPT:
+				$telegram = $this->scriptTelegram($media_type);
+
+				// The bot token of this Telegram script is known: the module sends the messages itself (copyable
+				// tables, several messages) and the report file, the script is not run.
+				if ($telegram !== null && $telegram['messages']) {
+					return $this->telegramSender($telegram['token'], '', $report, $format, $title, $subject, true);
+				}
+
 				// The message is the short summary (a whole HTML report does not fit into a command argument), split
-				// into several calls if it is long; the report file goes to the last call ({REPORT.FILE}).
+				// into several calls if it is long; the report file goes to the last call ({REPORT.FILE}), or - if the
+				// bot token is known - the module sends it to the same chat as a document.
 				$transport = new ScriptTransport($media_type, (string) $this->config['alert_scripts_path'], $timeout);
 				$max_length = (int) $this->config['script_message_max_length'];
 				$max_length = $max_length > 0 ? min($max_length, ScriptTransport::MAX_ARGUMENT) : ScriptTransport::MAX_ARGUMENT;
@@ -232,12 +218,16 @@ class Dispatcher {
 				$document = $format !== ReportRenderer::FORMAT_SUMMARY
 					? $this->makeDocument($report, $title, $format)
 					: null;
+				$document_sender = $telegram !== null && $document !== null
+					? $this->telegramSender($telegram['token'], '', null, $format, $title, $subject, false, $document)
+					: null;
 
-				return static function (string $recipient) use ($transport, $subject, $messages, $document) {
+				return static function (string $recipient) use ($transport, $subject, $messages, $document,
+						$document_sender) {
 					$file = null;
 
 					try {
-						if ($document !== null) {
+						if ($document !== null && $document_sender === null) {
 							$path = tempnam(sys_get_temp_dir(), 'cr_report_');
 
 							if ($path === false || file_put_contents($path, $document[2]) === false) {
@@ -260,6 +250,10 @@ class Dispatcher {
 							@unlink($file['path']);
 						}
 					}
+
+					if ($document_sender !== null) {
+						$document_sender($recipient);
+					}
 				};
 
 			default:
@@ -267,6 +261,76 @@ class Dispatcher {
 					'Telegram webhook media types can deliver reports.', $media_type['name']
 				));
 		}
+	}
+
+	/**
+	 * Telegram delivery through the Bot API: messages (when $send_messages) and the report file.
+	 *
+	 * @param array|null $report    Report for the messages (null - only the document).
+	 * @param array|null $document  Prepared report file; made from the report and the format if null.
+	 */
+	private function telegramSender(string $token, string $proxy, ?array $report, string $format, string $title,
+			string $subject, bool $send_messages, ?array $document = null): callable {
+		$transport = new TelegramTransport($token, (string) $this->config['telegram_api_url'],
+			$proxy !== '' ? $proxy : (string) $this->config['proxy'], (int) $this->config['timeout']
+		);
+		$max_length = (int) $this->config['telegram_max_length'];
+		$texts = [];
+
+		if ($send_messages && $report !== null) {
+			// A script report may need several messages (a long table continues in the next one).
+			$texts = self::isScript($report)
+				? ScriptReportRenderer::renderMessages($report, $title, $max_length, true)
+				: [self::text($report, $title, $max_length, true)];
+		}
+
+		if ($document === null && $report !== null && $format !== ReportRenderer::FORMAT_SUMMARY) {
+			$document = $this->makeDocument($report, $title, $format);
+		}
+
+		return static function (string $recipient) use ($transport, $texts, $document, $subject) {
+			if (!preg_match('/^-?\d+$|^@[A-Za-z0-9_]{5,}$/', $recipient)) {
+				throw new RuntimeException(I18n::t('Invalid Telegram chat ID.'));
+			}
+
+			foreach ($texts as $text) {
+				$transport->sendMessage($recipient, $text);
+			}
+
+			if ($document !== null) {
+				$transport->sendDocument($recipient, $document[0], $document[2], $document[1], $subject);
+			}
+		};
+	}
+
+	/**
+	 * Bot token of a Telegram alert script from "script_telegram" of the config (key: script name, media type
+	 * name or ID; value: token, or ['token' => ..., 'messages' => true] to send the messages through the Bot API too).
+	 *
+	 * @return array|null  ['token' => string, 'messages' => bool]
+	 */
+	private function scriptTelegram(array $media_type): ?array {
+		$map = $this->config['script_telegram'] ?? [];
+
+		if (!is_array($map) || !$map) {
+			return null;
+		}
+
+		foreach ([basename((string) ($media_type['exec_path'] ?? '')), (string) $media_type['name'],
+				(string) $media_type['mediatypeid']] as $key) {
+			if ($key === '' || !array_key_exists($key, $map)) {
+				continue;
+			}
+
+			$value = $map[$key];
+			$token = is_array($value) ? (string) ($value['token'] ?? '') : (string) $value;
+
+			if (trim($token) !== '') {
+				return ['token' => trim($token), 'messages' => is_array($value) && !empty($value['messages'])];
+			}
+		}
+
+		return null;
 	}
 
 	/**

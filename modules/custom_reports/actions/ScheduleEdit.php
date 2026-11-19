@@ -42,6 +42,7 @@ class ScheduleEdit extends CController {
 			'name' =>				'string',
 			'enabled' =>			'in 0,1',
 			'source' =>				'in '.ScheduleHelper::SOURCE_PROBLEMS.','.ScheduleHelper::SOURCE_SCRIPT,
+			'media_mode' =>			'in '.ScheduleHelper::MEDIA_FIXED.','.ScheduleHelper::MEDIA_USER,
 			'script' =>				'string',
 			'script_params' =>		'string',
 			'script_format' =>		'in '.implode(',', ScriptReport::FORMATS),

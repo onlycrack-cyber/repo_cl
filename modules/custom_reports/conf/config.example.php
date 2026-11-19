@@ -58,6 +58,17 @@ return [
 	'script_message_max_length' => 4000,
 	'script_message_format' => 'text',
 
+	// Telegram alert scripts with the bot token inside the script: give the module the same token, keyed by the
+	// script name (or the media type name / ID). The message still goes through the script, and the module sends the
+	// report file (HTML/PDF/CSV) to the same chat as a document. With 'messages' => true the module sends the
+	// messages through the Bot API too (copyable tables, long reports in several messages); the script is not run.
+	// The chat ID is the "Send to" of the user media.
+	//   'script_telegram' => [
+	//       'zbx_telegram_simple_a35.py' => '123456789:AAE...',
+	//       'zbx_telegram_simple_b12.py' => ['token' => '987654321:AAF...', 'messages' => true]
+	//   ],
+	'script_telegram' => [],
+
 	// Report scripts (ExternalScripts from zabbix_server.conf): executable files of this directory can be the data
 	// source of a report. They run as the web server user (tab "Scripts", "Send now") and as the cron user
 	// (schedules). Output: JSON, CSV or plain text (see README, "Reports from external scripts").

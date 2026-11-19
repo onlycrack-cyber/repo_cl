@@ -34,6 +34,7 @@ class ScheduleUpdate extends CController {
 			'name' =>				'required|string',
 			'enabled' =>			'in 0,1',
 			'source' =>				'in '.ScheduleHelper::SOURCE_PROBLEMS.','.ScheduleHelper::SOURCE_SCRIPT,
+			'media_mode' =>			'in '.ScheduleHelper::MEDIA_FIXED.','.ScheduleHelper::MEDIA_USER,
 			'script' =>				'string',
 			'script_params' =>		'string',
 			'script_format' =>		'in '.implode(',', ScriptReport::FORMATS),
@@ -89,7 +90,7 @@ class ScheduleUpdate extends CController {
 			'include_changes' => $this->getInput('include_changes', 0),
 			'created_by' => CWebUser::$data['userid']
 		];
-		$this->getInputs($input, ['name', 'source', 'script', 'script_params', 'script_format', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
+		$this->getInputs($input, ['name', 'source', 'script', 'script_params', 'script_format', 'media_mode', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
 			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split', 'group_recipients', 'host_recipients', 'problem_name', 'acknowledged',
 			'sortfield', 'sortorder', 'analytics', 'problem_list',
 			'common_recipients'

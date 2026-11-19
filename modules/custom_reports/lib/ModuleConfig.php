@@ -58,6 +58,9 @@ class ModuleConfig {
 		// <pre> - for scripts that send with parse_mode=HTML). The report file is in {REPORT.FILE} / CR_REPORT_FILE.
 		'script_message_max_length' => 4000,
 		'script_message_format' => 'text',
+		// Bot tokens of Telegram alert scripts (key: script name, media type name or ID): the module sends the report
+		// file to the chat as a document itself; ['token' => ..., 'messages' => true] - the messages too.
+		'script_telegram' => [],
 
 		// Report scripts: executable files of this directory (ExternalScripts from zabbix_server.conf) can be the data
 		// source of a report (tab "Scripts", schedules with the source "External script").
