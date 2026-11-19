@@ -615,4 +615,15 @@ return [
 	'(attempts: %1$s)' => '(попыток: %1$s)',
 	'Last %1$s runs are kept: scheduled (cron), "Send now", "Resend" and "Test".' => 'Хранятся последние %1$s запусков: по расписанию (cron), «Отправить сейчас», «Переотправить» и «Тест».',
 	'Resend' => 'Переотправка',
+
+	// Tag filter.
+	'Problem tags' => 'Теги проблем',
+	'any of them' => 'любое из условий',
+	'Tags' => 'Теги',
+	'contains' => 'содержит',
+	'equals' => 'равно',
+	'does not contain' => 'не содержит',
+	'does not equal' => 'не равно',
+	'exists' => 'существует',
+	'does not exist' => 'не существует',
 ];

@@ -19,6 +19,7 @@ use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
 
 $this->addJsFile('multiselect.js');
+$this->addJsFile('class.tagfilteritem.js');
 
 $filter = $data['filter'];
 $report = $data['report'];
@@ -74,7 +75,8 @@ $filter_column_left = (new CFormList())
 		(new CTextBox('filter_problem_name', $filter['problem_name']))
 			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
 			->setAttribute('placeholder', cr_t('part of the problem name'))
-	);
+	)
+	->addRow(cr_t('Problem tags'), FrontendHelper::makeTagFilter($filter['tags'], $filter['evaltype']));
 
 $period_radio = (new CRadioButtonList('filter_period', $filter['period']))->setModern(true);
 

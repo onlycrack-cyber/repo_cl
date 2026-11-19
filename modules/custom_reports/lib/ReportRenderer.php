@@ -81,6 +81,10 @@ class ReportRenderer {
 			$parts[] = I18n::t('Problem').': *'.$info['problem_name'].'*';
 		}
 
+		if (($info['tags'] ?? '') !== '') {
+			$parts[] = I18n::t('Tags').': '.$info['tags'];
+		}
+
 		if (($info['acknowledged'] ?? ReportBuilder::ACK_ALL) != ReportBuilder::ACK_ALL) {
 			$parts[] = $info['acknowledged'] == ReportBuilder::ACK_YES ? I18n::t('Acknowledged only')
 				: I18n::t('Unacknowledged only');

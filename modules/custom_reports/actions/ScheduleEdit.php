@@ -53,6 +53,8 @@ class ScheduleEdit extends CController {
 			'period' =>				'in '.implode(',', array_keys(Period::LABELS)),
 			'show_suppressed' =>	'in 0,1',
 			'problem_name' =>		'string',
+			'tags' =>				'array',
+			'evaltype' =>			'in 0,2',
 			'acknowledged' =>		'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
 			'sortfield' =>			'in '.implode(',', ReportBuilder::SORT_FIELDS),
 			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,

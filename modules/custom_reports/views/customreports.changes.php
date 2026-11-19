@@ -19,6 +19,7 @@ use Modules\CustomReports\Lib\SvgChart;
 
 $this->addJsFile('multiselect.js');
 $this->addJsFile('class.calendar.js');
+$this->addJsFile('class.tagfilteritem.js');
 
 $filter = $data['filter'];
 $changes = $data['changes'];
@@ -64,7 +65,8 @@ $left = (new CFormList())
 		(new CTextBox('filter_problem_name', $filter['problem_name']))
 			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
 			->setAttribute('placeholder', cr_t('part of the problem name'))
-	);
+	)
+	->addRow(cr_t('Problem tags'), FrontendHelper::makeTagFilter($filter['tags'], $filter['evaltype']));
 
 $right = (new CFormList())
 	->addRow(cr_t('Severity'),

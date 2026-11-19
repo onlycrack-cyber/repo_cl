@@ -39,6 +39,8 @@ class Dashboard extends CController {
 			'filter_period' =>			'in '.implode(',', array_keys(Period::LABELS)),
 			'filter_show_suppressed' =>	'in 0,1',
 			'filter_problem_name' =>	'string',
+			'filter_tags' =>			'array',
+			'filter_evaltype' =>		'in 0,2',
 			'filter_acknowledged' =>	'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
 			'filter_analytics' =>		'in '.implode(',', [PeriodAnalytics::PERIOD_NONE, PeriodAnalytics::PERIOD_24H,
 				PeriodAnalytics::PERIOD_7D, PeriodAnalytics::PERIOD_30D
@@ -71,6 +73,8 @@ class Dashboard extends CController {
 				'period' => $this->getInput('filter_period', Period::ALL),
 				'show_suppressed' => $this->getInput('filter_show_suppressed', 0),
 				'problem_name' => $this->getInput('filter_problem_name', ''),
+				'tags' => $this->getInput('filter_tags', []),
+				'evaltype' => $this->getInput('filter_evaltype', 0),
 				'acknowledged' => $this->getInput('filter_acknowledged', ReportBuilder::ACK_ALL),
 				'analytics' => $this->getInput('filter_analytics', PeriodAnalytics::PERIOD_24H)
 			]);

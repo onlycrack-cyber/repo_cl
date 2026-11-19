@@ -44,6 +44,8 @@ class ScheduleUpdate extends CController {
 			'period' =>				'required|in '.implode(',', array_keys(Period::LABELS)),
 			'show_suppressed' =>	'in 0,1',
 			'problem_name' =>		'string',
+			'tags' =>				'array',
+			'evaltype' =>			'in 0,2',
 			'acknowledged' =>		'in '.ReportBuilder::ACK_ALL.','.ReportBuilder::ACK_NO.','.ReportBuilder::ACK_YES,
 			'sortfield' =>			'in '.implode(',', ReportBuilder::SORT_FIELDS),
 			'sortorder' =>			'in '.ReportBuilder::SORT_ASC.','.ReportBuilder::SORT_DESC,
@@ -93,7 +95,7 @@ class ScheduleUpdate extends CController {
 			'created_by' => CWebUser::$data['userid']
 		];
 		$this->getInputs($input, ['name', 'source', 'script', 'script_params', 'script_format', 'media_mode', 'groupids', 'hostids', 'severities', 'period', 'frequency', 'weekday', 'time',
-			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split', 'group_recipients', 'host_recipients', 'problem_name', 'acknowledged',
+			'userids', 'usrgrpids', 'extra_sendto', 'mediatypeid', 'format', 'split', 'group_recipients', 'host_recipients', 'problem_name', 'tags', 'evaltype', 'acknowledged',
 			'sortfield', 'sortorder', 'analytics', 'problem_list',
 			'common_recipients'
 		]);

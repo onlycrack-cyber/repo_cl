@@ -98,6 +98,8 @@ class PeriodAnalytics {
 			$base['search'] = ['name' => $filter['problem_name']];
 		}
 
+		$base += TagFilter::apiParams($filter);
+
 		$events = $this->api->call('event.get', $base + [
 			'output' => ['eventid', 'objectid', 'clock', 'severity', 'name', 'r_eventid'],
 			'selectHosts' => ['hostid', 'name'],

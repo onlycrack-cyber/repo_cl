@@ -55,6 +55,59 @@ class FrontendHelper {
 		CProfile::update(self::PROFILE_PREFIX.'problem_name', $filter['problem_name'], PROFILE_TYPE_STR);
 		CProfile::update(self::PROFILE_PREFIX.'acknowledged', $filter['acknowledged'], PROFILE_TYPE_INT);
 		CProfile::update(self::PROFILE_PREFIX.'analytics', $filter['analytics'], PROFILE_TYPE_STR);
+		self::updateTags(self::PROFILE_PREFIX, $filter);
+	}
+
+	/**
+	 * "Problem tags" field of Zabbix (rows tag / operator / value, "And/Or" or "Or") with its row template.
+	 * The view must load class.tagfilteritem.js; assets/js/customreports.js makes the rows dynamic.
+	 *
+	 * @param array  $tags      TagFilter::normalize() rows.
+	 * @param string $tag_name  Name of the input array, e.g. "filter_tags".
+	 */
+	public static function makeTagFilter(array $tags, int $evaltype, string $tag_name = 'filter_tags',
+			string $evaltype_name = 'filter_evaltype'): array {
+		$options = ['tag_field_name' => $tag_name, 'evaltype_field_name' => $evaltype_name];
+
+		return [
+			\CTagFilterFieldHelper::getTagFilterField([
+				'evaltype' => $evaltype,
+				'tags' => $tags ?: [['tag' => '', 'operator' => TagFilter::OPERATOR_LIKE, 'value' => '']]
+			], $options),
+			(new CTag('script', true, new \CObject(\CTagFilterFieldHelper::getTemplate($options))))
+				->setAttribute('type', 'text/x-jquery-tmpl')
+				->setId('filter-tag-row-tmpl')
+		];
+	}
+
+	/**
+	 * Tag filter in the user profile: three arrays (tag, operator, value) and the evaluation type, as Zabbix does.
+	 */
+	private static function updateTags(string $prefix, array $filter): void {
+		CProfile::updateArray($prefix.'tags.tag', array_column($filter['tags'], 'tag'), PROFILE_TYPE_STR);
+		CProfile::updateArray($prefix.'tags.operator', array_column($filter['tags'], 'operator'), PROFILE_TYPE_INT);
+		CProfile::updateArray($prefix.'tags.value', array_column($filter['tags'], 'value'), PROFILE_TYPE_STR);
+		CProfile::update($prefix.'evaltype', $filter['evaltype'], PROFILE_TYPE_INT);
+	}
+
+	private static function deleteTags(string $prefix): void {
+		foreach (['tags.tag', 'tags.operator', 'tags.value', 'evaltype'] as $key) {
+			CProfile::deleteIdx($prefix.$key);
+		}
+	}
+
+	private static function getTags(string $prefix): array {
+		$tags = [];
+		$operators = CProfile::getArray($prefix.'tags.operator', []);
+		$values = CProfile::getArray($prefix.'tags.value', []);
+
+		foreach (CProfile::getArray($prefix.'tags.tag', []) as $i => $tag) {
+			$tags[] = ['tag' => $tag, 'operator' => $operators[$i] ?? TagFilter::OPERATOR_LIKE,
+				'value' => $values[$i] ?? ''
+			];
+		}
+
+		return ['tags' => $tags, 'evaltype' => CProfile::get($prefix.'evaltype', TagFilter::EVAL_AND_OR)];
 	}
 
 	/**
@@ -70,6 +123,8 @@ class FrontendHelper {
 				'analytics'] as $key) {
 			CProfile::deleteIdx(self::PROFILE_PREFIX.$key);
 		}
+
+		self::deleteTags(self::PROFILE_PREFIX);
 	}
 
 	public static function getFilter(): array {
@@ -85,7 +140,7 @@ class FrontendHelper {
 			'analytics' => CProfile::get(self::PROFILE_PREFIX.'analytics', PeriodAnalytics::PERIOD_24H),
 			'sortfield' => CProfile::get('web.customreports.sort', ReportBuilder::SORT_SEVERITY),
 			'sortorder' => CProfile::get('web.customreports.sortorder', ReportBuilder::SORT_DESC)
-		]);
+		] + self::getTags(self::PROFILE_PREFIX));
 	}
 
 	private const CHANGES_PREFIX = 'web.customreports.changes.';
@@ -103,6 +158,8 @@ class FrontendHelper {
 		foreach (['problem_name', 'period', 'date_from', 'date_to', 'grouping'] as $key) {
 			CProfile::update(self::CHANGES_PREFIX.$key, $filter[$key], PROFILE_TYPE_STR);
 		}
+
+		self::updateTags(self::CHANGES_PREFIX, $filter);
 	}
 
 	public static function resetChangesFilter(): void {
@@ -110,6 +167,8 @@ class FrontendHelper {
 				'grouping'] as $key) {
 			CProfile::deleteIdx(self::CHANGES_PREFIX.$key);
 		}
+
+		self::deleteTags(self::CHANGES_PREFIX);
 	}
 
 	public static function getChangesFilter(): array {
@@ -122,7 +181,7 @@ class FrontendHelper {
 			'date_from' => CProfile::get(self::CHANGES_PREFIX.'date_from', ''),
 			'date_to' => CProfile::get(self::CHANGES_PREFIX.'date_to', ''),
 			'grouping' => CProfile::get(self::CHANGES_PREFIX.'grouping', ChangeAnalytics::GROUP_BY_GROUP)
-		]);
+		] + self::getTags(self::CHANGES_PREFIX));
 	}
 
 	/**

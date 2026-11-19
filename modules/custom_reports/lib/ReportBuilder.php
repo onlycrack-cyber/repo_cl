@@ -73,6 +73,9 @@ class ReportBuilder {
 			'period' => Period::isValid($period) ? $period : Period::ALL,
 			'show_suppressed' => (int) !empty($filter['show_suppressed']),
 			'problem_name' => mb_substr(trim((string) ($filter['problem_name'] ?? '')), 0, 255, 'UTF-8'),
+			// Problem tags, as in Monitoring -> Problems.
+			'tags' => TagFilter::normalize($filter['tags'] ?? []),
+			'evaltype' => TagFilter::normalizeEvaltype($filter['evaltype'] ?? TagFilter::EVAL_AND_OR),
 			'acknowledged' => in_array((int) ($filter['acknowledged'] ?? self::ACK_ALL), [self::ACK_NO, self::ACK_YES], true)
 				? (int) $filter['acknowledged']
 				: self::ACK_ALL,
@@ -200,6 +203,8 @@ class ReportBuilder {
 		if ($filter['acknowledged'] != self::ACK_ALL) {
 			$params['acknowledged'] = $filter['acknowledged'] == self::ACK_YES;
 		}
+
+		$params += TagFilter::apiParams($filter);
 
 		[$time_from, $time_till] = Period::toRange($filter['period'], $now);
 
@@ -476,7 +481,8 @@ class ReportBuilder {
 
 	private function getFilterInfo(array $filter, array $severity_meta): array {
 		$info = ['groups' => [], 'hosts' => [], 'severities' => [], 'period' => $filter['period'], 'scope' => '',
-			'problem_name' => $filter['problem_name'], 'acknowledged' => $filter['acknowledged']
+			'problem_name' => $filter['problem_name'], 'acknowledged' => $filter['acknowledged'],
+			'tags' => $filter['tags'] ? TagFilter::describe($filter['tags'], $filter['evaltype']) : ''
 		];
 
 		$access = $filter['access_hostids'] ?? null;

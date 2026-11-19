@@ -19,6 +19,7 @@ use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScriptReport;
 
 $this->addJsFile('multiselect.js');
+$this->addJsFile('class.tagfilteritem.js');
 
 $schedule = $data['schedule'];
 $form_name = 'customreports_schedule';
@@ -185,6 +186,11 @@ $form_list = (new CFormList('schedule_form_list'))
 		(new CTextBox('problem_name', $schedule['problem_name'], false, 255))
 			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 			->setAttribute('placeholder', cr_t('part of the problem name'))
+	)
+	->addRow(cr_t('Problem tags'),
+		(new CDiv(FrontendHelper::makeTagFilter($schedule['tags'], $schedule['evaltype'], 'tags', 'evaltype')))
+			->addClass(ZBX_STYLE_TABLE_FORMS_SEPARATOR)
+			->addStyle('min-width: '.ZBX_TEXTAREA_STANDARD_WIDTH.'px;')
 	)
 	->addRow(cr_t('Acknowledgement status'),
 		(new CRadioButtonList('acknowledged', $schedule['acknowledged']))

@@ -42,7 +42,7 @@
 	const PROBLEM_FIELDS = ['#groupids_', '#hostids_', 'input[name^="severities"]', 'input[name="period"]',
 		'#show_suppressed', '#problem_name', 'input[name="acknowledged"]', 'input[name="problem_list"]',
 		'input[name="analytics"]', '#include_changes', '[name="sortfield"]', 'input[name="split"]',
-		'#recipient_access'
+		'#recipient_access', '#filter-tags'
 	];
 
 	// Schedule form: show fields that depend on "Data source", "Frequency" and "Send separately".
@@ -238,6 +238,38 @@
 	}
 	else {
 		restoreDetails();
+	}
+
+	// "Problem tags" field (FrontendHelper::makeTagFilter): add / remove rows, hide the value for "Exists".
+	function initTagFilter() {
+		const table = document.getElementById('filter-tags');
+
+		if (table === null || typeof jQuery === 'undefined' || typeof jQuery.fn.dynamicRows !== 'function') {
+			return;
+		}
+
+		jQuery(table)
+			.dynamicRows({template: '#filter-tag-row-tmpl'})
+			.on('afteradd.dynamicRows', function() {
+				const rows = this.querySelectorAll('.form_row');
+
+				if (typeof CTagFilterItem === 'function') {
+					new CTagFilterItem(rows[rows.length - 1]);
+				}
+			});
+
+		if (typeof CTagFilterItem === 'function') {
+			table.querySelectorAll('.form_row').forEach(function(row) {
+				new CTagFilterItem(row);
+			});
+		}
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initTagFilter);
+	}
+	else {
+		initTagFilter();
 	}
 
 	if (document.readyState === 'loading') {
