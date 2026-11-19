@@ -207,59 +207,29 @@ class ChangeRenderer {
 	}
 
 	/**
-	 * Dynamics chart of the overview: table cells with fixed heights (e-mail clients, PDF).
+	 * Dynamics of the overview for e-mail clients and PDF: open problems on their own scale, new up / resolved down.
 	 */
 	private static function dynamicsHtml(array $ov): string {
 		if (!$ov['buckets']) {
 			return '';
 		}
 
-		$height = 80;
-		$max = 1;
-
-		foreach ($ov['buckets'] as $bucket) {
-			$max = max($max, $bucket['new'], $bucket['resolved'], $bucket['open'], $bucket['new_prev']);
-		}
-
-		$colors = ['new_prev' => 'd5dadd', 'new' => '4796c4', 'resolved' => '59b36a', 'open' => '9aa7b0'];
 		$step = (int) ceil(count($ov['buckets']) / 14);
-		$bars = '';
-		$labels = '';
+		$labels = [];
 
 		foreach ($ov['buckets'] as $index => $bucket) {
-			$group = '';
-
-			foreach ($colors as $key => $color) {
-				$group .= '<td style="vertical-align:bottom;padding:0;width:25%"><div style="height:'.
-					($bucket[$key] > 0 ? max(1, (int) round($bucket[$key] * $height / $max)) : 0).'px;background:#'.$color.
-					'"></div></td>';
-			}
-
-			$bars .= '<td style="vertical-align:bottom;padding:0 2px"><table style="width:100%;border-collapse:collapse"><tr>'.
-				$group.'</tr></table></td>';
-			$label = $index % $step == 0 || $index == count($ov['buckets']) - 1
+			$labels[] = $index % $step == 0 || $index == count($ov['buckets']) - 1
 				? date($ov['unit'] === 'hour' ? 'H:i' : 'd.m', $bucket['start'])
 				: '';
-			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
-				self::e($label).'<br><b style="color:#4f5b63">'.$bucket['open'].'</b></td>';
-		}
-
-		$names = ['new_prev' => I18n::t('New in the previous period'), 'new' => I18n::t('New'),
-			'resolved' => I18n::t('Resolved'), 'open' => I18n::t('Open at the end (number under the column)')
-		];
-		$legend = '';
-
-		foreach ($colors as $key => $color) {
-			$legend .= '<span style="display:inline-block;width:10px;height:10px;background:#'.$color.
-				';margin:0 4px 0 10px"></span>'.self::e($names[$key]);
 		}
 
 		$titles = ['hour' => 'Dynamics by hour', 'day' => 'Dynamics by day', 'week' => 'Dynamics by week'];
 
 		return self::title(I18n::t($titles[$ov['unit']])).
-			'<div style="margin-bottom:4px;font-size:11px;color:#4f5b63">'.$legend.'</div>'.
-			'<table style="width:100%;margin-bottom:12px;border-bottom:1px solid #dfe4e7;table-layout:fixed;border-collapse:collapse">'.
-			'<tr style="height:'.($height + 4).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
+			ReportRenderer::openLineHtml(array_column($ov['buckets'], 'open'), I18n::t('Open at the end of the interval')).
+			ReportRenderer::flowBarsHtml(array_column($ov['buckets'], 'new'), array_column($ov['buckets'], 'resolved'),
+				$labels
+			);
 	}
 
 	/**

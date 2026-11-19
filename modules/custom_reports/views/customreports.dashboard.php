@@ -12,6 +12,7 @@
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\Period;
 use Modules\CustomReports\Lib\PeriodAnalytics;
+use Modules\CustomReports\Lib\SvgChart;
 use Modules\CustomReports\Lib\ReportBuilder;
 use Modules\CustomReports\Lib\ReportRenderer;
 use Modules\CustomReports\Lib\ReportSplitter;
@@ -286,38 +287,28 @@ if ($analytics !== null) {
 		);
 	}
 
-	// Chart 2: new vs resolved per hour/day and problems open at its end.
-	$max = 1;
-
-	foreach ($analytics['buckets'] as $bucket) {
-		$max = max($max, $bucket['count'], $bucket['resolved'], $bucket['open']);
-	}
-
-	$flow_chart = (new CDiv())->addClass('cr-chart');
+	// Chart 2: open problems as a line (own scale) and new / resolved per hour / day as bars up / down.
+	$points = [];
 
 	foreach ($analytics['buckets'] as $index => $bucket) {
-		$group = (new CDiv())->addClass('cr-group');
-
-		foreach (['count' => 'cr-bar-new', 'resolved' => 'cr-bar-resolved', 'open' => 'cr-bar-open'] as $key => $class) {
-			$group->addItem(
-				(new CDiv())
-					->addClass($class)
-					->addStyle('height: '.($bucket[$key] > 0 ? max(1, round($bucket[$key] * $plot / $max)) : 0).'px;')
-			);
-		}
-
-		$flow_chart->addItem(
-			(new CDiv([
-				$group,
-				(new CDiv([$axis_label($index, $bucket), BR(), (new CSpan($bucket['open']))->addClass('cr-chart-open')]))
-					->addClass('cr-chart-label')
-			]))
-				->addClass('cr-chart-col')
-				->setTitle(cr_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', $bucket['label'], $bucket['count'],
-					$bucket['resolved'], $bucket['open']
-				))
-		);
+		$points[] = [
+			'label' => $axis_label($index, $bucket),
+			'title' => cr_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', $bucket['label'], $bucket['count'],
+				$bucket['resolved'], $bucket['open']
+			),
+			'new' => $bucket['count'],
+			'resolved' => $bucket['resolved'],
+			'open' => $bucket['open'],
+			'new_prev' => null
+		];
 	}
+
+	$flow_chart = new CObject(SvgChart::flow($points, [
+		'open' => cr_t('Open problems'),
+		'new' => cr_t('New'),
+		'resolved' => cr_t('Resolved'),
+		'start' => cr_t('at the start of the period')
+	], $analytics['open_start']));
 
 	$charts = (new CDiv([
 		(new CDiv([
@@ -326,10 +317,10 @@ if ($analytics !== null) {
 		]))->addClass('cr-chart-box'),
 		(new CDiv([
 			(new CDiv([
-				cr_s('New vs resolved per %1$s, open problems at its end', $unit),
+				cr_s('Open problems and new / resolved per %1$s', $unit),
+				(new CSpan())->addClass('cr-legend cr-legend-line'), cr_t('Open'),
 				(new CSpan())->addClass('cr-legend cr-bar-new'), cr_t('New'),
-				(new CSpan())->addClass('cr-legend cr-bar-resolved'), cr_t('Resolved'),
-				(new CSpan())->addClass('cr-legend cr-bar-open'), cr_t('Open')
+				(new CSpan())->addClass('cr-legend cr-bar-resolved'), cr_t('Resolved')
 			]))->addClass('cr-note'),
 			$flow_chart
 		]))->addClass('cr-chart-box')

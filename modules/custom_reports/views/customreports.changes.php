@@ -15,6 +15,7 @@ use Modules\CustomReports\Lib\ChangeAnalytics;
 use Modules\CustomReports\Lib\ChangeRenderer;
 use Modules\CustomReports\Lib\FrontendHelper;
 use Modules\CustomReports\Lib\PeriodAnalytics;
+use Modules\CustomReports\Lib\SvgChart;
 
 $this->addJsFile('multiselect.js');
 $this->addJsFile('class.calendar.js');
@@ -232,42 +233,38 @@ foreach ($ov['buckets'] as $bucket) {
 }
 
 $step = (int) ceil(count($ov['buckets']) / 14);
-$chart = (new CDiv())->addClass('cr-chart');
+$points = [];
 
 foreach ($ov['buckets'] as $index => $bucket) {
-	$group = (new CDiv())->addClass('cr-group');
-
-	foreach (['new_prev' => 'cr-bar-prev', 'new' => 'cr-bar-new', 'resolved' => 'cr-bar-resolved', 'open' => 'cr-bar-open']
-			as $key => $class) {
-		$group->addItem((new CDiv())
-			->addClass($class)
-			->addStyle('height: '.($bucket[$key] > 0 ? max(2, (int) round($bucket[$key] * 120 / $max)) : 0).'px;')
-			->setTitle($bucket[$key])
-		);
-	}
-
-	$label = $index % $step == 0 || $index == count($ov['buckets']) - 1
-		? date($ov['unit'] === 'hour' ? 'H:i' : 'd.m', $bucket['start'])
-		: '';
-
-	$chart->addItem((new CDiv([
-		$group,
-		(new CDiv([$label, BR(), (new CSpan($bucket['open']))->addClass('cr-chart-open')]))->addClass('cr-chart-label')
-	]))
-		->addClass('cr-chart-col')
-		->setTitle(cr_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', date('d.m H:i', $bucket['start']),
+	$points[] = [
+		'label' => $index % $step == 0 || $index == count($ov['buckets']) - 1
+			? date($ov['unit'] === 'hour' ? 'H:i' : 'd.m', $bucket['start'])
+			: '',
+		'title' => cr_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', date('d.m H:i', $bucket['start']),
 			$bucket['new'], $bucket['resolved'], $bucket['open']
-		).' ('.cr_s('previous period: %1$s', $bucket['new_prev']).')')
-	);
+		).' ('.cr_s('previous period: %1$s', $bucket['new_prev']).')',
+		'new' => $bucket['new'],
+		'resolved' => $bucket['resolved'],
+		'open' => $bucket['open'],
+		'new_prev' => $bucket['new_prev']
+	];
 }
+
+$chart = new CObject(SvgChart::flow($points, [
+	'open' => cr_t('Open problems'),
+	'new' => cr_t('New'),
+	'resolved' => cr_t('Resolved'),
+	'start' => cr_t('at the start of the period')
+], $ov['open_start']));
 
 $dynamics = (new CDiv([
 	new CTag('h4', true, $units[$ov['unit']]),
 	(new CDiv([
+		(new CSpan())->addClass('cr-legend cr-legend-line'), cr_t('Open at the end of the interval'),
 		(new CSpan())->addClass('cr-legend cr-bar-new'), cr_t('New'),
 		(new CSpan())->addClass('cr-legend cr-bar-resolved'), cr_t('Resolved'),
-		(new CSpan())->addClass('cr-legend cr-bar-open'), cr_t('Open at the end (number under the column)'),
-		(new CSpan())->addClass('cr-legend cr-bar-prev'), cr_t('New in the previous period')
+		(new CSpan())->addClass('cr-legend cr-legend-prev'), cr_t('New in the previous period'),
+		(new CSpan())->addClass('cr-legend cr-legend-start'), cr_t('Open at the start of the period')
 	]))->addClass('cr-note'),
 	$chart
 ]))->addClass('cr-panel cr-panel-wide');

@@ -664,56 +664,80 @@ class ReportRenderer {
 	}
 
 	/**
-	 * Chart 2: new vs resolved per hour/day and problems open at its end - whether problems are fixed faster
-	 * than new ones appear.
+	 * Chart 2: problems open at the end of every hour/day on their own scale (a change from 75 to 77 stays
+	 * visible), then new vs resolved per hour/day - whether problems are fixed faster than new ones appear.
 	 */
 	private static function renderFlowChartHtml(array $analytics): string {
-		$height = 70;
-		$colors = ['count' => '4796c4', 'resolved' => '59b36a', 'open' => '9aa7b0'];
-		$max = 1;
+		$labels = [];
 
-		foreach ($analytics['buckets'] as $bucket) {
-			$max = max($max, $bucket['count'], $bucket['resolved'], $bucket['open']);
-		}
-
-		$bars = '';
-		$labels = '';
-
-		foreach ($analytics['buckets'] as $index => $bucket) {
-			$group = '';
-
-			foreach ($colors as $key => $color) {
-				$value = $bucket[$key];
-				$group .= '<td style="vertical-align:bottom;padding:0;width:33%">'.
-					'<div style="height:'.($value > 0 ? max(1, (int) round($value * $height / $max)) : 0).'px;'.
-					'background:#'.$color.'" title="'.$value.'"></div></td>';
-			}
-
-			$bars .= '<td style="vertical-align:bottom;padding:0 2px">'.
-				'<table style="width:100%;border-collapse:collapse"><tr>'.$group.'</tr></table></td>';
-			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
-				self::e(self::axisLabel($analytics['buckets'], $index)).'<br><span style="color:#4f5b63">'.
-				$bucket['open'].'</span></td>';
-		}
-
-		$legend = '';
-		$names = [
-			'count' => I18n::t('New'),
-			'resolved' => I18n::t('Resolved'),
-			'open' => I18n::t('Open at the end of the '.self::chartUnit($analytics))
-		];
-
-		foreach ($colors as $key => $color) {
-			$legend .= '<span style="display:inline-block;width:10px;height:10px;background:#'.$color.
-				';margin:0 4px 0 10px"></span>'.self::e($names[$key]);
+		foreach (array_keys($analytics['buckets']) as $index) {
+			$labels[] = self::axisLabel($analytics['buckets'], $index);
 		}
 
 		return '<div style="margin:6px 0 2px 0;color:#768d99">'.self::e(I18n::s('New vs resolved per %1$s, open '.
 				'problems: %2$s', I18n::t(self::chartUnit($analytics)), self::openChangeText($analytics)
 			)).'</div>'.
-			'<div style="margin-bottom:4px;font-size:11px;color:#4f5b63">'.$legend.'</div>'.
-			'<table style="width:100%;margin-bottom:12px;border-bottom:1px solid #dfe4e7;table-layout:fixed">'.
-			'<tr style="height:'.($height + 4).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
+			self::openLineHtml(array_column($analytics['buckets'], 'open'), I18n::t('Open problems')).
+			self::flowBarsHtml(array_column($analytics['buckets'], 'count'), array_column($analytics['buckets'], 'resolved'),
+				$labels
+			);
+	}
+
+	/**
+	 * Open problems per interval as columns on a scale fitted to their range (e-mail clients, PDF), values on top.
+	 */
+	public static function openLineHtml(array $values, string $title): string {
+		if (!$values) {
+			return '';
+		}
+
+		[$min, $max] = [min($values), max($values)];
+		$low = max(0, $min - max(1, (int) ceil(($max - $min) * 0.5)));
+		$height = 40;
+		$cells = '';
+
+		foreach ($values as $value) {
+			$h = (int) round(6 + ($value - $low) * ($height - 6) / max(1, $max - $low));
+			$cells .= '<td style="vertical-align:bottom;padding:0 2px;text-align:center;font-size:9px;color:#4f5b63">'.
+				'<b>'.$value.'</b><div style="height:'.$h.'px;background:#f3c3a4;border-top:2px solid #e9894f"></div></td>';
+		}
+
+		return '<div style="font-size:11px;color:#4f5b63;margin-top:4px">'.self::e($title).' ('.
+			self::e(I18n::s('scale from %1$s', $low)).')</div>'.
+			'<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr style="height:'.($height + 14).'px">'.
+			$cells.'</tr></table>';
+	}
+
+	/**
+	 * New (up) and resolved (down) per interval, one scale, axis labels below.
+	 */
+	public static function flowBarsHtml(array $new, array $resolved, array $labels): string {
+		$half = 34;
+		$max = max(1, max($new ?: [0]), max($resolved ?: [0]));
+		$up = '';
+		$down = '';
+		$axis = '';
+
+		foreach ($new as $index => $value) {
+			$h_up = $value > 0 ? max(1, (int) round($value * $half / $max)) : 0;
+			$h_down = $resolved[$index] > 0 ? max(1, (int) round($resolved[$index] * $half / $max)) : 0;
+			$up .= '<td style="vertical-align:bottom;padding:0 3px;text-align:center;font-size:9px;color:#4796c4">'.
+				($value > 0 ? $value : '').'<div style="height:'.$h_up.'px;background:#4796c4"></div></td>';
+			$down .= '<td style="vertical-align:top;padding:0 3px;text-align:center;font-size:9px;color:#59b36a">'.
+				'<div style="height:'.$h_down.'px;background:#59b36a"></div>'.($resolved[$index] > 0 ? $resolved[$index] : '').
+				'</td>';
+			$axis .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
+				self::e($labels[$index] ?? '').'</td>';
+		}
+
+		$legend = '<span style="display:inline-block;width:10px;height:10px;background:#4796c4;margin:0 4px 0 0"></span>'.
+			self::e(I18n::t('New')).' &#8593; <span style="display:inline-block;width:10px;height:10px;background:#59b36a;'.
+			'margin:0 4px 0 10px"></span>'.self::e(I18n::t('Resolved')).' &#8595;';
+
+		return '<div style="font-size:11px;color:#4f5b63;margin-top:6px">'.$legend.'</div>'.
+			'<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">'.
+			'<tr style="height:'.($half + 12).'px;border-bottom:1px solid #9aa7b0">'.$up.'</tr>'.
+			'<tr style="height:'.($half + 12).'px">'.$down.'</tr><tr>'.$axis.'</tr></table>';
 	}
 
 	/**
