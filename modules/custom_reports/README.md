@@ -20,42 +20,31 @@
 
 ## Скриншоты
 
-Сняты на Zabbix 7.0.33 с тестовыми данными.
-
-Русский интерфейс (`'language' => 'ru'`, по умолчанию):
-
-| | |
-|---|---|
-| ![Дашборд на русском](docs/screenshots/18-ru-dashboard.png) | ![Вкладка «Изменения»](docs/screenshots/19-ru-changes.png) |
-| Панель отчётов: фильтр, KPI, аналитика за период, графики | Изменения: было → стало, рост и снижение |
-| ![Расписания](docs/screenshots/20-ru-schedules.png) | ![Форма расписания](docs/screenshots/21-ru-schedule-edit.png) |
-| Расписания и доставка, задание cron, мониторинг в Zabbix | Форма расписания |
-
-Примеры отчётов: [docs/sample-report.pdf](docs/sample-report.pdf) (полный, с аналитикой и изменениями),
-[docs/sample-report-summary.pdf](docs/sample-report-summary.pdf) (сводка нерешённых проблем).
-
-Английский интерфейс (`'language' => 'en'`):
+Сняты на Zabbix 7.0.33 с тестовыми данными, язык модуля `ru` (по умолчанию).
 
 | | |
 |---|---|
 | ![Дашборд](docs/screenshots/1-dashboard.png) | ![Фильтр по группам и важности](docs/screenshots/2-dashboard-filtered.png) |
-| Дашборд: KPI, топ хостов, тестовая отправка, таблица проблем | Фильтр: группы Databases + Web servers, Average и выше |
+| Панель отчётов: KPI, топ узлов, аналитика за период | Фильтр: группы Databases + Web servers, «Средняя» и выше |
 | ![Расписания и cron](docs/screenshots/4-schedules.png) | ![HTML-отчёт](docs/screenshots/3-html-report.png) |
-| Расписания и блок Cron job | Выгрузка HTML (то же уходит в письме) |
-| ![Получатели по хостам](docs/screenshots/5-schedule-per-host.png) | ![Получатели по группам](docs/screenshots/6-schedule-per-group.png) |
-| Форма расписания: разбивка по хостам, свои получатели | Разбивка по группам хостов, свои получатели |
-| ![Сортировка и фильтр](docs/screenshots/7-dashboard-sort-filter.png) | ![Фильтры и сортировка в расписании](docs/screenshots/8-schedule-filters.png) |
-| Фильтр «nginx» + неподтверждённые, сортировка по Time | Те же фильтры и «Sort by» в форме расписания |
-| ![Аналитика за период](docs/screenshots/9-dashboard-analytics.png) | ![Аналитика и PDF в расписании](docs/screenshots/10-schedule-analytics-pdf.png) |
-| Дашборд: аналитика за 7 дней, график по дням, кнопка Download PDF | Расписание: период аналитики (Auto / 24 ч / 7 / 30 дней) |
-| ![Нерешённые проблемы](docs/screenshots/11-dashboard-unresolved.png) | ![Problem list](docs/screenshots/12-schedule-problem-list.png) |
-| Нерешённые проблемы: одна строка на проблему, алерты за период, «whole period» | Расписание: «Unresolved summary only» вместо полного списка |
+| Расписания и блок «Задание cron» | Выгрузка HTML (то же уходит в письме) |
+| ![Получатели по узлам](docs/screenshots/5-schedule-per-host.png) | ![Получатели по группам](docs/screenshots/6-schedule-per-group.png) |
+| Форма расписания: отправка по узлам, свои получатели | Отправка по группам узлов, свои получатели |
+| ![Сортировка и фильтр](docs/screenshots/7-dashboard-sort-filter.png) | ![Фильтры в расписании](docs/screenshots/8-schedule-filters.png) |
+| Фильтр «nginx» + неподтверждённые, сортировка по времени, тестовая доставка себе | Те же фильтры и «Сортировка» в форме расписания |
+| ![Аналитика за период](docs/screenshots/9-dashboard-analytics.png) | ![Аналитика в расписании](docs/screenshots/10-schedule-analytics-pdf.png) |
+| Аналитика за 7 дней, графики, повторяющиеся проблемы | Расписание: период аналитики (Авто / 24 часа / 7 / 30 дней), анализ изменений |
+| ![Нерешённые проблемы](docs/screenshots/11-dashboard-unresolved.png) | ![Список проблем](docs/screenshots/12-schedule-problem-list.png) |
+| Нерешённые проблемы: одна строка на проблему, оповещения за период, «весь период» | Расписание: «Только сводка нерешённых» вместо полного списка |
 | ![Графики](docs/screenshots/13-dashboard-charts.png) | ![Статус доставки](docs/screenshots/14-schedules-delivery-status.png) |
-| Графики: новые по важности; новые / решённые / открытые на конец дня | Расписания: результат, следующий запуск, «Test to me», «History», мониторинг в Zabbix |
-| ![История доставок](docs/screenshots/15-delivery-history.png) | ![Вкладка Changes](docs/screenshots/16-changes.png) |
-| История доставок: запуски и результат по каждому получателю | Вкладка Changes: было → стало, рост и снижение |
-| ![Блоки Changes](docs/screenshots/17-changes-blocks.png) | |
-| Новые и исчезнувшие проблемы, MTTR по важности, тепловая карта, шумные триггеры, время в проблеме | |
+| Графики: новые по важности; новые / решённые / открытые на конец дня | Расписания: результат, следующий запуск, «Тест себе», «История», мониторинг в Zabbix |
+| ![История доставки](docs/screenshots/15-delivery-history.png) | ![Вкладка «Изменения»](docs/screenshots/16-changes.png) |
+| История доставки: запуски и результат по каждому получателю | Вкладка «Изменения»: было → стало, рост и снижение |
+| ![Блоки «Изменения»](docs/screenshots/17-changes-blocks.png) | |
+| Новые и исчезнувшие проблемы, MTTR по важности, тепловая карта, «шумные» триггеры | |
+
+Примеры отчётов: [docs/sample-report.pdf](docs/sample-report.pdf) (полный, с аналитикой и изменениями),
+[docs/sample-report-summary.pdf](docs/sample-report-summary.pdf) (сводка нерешённых проблем).
 
 ## Дерево файлов
 
