@@ -58,6 +58,12 @@ return [
 	'script_message_max_length' => 4000,
 	'script_message_format' => 'text',
 
+	// Retries of a failed delivery: attempts after the first one and the pause before the first retry (seconds,
+	// doubled for every next one). Wrong addresses and configuration errors (SMTP 5xx, Telegram 4xx) are not retried.
+	// "Run now" / "Test" in the web interface retry once after 3 s at most.
+	'send_retries' => 2,
+	'send_retry_delay' => 15,
+
 	// Telegram alert scripts with the bot token inside the script: give the module the same token, keyed by the
 	// script name (or the media type name / ID). The message still goes through the script, and the module sends the
 	// report file (HTML/PDF/CSV) to the same chat as a document. With 'messages' => true the module sends the

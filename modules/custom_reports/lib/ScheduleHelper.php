@@ -39,6 +39,8 @@ class ScheduleHelper {
 	public const RUN_SCHEDULE = 'schedule';
 	public const RUN_MANUAL = 'manual';
 	public const RUN_TEST = 'test';
+	// Resend of a run to the recipients that did not get it.
+	public const RUN_RESEND = 'resend';
 
 	// Common recipients get every part / only parts of groups without own recipients.
 	public const COMMON_ALL = 'all';
@@ -418,6 +420,51 @@ class ScheduleHelper {
 		];
 
 		return $run;
+	}
+
+	/**
+	 * Failed deliveries of a run that can be sent again: [ReportService::deliveryKey() => true]. Only deliveries
+	 * to an address (not "no recipients"), recorded with their media type (version 1.17+), not of a test.
+	 */
+	public static function resendKeys(array $run): array {
+		$keys = [];
+
+		if ($run['trigger'] === self::RUN_TEST) {
+			return [];
+		}
+
+		foreach ($run['deliveries'] ?? [] as $delivery) {
+			if ($delivery['status'] === 'failed' && $delivery['recipient'] !== ''
+					&& ($delivery['mediatypeid'] ?? '') !== '') {
+				$keys[ReportService::deliveryKey($delivery['part'], $delivery['mediatypeid'], $delivery['recipient'])] = true;
+			}
+		}
+
+		return $keys;
+	}
+
+	/**
+	 * Resend keys of every run of a history (newest first): failed deliveries that no later run has delivered.
+	 *
+	 * @return array  [index of the run => [key => true]]
+	 */
+	public static function pendingResends(array $history): array {
+		$delivered = [];
+		$result = [];
+
+		foreach ($history as $index => $run) {
+			$result[$index] = array_diff_key(self::resendKeys($run), $delivered);
+
+			foreach ($run['deliveries'] ?? [] as $delivery) {
+				if ($delivery['status'] === 'sent' && ($delivery['mediatypeid'] ?? '') !== '') {
+					$delivered[ReportService::deliveryKey($delivery['part'], $delivery['mediatypeid'],
+						$delivery['recipient']
+					)] = true;
+				}
+			}
+		}
+
+		return $result;
 	}
 
 	/**

@@ -58,6 +58,12 @@ class ModuleConfig {
 		// <pre> - for scripts that send with parse_mode=HTML). The report file is in {REPORT.FILE} / CR_REPORT_FILE.
 		'script_message_max_length' => 4000,
 		'script_message_format' => 'text',
+		// Retries of a failed delivery (SMTP / Telegram / script not available): attempts after the first one and the
+		// pause before the first retry in seconds (doubled for every next one). Permanent errors (wrong address,
+		// SMTP 5xx, Telegram 4xx, configuration) are not retried. The web interface ("Run now", "Test") retries
+		// once after a short pause, so that the page does not hang.
+		'send_retries' => 2,
+		'send_retry_delay' => 15,
 		// Bot tokens of Telegram alert scripts (key: script name, media type name or ID): the module sends the report
 		// file to the chat as a document itself; ['token' => ..., 'messages' => true] - the messages too.
 		'script_telegram' => [],

@@ -155,7 +155,11 @@ class FrontendHelper {
 	}
 
 	public static function createService(): ReportService {
-		return new ReportService(new FrontendApiClient(), self::createLogger(), ModuleConfig::get(),
+		$config = ModuleConfig::get();
+		$config['send_retries'] = min(1, (int) $config['send_retries']);
+		$config['send_retry_delay'] = min(3, (int) $config['send_retry_delay']);
+
+		return new ReportService(new FrontendApiClient(), self::createLogger(), $config,
 			[self::class, 'getMediaTypePassword']
 		);
 	}
@@ -243,6 +247,9 @@ class FrontendHelper {
 
 			case ScheduleHelper::RUN_TEST:
 				return cr_t('Test');
+
+			case ScheduleHelper::RUN_RESEND:
+				return cr_t('Resend');
 
 			default:
 				return cr_t('Send now');

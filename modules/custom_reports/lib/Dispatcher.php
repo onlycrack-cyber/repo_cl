@@ -120,28 +120,82 @@ class Dispatcher {
 			return $result;
 		}
 
+		$retries = max(0, (int) ($this->config['send_retries'] ?? 0));
+		$delay = max(0, (int) ($this->config['send_retry_delay'] ?? 0));
+
 		foreach ($sendto as $recipient) {
-			try {
-				$sender($recipient);
-				$result['sent']++;
-				$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'sent', 'error' => '', 'time' => time()];
-				$this->logger->info(sprintf('[%s] sent via "%s" (%s, %s) to %s', $title, $media_type['name'], $channel,
-					$format, $recipient
-				));
-			}
-			catch (Throwable $e) {
-				$result['failed']++;
-				$result['errors'][] = $recipient.': '.$e->getMessage();
-				$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'failed', 'error' => $e->getMessage(),
-					'time' => time()
-				];
-				$this->logger->error(sprintf('[%s] failed via "%s" to %s: %s', $title, $media_type['name'], $recipient,
-					$e->getMessage()
-				));
+			for ($attempt = 1; ; $attempt++) {
+				try {
+					$sender($recipient);
+					$result['sent']++;
+					$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'sent', 'error' => '',
+						'time' => time(), 'attempts' => $attempt
+					];
+					$this->logger->info(sprintf('[%s] sent via "%s" (%s, %s) to %s%s', $title, $media_type['name'], $channel,
+						$format, $recipient, $attempt > 1 ? sprintf(' (attempt %d)', $attempt) : ''
+					));
+					break;
+				}
+				catch (Throwable $e) {
+					if ($attempt <= $retries && self::isRetryable($e)) {
+						$pause = $delay * (2 ** ($attempt - 1));
+						$this->logger->warning(sprintf('[%s] attempt %d via "%s" to %s failed: %s; retry in %d s.', $title,
+							$attempt, $media_type['name'], $recipient, $e->getMessage(), $pause
+						));
+
+						if ($pause > 0) {
+							($this->sleep)($pause);
+						}
+
+						continue;
+					}
+
+					$result['failed']++;
+					$result['errors'][] = $recipient.': '.$e->getMessage();
+					$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'failed', 'error' => $e->getMessage(),
+						'time' => time(), 'attempts' => $attempt
+					];
+					$this->logger->error(sprintf('[%s] failed via "%s" to %s after %d attempt(s): %s', $title,
+						$media_type['name'], $recipient, $attempt, $e->getMessage()
+					));
+					break;
+				}
 			}
 		}
 
 		return $result;
+	}
+
+	/**
+	 * A temporary failure is worth a retry (no connection, timeout, SMTP 4xx, Telegram 429 / 5xx, script exit code);
+	 * a wrong address or configuration is not.
+	 */
+	public static function isRetryable(Throwable $e): bool {
+		$message = $e->getMessage();
+		$permanent = [
+			'/^SMTP error after .*: 5\d\d/s',
+			'/^Telegram API error \(HTTP 4(?!29)\d\d\)/',
+			'/does not exist or is not executable/',
+			'/is not set in the media type parameters/',
+			'/has no sender address/',
+			'/password is not available/',
+			'/is required for Telegram/'
+		];
+
+		foreach ($permanent as $pattern) {
+			if (preg_match($pattern, $message)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/** @var callable  function (int $seconds): void - replaced in tests. */
+	private $sleep = 'sleep';
+
+	public function setSleep(callable $sleep): void {
+		$this->sleep = $sleep;
 	}
 
 	/**

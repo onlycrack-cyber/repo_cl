@@ -607,4 +607,12 @@ return [
 	'Respect permissions of recipients' => 'Учитывать права получателей',
 	'Every user gets only the problems of the hosts he can see in Zabbix (host group permissions of his user groups); users without access to any host of the report get nothing. Additional addresses get the whole report.' => 'Каждый пользователь получает только проблемы узлов, которые он видит в Zabbix (права его групп пользователей на группы узлов); пользователи без доступа ни к одному узлу отчёта ничего не получают. Дополнительные адреса получают отчёт целиком.',
 	'No access in Zabbix to the hosts of the report.' => 'Нет доступа в Zabbix к узлам отчёта.',
+
+	// Retries and resend.
+	'This run has no failed deliveries that can be sent again.' => 'В этом запуске нет неудачных доставок, которые можно отправить повторно.',
+	'Send the report again to %1$s recipient(s) that did not get it?' => 'Отправить отчёт повторно получателям, которые его не получили (%1$s)?',
+	'Resend (%1$s)' => 'Переотправить (%1$s)',
+	'(attempts: %1$s)' => '(попыток: %1$s)',
+	'Last %1$s runs are kept: scheduled (cron), "Send now", "Resend" and "Test".' => 'Хранятся последние %1$s запусков: по расписанию (cron), «Отправить сейчас», «Переотправить» и «Тест».',
+	'Resend' => 'Переотправка',
 ];

@@ -34,7 +34,9 @@ class ScheduleRun extends CController {
 			'test_target' =>		'in me,users,address',
 			'test_userids' =>		'array_id',
 			'test_mediatypeid' =>	'id',
-			'test_sendto' =>		'string'
+			'test_sendto' =>		'string',
+			// Resend: time of the run in the delivery history whose failed deliveries are sent again.
+			'run_time' =>			'int32'
 		]);
 
 		if (!$ret) {
@@ -55,10 +57,20 @@ class ScheduleRun extends CController {
 		return false;
 	}
 
+	/**
+	 * "Resend" (ScheduleResend): only the failed deliveries of a run of the history, with a fresh report.
+	 */
+	protected function isResend(): bool {
+		return false;
+	}
+
 	protected function doAction(): void {
 		$storage = new ScheduleStorage(ModuleConfig::get()['data_dir']);
 		$test = $this->isTest();
-		$trigger = $test ? ScheduleHelper::RUN_TEST : ScheduleHelper::RUN_MANUAL;
+		$resend = $this->isResend();
+		$trigger = $test
+			? ScheduleHelper::RUN_TEST
+			: ($resend ? ScheduleHelper::RUN_RESEND : ScheduleHelper::RUN_MANUAL);
 		$user = CWebUser::$data['username'];
 		$started = time();
 		$schedule = null;
@@ -85,7 +97,32 @@ class ScheduleRun extends CController {
 			}
 
 			$service = FrontendHelper::createService();
-			$result = $test ? $this->runTest($service, $schedule) : $service->runSchedule($schedule);
+
+			if ($resend) {
+				$only = [];
+				$history = $storage->getHistory($schedule['scheduleid']);
+				$pending = ScheduleHelper::pendingResends($history);
+
+				foreach ($history as $index => $past) {
+					if ($past['time'] == $this->getInput('run_time', -1)) {
+						$only = $pending[$index];
+						break;
+					}
+				}
+
+				if (!$only) {
+					CMessageHelper::setErrorTitle(cr_t('Cannot send report'));
+					CMessageHelper::addError(cr_t('This run has no failed deliveries that can be sent again.'));
+					$this->redirect($schedule['scheduleid']);
+
+					return;
+				}
+
+				$result = $service->runSchedule($schedule, $only);
+			}
+			else {
+				$result = $test ? $this->runTest($service, $schedule) : $service->runSchedule($schedule);
+			}
 			$run = ScheduleHelper::makeRun($trigger, $started, $result, null, $user);
 		}
 		catch (Exception $e) {
@@ -117,6 +154,7 @@ class ScheduleRun extends CController {
 		}
 
 		$name = $test ? cr_s('Test of "%1$s"', $schedule['name']) : cr_s('Report "%1$s"', $schedule['name']);
+		$back_to = $resend ? $schedule['scheduleid'] : null;
 
 		switch ($run['status']) {
 			case ScheduleHelper::STATUS_OK:
@@ -150,7 +188,7 @@ class ScheduleRun extends CController {
 				}
 		}
 
-		$this->redirect();
+		$this->redirect($back_to);
 	}
 
 	private function testFormError(): ?string {
@@ -198,9 +236,16 @@ class ScheduleRun extends CController {
 		}
 	}
 
-	private function redirect(): void {
-		$this->setResponse(new CControllerResponseRedirect(
-			(new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.list')
-		));
+	/**
+	 * Back to the schedule list, or to the delivery history of a schedule (after a resend).
+	 */
+	private function redirect(?string $history_of = null): void {
+		$url = $history_of !== null
+			? (new CUrl('zabbix.php'))
+				->setArgument('action', 'customreports.schedule.history')
+				->setArgument('scheduleid', $history_of)
+			: (new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.list');
+
+		$this->setResponse(new CControllerResponseRedirect($url));
 	}
 }

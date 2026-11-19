@@ -50,6 +50,9 @@
 		"customreports.schedule.test": {
 			"class": "ScheduleTest"
 		},
+		"customreports.schedule.resend": {
+			"class": "ScheduleResend"
+		},
 		"customreports.changes": {
 			"class": "Changes",
 			"view": "customreports.changes",
