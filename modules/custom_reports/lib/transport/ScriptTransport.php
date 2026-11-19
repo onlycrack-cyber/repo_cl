@@ -117,9 +117,22 @@ class ScriptTransport {
 
 		if ($status['exitcode'] != 0) {
 			throw new RuntimeException(sprintf('Alert script "%s" exited with code %d: %s', $script,
-				$status['exitcode'], trim(substr($output, 0, 500))
+				$status['exitcode'], self::tail($output)
 			));
 		}
+	}
+
+	/**
+	 * The end of the output: a Python traceback or a shell error has the reason in the last lines.
+	 */
+	public static function tail(string $output, int $length = 700): string {
+		$output = trim($output);
+
+		if (strlen($output) <= $length) {
+			return $output;
+		}
+
+		return '...'.ltrim(mb_strcut($output, strlen($output) - $length, $length, 'UTF-8'));
 	}
 
 	/**
