@@ -22,3 +22,32 @@ jobs:
       - run: python -m pyflakes ssmc_collect.py tests deploy vmware/tools grafana/tools
       - run: python ssmc_collect.py --test > /dev/null
       - run: python -m unittest discover -s tests -v
+
+  # Custom Problem Reports (Zabbix module): syntax on the oldest PHP of Zabbix 7.0, unit tests on supported PHP.
+  custom-reports-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.0'
+          coverage: none
+      - run: find modules/custom_reports -name '*.php' -not -path '*/tests/*' -print0 | xargs -0 -n1 php -l > /dev/null
+
+  custom-reports-tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    defaults:
+      run:
+        working-directory: modules/custom_reports
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, curl
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit

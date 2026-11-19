@@ -2,3 +2,6 @@ conf/config.php
 data/*
 !data/.gitkeep
 !data/.htaccess
+/vendor
+/composer.lock
+/.phpunit.cache/
