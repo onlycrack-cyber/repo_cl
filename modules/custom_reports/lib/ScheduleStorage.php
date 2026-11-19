@@ -192,7 +192,12 @@ class ScheduleStorage {
 
 	private function ensureDir(): void {
 		if (!is_dir($this->dir) && !@mkdir($this->dir, 0770, true)) {
-			throw new RuntimeException(sprintf('Cannot create data directory "%s".', $this->dir));
+			// The web server usually cannot create a directory in /var/lib: tell the command to run as root.
+			$user = ScriptReport::currentUser();
+
+			throw new RuntimeException(I18n::s('Cannot create data directory "%1$s". Create it as root: '.
+				'install -d -o %2$s -g %2$s -m 750 %1$s', $this->dir, $user
+			));
 		}
 	}
 }

@@ -485,6 +485,8 @@ return [
 	'continued' => 'продолжение',
 	'* - highlighted value' => '* — выделенное значение',
 
+	'Cannot create data directory "%1$s". Create it as root: install -d -o %2$s -g %2$s -m 750 %1$s' => 'Не удалось создать каталог данных «%1$s». Создайте его от root: install -d -o %2$s -g %2$s -m 750 %1$s',
+
 	// Severities (default names of Zabbix).
 	'Not classified' => 'Не классифицировано',
 	'Information' => 'Информация',
