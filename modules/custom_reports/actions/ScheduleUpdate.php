@@ -60,6 +60,7 @@ class ScheduleUpdate extends CController {
 			'format' =>				'required|in '.implode(',', ReportRenderer::FORMATS),
 			'split' =>				'required|in '.implode(',', ReportSplitter::MODES),
 			'skip_empty' =>			'in 0,1',
+			'recipient_access' =>	'in 0,1',
 			'group_recipients' =>	'array',
 			'host_recipients' =>	'array',
 			'common_recipients' =>	'in '.ScheduleHelper::COMMON_ALL.','.ScheduleHelper::COMMON_FALLBACK
@@ -87,6 +88,7 @@ class ScheduleUpdate extends CController {
 			'enabled' => $this->getInput('enabled', 0),
 			'show_suppressed' => $this->getInput('show_suppressed', 0),
 			'skip_empty' => $this->getInput('skip_empty', 0),
+			'recipient_access' => $this->getInput('recipient_access', 0),
 			'include_changes' => $this->getInput('include_changes', 0),
 			'created_by' => CWebUser::$data['userid']
 		];

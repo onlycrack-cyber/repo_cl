@@ -36,6 +36,29 @@ class RecipientResolver {
 	 * @throws ApiException
 	 */
 	public function resolveAll(array $userids, array $usrgrpids): array {
+		$sendto = [];
+
+		foreach ($this->resolveByUser($userids, $usrgrpids) as $media) {
+			foreach ($media as $id => $addresses) {
+				$sendto[$id] = array_merge($sendto[$id] ?? [], $addresses);
+			}
+		}
+
+		foreach ($sendto as $id => $addresses) {
+			$sendto[$id] = array_values(array_unique($addresses));
+		}
+
+		ksort($sendto);
+
+		return $sendto;
+	}
+
+	/**
+	 * Active media of every user: [userid => [mediatypeid => string[]]] (users without active media are left out).
+	 *
+	 * @throws ApiException
+	 */
+	public function resolveByUser(array $userids, array $usrgrpids): array {
 		$userids = ReportBuilder::ids($userids);
 		$usrgrpids = ReportBuilder::ids($usrgrpids);
 
@@ -69,24 +92,29 @@ class RecipientResolver {
 			'selectMedias' => ['mediatypeid', 'sendto', 'active']
 		]);
 
-		$sendto = [];
+		$result = [];
 
 		foreach ($users as $user) {
-			foreach ($user['medias'] as $media) {
-				if ((int) $media['active'] == self::MEDIA_STATUS_ACTIVE) {
-					$id = (string) $media['mediatypeid'];
-					$sendto[$id] = array_merge($sendto[$id] ?? [], self::normalizeSendto($media['sendto']));
+			$media = [];
+
+			foreach ($user['medias'] as $item) {
+				if ((int) $item['active'] == self::MEDIA_STATUS_ACTIVE) {
+					$id = (string) $item['mediatypeid'];
+					$media[$id] = array_values(array_unique(array_merge($media[$id] ?? [],
+						self::normalizeSendto($item['sendto'])
+					)));
 				}
+			}
+
+			$media = array_filter($media);
+
+			if ($media) {
+				ksort($media);
+				$result[(string) $user['userid']] = $media;
 			}
 		}
 
-		foreach ($sendto as $id => $addresses) {
-			$sendto[$id] = array_values(array_unique($addresses));
-		}
-
-		ksort($sendto);
-
-		return $sendto;
+		return $result;
 	}
 
 	/**

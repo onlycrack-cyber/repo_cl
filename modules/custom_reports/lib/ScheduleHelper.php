@@ -86,6 +86,8 @@ class ScheduleHelper {
 			'format' => ReportRenderer::FORMAT_SUMMARY,
 			'split' => ReportSplitter::SPLIT_NONE,
 			'skip_empty' => 0,
+			// Every user gets only the problems of the hosts he may see in Zabbix.
+			'recipient_access' => 1,
 			'group_recipients' => [],
 			'host_recipients' => [],
 			'common_recipients' => self::COMMON_ALL,
@@ -145,6 +147,7 @@ class ScheduleHelper {
 				? (string) $schedule['split']
 				: ReportSplitter::SPLIT_NONE,
 			'skip_empty' => (int) !empty($schedule['skip_empty']),
+			'recipient_access' => (int) !empty($schedule['recipient_access']),
 			'group_recipients' => self::normalizeRecipientRules($schedule['group_recipients'], 'groupids'),
 			'host_recipients' => self::normalizeRecipientRules($schedule['host_recipients'], 'hostids'),
 			'common_recipients' => $schedule['common_recipients'] === self::COMMON_FALLBACK
@@ -407,6 +410,7 @@ class ScheduleHelper {
 			'parts' => $result['parts'] ?? 0,
 			'sent' => $result['sent'] ?? 0,
 			'failed' => $result['failed'] ?? 0,
+			'skipped' => $result['skipped'] ?? 0,
 			'message' => $error ?? '',
 			// One line per recipient and part; capped so that one run cannot blow up the history file.
 			'deliveries' => array_slice($result['deliveries'] ?? [], 0, self::HISTORY_DELIVERIES),

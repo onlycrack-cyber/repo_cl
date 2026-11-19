@@ -89,8 +89,30 @@ class ReportBuilder {
 			'include_changes' => (int) !empty($filter['include_changes']),
 			'changes_period' => array_key_exists($filter['changes_period'] ?? '', PeriodAnalytics::SECONDS)
 				? $filter['changes_period']
-				: ''
+				: '',
+			// Hosts the recipients may see (RecipientAccess); null - no limit. Not shown in the report filter.
+			'access_hostids' => isset($filter['access_hostids']) && is_array($filter['access_hostids'])
+				? self::ids($filter['access_hostids'])
+				: null
 		];
+	}
+
+	/**
+	 * Filter for the API queries: "hostids" limited to the hosts the recipients may see.
+	 */
+	public static function queryFilter(array $filter): array {
+		if (($filter['access_hostids'] ?? null) !== null) {
+			$filter['hostids'] = $filter['hostids']
+				? array_values(array_intersect($filter['hostids'], $filter['access_hostids']))
+				: $filter['access_hostids'];
+
+			// Nothing visible: an ID that matches no host instead of "all hosts".
+			if (!$filter['hostids']) {
+				$filter['hostids'] = ['0'];
+			}
+		}
+
+		return $filter;
 	}
 
 	public static function emptyReport(array $filter = []): array {
@@ -139,6 +161,10 @@ class ReportBuilder {
 		$filter = self::normalizeFilter($filter);
 		$report = self::emptyReport($filter);
 		$report['generated'] = $now;
+		// The shown filter is the one of the schedule (without hosts and groups the recipients cannot see); the queries
+		// are limited to the hosts of the recipients.
+		$shown_filter = $filter;
+		$filter = self::queryFilter($filter);
 		$report['severity_meta'] = $this->getSeverityMeta();
 
 		$params = [
@@ -203,11 +229,18 @@ class ReportBuilder {
 			]);
 		}
 
+		$visible = $filter['access_hostids'] !== null ? array_flip($filter['access_hostids']) : null;
+
 		foreach ($problems as $problem) {
 			$hosts = [];
 
 			if (array_key_exists($problem['objectid'], $triggers)) {
 				foreach ($triggers[$problem['objectid']]['hosts'] as $host) {
+					// A trigger of several hosts is visible only if all of its hosts are (as in Zabbix).
+					if ($visible !== null && !array_key_exists($host['hostid'], $visible)) {
+						continue 2;
+					}
+
 					$hosts[] = ['hostid' => $host['hostid'], 'name' => $host['name']];
 				}
 			}
@@ -267,7 +300,7 @@ class ReportBuilder {
 			));
 		}
 
-		$report['filter_info'] = $this->getFilterInfo($filter, $report['severity_meta']);
+		$report['filter_info'] = $this->getFilterInfo($shown_filter, $report['severity_meta']);
 
 		return $report;
 	}
@@ -446,11 +479,14 @@ class ReportBuilder {
 			'problem_name' => $filter['problem_name'], 'acknowledged' => $filter['acknowledged']
 		];
 
+		$access = $filter['access_hostids'] ?? null;
+
 		if ($filter['groupids']) {
+			// Only the groups with hosts the recipients may see: the parts of a split report come from this list.
 			$groups = $this->api->call('hostgroup.get', [
 				'output' => ['groupid', 'name'],
 				'groupids' => $filter['groupids']
-			]);
+			] + ($access !== null ? ['hostids' => $access ?: ['0']] : []));
 			$info['groups'] = array_column($groups, 'name', 'groupid');
 			natcasesort($info['groups']);
 		}
@@ -458,7 +494,7 @@ class ReportBuilder {
 		if ($filter['hostids']) {
 			$hosts = $this->api->call('host.get', [
 				'output' => ['hostid', 'name'],
-				'hostids' => $filter['hostids']
+				'hostids' => $access !== null ? array_values(array_intersect($filter['hostids'], $access)) : $filter['hostids']
 			]);
 			$info['hosts'] = array_column($hosts, 'name', 'hostid');
 			natcasesort($info['hosts']);

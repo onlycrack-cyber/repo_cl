@@ -71,12 +71,18 @@ class ReportService {
 	 * ("user": e.g. a Telegram script with its own bot per host group); the media type of the schedule is then
 	 * used only for the additional addresses.
 	 *
-	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[], 'problems' => int, 'parts' => int,
-	 *                 'media_type' => string, 'deliveries' => list of ['part', 'recipient', 'status', 'error', 'time']]
+	 * Permissions ("recipient_access" of the schedule): every user gets only the problems of the hosts he may see in
+	 * Zabbix; the report is built once per set of rights. Additional addresses get the report as it is.
+	 *
+	 * @param array|null $only  Resend: only these deliveries (keys of self::deliveryKey()).
+	 *
+	 * @return array  ['sent' => int, 'failed' => int, 'skipped' => int, 'errors' => string[], 'problems' => int,
+	 *                 'parts' => int, 'media_type' => string,
+	 *                 'deliveries' => list of ['part', 'recipient', 'mediatypeid', 'status', 'error', 'time']]
 	 *
 	 * @throws RuntimeException
 	 */
-	public function runSchedule(array $schedule): array {
+	public function runSchedule(array $schedule, ?array $only = null): array {
 		$user_media = ($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER;
 
 		// A disabled or missing media type of a fixed schedule is an error of the whole run.
@@ -84,84 +90,254 @@ class ReportService {
 			? $this->dispatcher->getMediaType($schedule['mediatypeid'])
 			: null;
 
+		$access = $this->accessFor($schedule);
 		$resolver = new RecipientResolver($this->api);
-		$common = $this->resolveTargets($resolver, $schedule, $schedule);
+		$common = $this->resolveTargets($resolver, $schedule, $schedule, $access);
 		$active_rules = ScheduleHelper::getActiveRecipientRules($schedule);
 
 		if ($active_rules === null) {
-			if (!self::countTargets($common)) {
+			if (!self::countByAccess($common)) {
 				throw new RuntimeException($user_media
 					? I18n::t('No recipients: selected users have no active media.')
 					: I18n::s('No recipients: selected users have no active media of type "%1$s".', $media_type['name'])
 				);
 			}
 
-			$report = $this->buildScheduleReport($schedule);
-
-			return $this->deliver(static function () use ($common): array {
-				return $common;
-			}, $report, $schedule['format'], $schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
+			return $this->deliverByAccess($schedule, $access, $common, static function (string $key) use ($common) {
+				return static function () use ($common, $key): ?array {
+					return $common[$key] ?? null;
+				};
+			}, $schedule['name'], $only);
 		}
 
-		// Split with own recipients: groupid/hostid => addresses of all rules that list the group/host.
+		// Split with own recipients: groupid/hostid => access key => addresses of all rules that list the group/host.
 		$by_part = [];
 
 		foreach ($active_rules['rules'] as $rule) {
-			$targets = $this->resolveTargets($resolver, $rule, $schedule);
+			$targets = $this->resolveTargets($resolver, $rule, $schedule, $access);
 
 			foreach ($rule[$active_rules['key']] as $id) {
-				$by_part[$id] = self::mergeTargets($by_part[$id] ?? [], $targets);
+				$by_part[$id] = self::mergeByAccess($by_part[$id] ?? [], $targets);
 			}
 		}
 
 		$fallback_only = $schedule['common_recipients'] === ScheduleHelper::COMMON_FALLBACK;
 		$has_common = ScheduleHelper::hasRecipients($schedule);
 
-		$recipients = static function (array $part) use ($by_part, $common, $fallback_only, $has_common): ?array {
-			$has_rule = array_key_exists($part['id'], $by_part);
+		$all = $common;
 
-			// The group/host is not addressed by any rule and there are no common recipients.
-			if (!$has_rule && !$has_common) {
-				return null;
-			}
+		foreach ($by_part as $targets) {
+			$all = self::mergeByAccess($all, $targets);
+		}
 
-			$own = $by_part[$part['id']] ?? [];
+		// "No recipients with an active media" of a part is reported once: by the first access key.
+		if (!$all) {
+			$all = [RecipientAccess::FULL => []];
+		}
 
-			return ($has_rule && $fallback_only) ? $own : self::mergeTargets($own, $common);
+		$keys = array_map('strval', array_keys($all));
+
+		$recipients_for = static function (string $key) use ($by_part, $common, $fallback_only, $has_common, $keys) {
+			return static function (array $part) use ($key, $by_part, $common, $fallback_only, $has_common, $keys)
+					: ?array {
+				$has_rule = array_key_exists($part['id'], $by_part);
+
+				// The group/host is not addressed by any rule and there are no common recipients.
+				if (!$has_rule && !$has_common) {
+					return null;
+				}
+
+				$pick = static function (string $k) use ($part, $by_part, $common, $fallback_only, $has_rule): array {
+					$own = $by_part[$part['id']][$k] ?? [];
+
+					return ($has_rule && $fallback_only) ? $own : self::mergeTargets($own, $common[$k] ?? []);
+				};
+
+				$targets = $pick($key);
+
+				if (self::countTargets($targets)) {
+					return $targets;
+				}
+
+				if ($key !== $keys[0]) {
+					return null;
+				}
+
+				foreach ($keys as $k) {
+					if (self::countTargets($pick($k))) {
+						return null;
+					}
+				}
+
+				return [];
+			};
 		};
 
-		$report = $this->buildScheduleReport($schedule);
-
-		return $this->deliver($recipients, $report, $schedule['format'], $schedule['name'], $schedule['split'],
-			(bool) $schedule['skip_empty']
-		);
+		return $this->deliverByAccess($schedule, $access, $all, $recipients_for, $schedule['name'], $only);
 	}
 
 	/**
-	 * Addresses of users, user groups and additional addresses of a schedule or of a recipient rule:
-	 * [mediatypeid => string[]].
+	 * Permissions of the recipients are applied to reports of Zabbix problems if the schedule asks for it.
 	 */
-	private function resolveTargets(RecipientResolver $resolver, array $recipients, array $schedule): array {
-		$mediatypeid = (string) $schedule['mediatypeid'];
+	private function accessFor(array $schedule): ?RecipientAccess {
+		if (($schedule['source'] ?? ScheduleHelper::SOURCE_PROBLEMS) === ScheduleHelper::SOURCE_SCRIPT
+				|| empty($schedule['recipient_access'] ?? 1)) {
+			return null;
+		}
 
-		if (($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER) {
-			// Media the module cannot use (SMS, other webhooks, disabled media types) are left out, not failed.
-			$targets = array_filter($resolver->resolveAll($recipients['userids'], $recipients['usrgrpids']),
-				function ($id): bool {
-					return $this->isUsableMediaType((string) $id);
-				}, ARRAY_FILTER_USE_KEY
+		return new RecipientAccess($this->api);
+	}
+
+	/**
+	 * Builds the report for every set of recipient rights and delivers it.
+	 *
+	 * @param array    $all             [access key => [mediatypeid => addresses]]: all recipients of the run.
+	 * @param callable $recipients_for  function (string $key): callable - the $recipients of deliver() for a key.
+	 */
+	private function deliverByAccess(array $schedule, ?RecipientAccess $access, array $all, callable $recipients_for,
+			string $title, ?array $only = null): array {
+		$result = null;
+		$skipped = [];
+		$full_report = null;
+
+		foreach (array_keys($all) as $key) {
+			$key = (string) $key;
+
+			if ($access !== null && $key !== RecipientAccess::FULL) {
+				$filter = $access->restrictFilter(self::getScheduleFilter($schedule), $key);
+
+				// The recipients may see none of the hosts of the report: nothing is sent to them.
+				if ($filter === null) {
+					foreach ($all[$key] as $mediatypeid => $sendto) {
+						foreach ($sendto as $recipient) {
+							if ($only === null || array_key_exists(self::deliveryKey('', (string) $mediatypeid, $recipient),
+									$only)) {
+								$skipped[] = ['part' => '', 'recipient' => $recipient, 'mediatypeid' => (string) $mediatypeid,
+									'status' => 'skipped',
+									'error' => I18n::t('No access in Zabbix to the hosts of the report.'), 'time' => time()
+								];
+							}
+						}
+					}
+
+					$this->logger->info(sprintf('[%s] %d recipient(s) have no access to the hosts of the report, skipped.',
+						$title, count($skipped)
+					));
+
+					continue;
+				}
+
+				$report = $this->buildReport($filter, $schedule['split']);
+			}
+			else {
+				$report = $full_report ?? ($full_report = $this->buildScheduleReport($schedule));
+			}
+
+			$part = $this->deliver($recipients_for($key), $report, $schedule['format'], $title, $schedule['split'],
+				(bool) $schedule['skip_empty'], $only
 			);
+			$result = $result === null ? $part : self::mergeResults($result, $part);
+		}
+
+		$result = $result ?? ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => 0, 'parts' => 0, 'media_type' => '',
+			'deliveries' => [], 'source' => ScheduleHelper::SOURCE_PROBLEMS
+		];
+		$result['skipped'] = count($skipped);
+		$result['deliveries'] = array_merge($result['deliveries'], $skipped);
+
+		return $result;
+	}
+
+	private static function mergeResults(array $a, array $b): array {
+		$media_types = array_filter(array_unique(array_merge(explode(', ', $a['media_type']),
+			explode(', ', $b['media_type'])
+		)), 'strlen');
+
+		return [
+			'sent' => $a['sent'] + $b['sent'],
+			'failed' => $a['failed'] + $b['failed'],
+			'errors' => array_values(array_unique(array_merge($a['errors'], $b['errors']))),
+			'problems' => max($a['problems'], $b['problems']),
+			'parts' => $a['parts'] + $b['parts'],
+			'media_type' => implode(', ', $media_types),
+			'deliveries' => array_merge($a['deliveries'], $b['deliveries']),
+			'source' => $a['source']
+		];
+	}
+
+	/**
+	 * Key of a delivery for a resend: report part, media type and address.
+	 */
+	public static function deliveryKey(string $part, string $mediatypeid, string $recipient): string {
+		return $part."\x1F".$mediatypeid."\x1F".$recipient;
+	}
+
+	/**
+	 * Addresses of users, user groups and additional addresses of a schedule or of a recipient rule by the rights of
+	 * the users: [access key => [mediatypeid => string[]]] (one key RecipientAccess::FULL without permissions).
+	 */
+	private function resolveTargets(RecipientResolver $resolver, array $recipients, array $schedule,
+			?RecipientAccess $access = null): array {
+		$mediatypeid = (string) $schedule['mediatypeid'];
+		$user_media = ($schedule['media_mode'] ?? ScheduleHelper::MEDIA_FIXED) === ScheduleHelper::MEDIA_USER;
+
+		// Media the module cannot use (SMS, other webhooks, disabled media types) are left out, not failed.
+		$usable = function (array $media) use ($user_media, $mediatypeid): array {
+			return $user_media
+				? array_filter($media, function ($id): bool {
+					return $this->isUsableMediaType((string) $id);
+				}, ARRAY_FILTER_USE_KEY)
+				: [$mediatypeid => $media[$mediatypeid] ?? []];
+		};
+
+		$result = [];
+
+		if ($access === null) {
+			$result[RecipientAccess::FULL] = $usable($resolver->resolveAll($recipients['userids'],
+				$recipients['usrgrpids']
+			));
 		}
 		else {
-			$targets = [$mediatypeid => $resolver->resolve($recipients['userids'], $recipients['usrgrpids'], $mediatypeid)];
+			$by_user = $resolver->resolveByUser($recipients['userids'], $recipients['usrgrpids']);
+			$keys = $access->keys(array_keys($by_user));
+
+			foreach ($by_user as $userid => $media) {
+				$key = $keys[(string) $userid] ?? null;
+
+				if ($key !== null) {
+					$result[$key] = self::mergeTargets($result[$key] ?? [], $usable($media));
+				}
+			}
 		}
 
-		// Additional addresses always go through the media type of the schedule.
+		// Additional addresses always go through the media type of the schedule and get the whole report.
 		if ($recipients['extra_sendto'] && $mediatypeid !== '0') {
-			$targets = self::mergeTargets($targets, [$mediatypeid => $recipients['extra_sendto']]);
+			$result[RecipientAccess::FULL] = self::mergeTargets($result[RecipientAccess::FULL] ?? [],
+				[$mediatypeid => $recipients['extra_sendto']]
+			);
 		}
 
-		return self::mergeTargets($targets, []);
+		foreach ($result as $key => $targets) {
+			$result[$key] = self::mergeTargets($targets, []);
+
+			if (!$result[$key]) {
+				unset($result[$key]);
+			}
+		}
+
+		return $result;
+	}
+
+	private static function mergeByAccess(array $a, array $b): array {
+		foreach ($b as $key => $targets) {
+			$a[$key] = self::mergeTargets($a[$key] ?? [], $targets);
+		}
+
+		return $a;
+	}
+
+	private static function countByAccess(array $by_access): int {
+		return array_sum(array_map([self::class, 'countTargets'], $by_access));
 	}
 
 	/** @var bool[] */
@@ -242,32 +418,38 @@ class ReportService {
 	}
 
 	/**
-	 * Addresses of users the way the schedule sends: its media type, or their own media ("own media of every user").
+	 * Addresses of users the way the schedule sends: its media type, or their own media ("own media of every user"),
+	 * by the rights of the users: [access key => [mediatypeid => string[]]].
 	 */
 	public function targetsForUsers(array $schedule, array $userids): array {
 		return $this->resolveTargets(new RecipientResolver($this->api),
-			['userids' => $userids, 'usrgrpids' => [], 'extra_sendto' => []], $schedule
+			['userids' => $userids, 'usrgrpids' => [], 'extra_sendto' => []], $schedule, $this->accessFor($schedule)
 		);
 	}
 
 	/**
-	 * Test delivery of a schedule to explicit addresses ([mediatypeid => string[]]) chosen in the test form.
+	 * Test delivery of a schedule to explicit addresses chosen in the test form: [mediatypeid => string[]] (the whole
+	 * report) or the result of targetsForUsers() (by the rights of the users).
 	 *
 	 * @throws RuntimeException
 	 */
-	public function testScheduleTargets(array $schedule, array $targets): array {
-		$targets = self::mergeTargets($targets, []);
+	public function testScheduleTargets(array $schedule, array $targets, bool $by_access = false): array {
+		$by_access = $by_access ? $targets : [RecipientAccess::FULL => $targets];
 
-		if (!$targets) {
+		foreach ($by_access as $key => $list) {
+			$by_access[$key] = self::mergeTargets($list, []);
+		}
+
+		if (!self::countByAccess($by_access)) {
 			throw new RuntimeException(I18n::t('No recipients: selected users have no active media.'));
 		}
 
-		$report = $this->buildScheduleReport($schedule);
-
-		return $this->deliver(static function () use ($targets): array {
-			return $targets;
-		}, $report, $schedule['format'], '['.I18n::t('Test').'] '.$schedule['name'], $schedule['split'],
-			(bool) $schedule['skip_empty']
+		return $this->deliverByAccess($schedule, $this->accessFor($schedule), $by_access,
+			static function (string $key) use ($by_access) {
+				return static function () use ($by_access, $key): ?array {
+					return $by_access[$key] ?: null;
+				};
+			}, '['.I18n::t('Test').'] '.$schedule['name']
 		);
 	}
 
@@ -294,7 +476,7 @@ class ReportService {
 	 *                              null if nobody is meant to receive this part.
 	 */
 	private function deliver(callable $recipients, array $report, string $format, string $title, string $split,
-			bool $skip_empty): array {
+			bool $skip_empty, ?array $only = null): array {
 		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0,
 			'media_type' => '', 'deliveries' => [],
 			'source' => Dispatcher::isScript($report) ? ScheduleHelper::SOURCE_SCRIPT : ScheduleHelper::SOURCE_PROBLEMS
@@ -334,6 +516,21 @@ class ReportService {
 			$part_title = $part['name'] === '' ? $title : $title.' - '.$part['name'];
 			$targets = $recipients($part);
 
+			// Resend: only the deliveries that failed last time.
+			if ($only !== null && $targets !== null) {
+				foreach ($targets as $mediatypeid => $sendto) {
+					$targets[$mediatypeid] = array_values(array_filter($sendto,
+						static function (string $recipient) use ($only, $part, $mediatypeid): bool {
+							return array_key_exists(self::deliveryKey($part['name'], (string) $mediatypeid, $recipient),
+								$only
+							);
+						}
+					));
+				}
+
+				$targets = array_filter($targets) ?: null;
+			}
+
 			if ($targets === null) {
 				$this->logger->info(sprintf('[%s] no recipients are configured for this part, skipped.', $part_title));
 				continue;
@@ -344,7 +541,7 @@ class ReportService {
 				$this->logger->warning($message);
 				$result['errors'][] = $message;
 				$result['failed']++;
-				$result['deliveries'][] = ['part' => $part['name'], 'recipient' => '', 'status' => 'failed',
+				$result['deliveries'][] = ['part' => $part['name'], 'recipient' => '', 'mediatypeid' => '', 'status' => 'failed',
 					'error' => I18n::t('No recipients with an active media.'), 'time' => time()
 				];
 				continue;
@@ -362,7 +559,8 @@ class ReportService {
 
 					foreach ($sendto as $recipient) {
 						$result['failed']++;
-						$result['deliveries'][] = ['part' => $part['name'], 'recipient' => $recipient, 'status' => 'failed',
+						$result['deliveries'][] = ['part' => $part['name'], 'recipient' => $recipient,
+							'mediatypeid' => (string) $mediatypeid, 'status' => 'failed',
 							'error' => $e->getMessage(), 'time' => time()
 						];
 					}
@@ -378,7 +576,7 @@ class ReportService {
 				$result['errors'] = array_merge($result['errors'], $part_result['errors']);
 
 				foreach ($part_result['deliveries'] as $delivery) {
-					$result['deliveries'][] = ['part' => $part['name']] + $delivery;
+					$result['deliveries'][] = ['part' => $part['name'], 'mediatypeid' => (string) $mediatypeid] + $delivery;
 				}
 			}
 		}

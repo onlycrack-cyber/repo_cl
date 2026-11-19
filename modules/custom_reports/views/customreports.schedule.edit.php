@@ -317,6 +317,11 @@ $form_list = (new CFormList('schedule_form_list'))
 		(new CDiv(cr_t('Users receive the report at the active "Send to" addresses of the selected media type.')))
 			->addClass(ZBX_STYLE_GREY)
 	])
+	->addRow(new CLabel(cr_t('Respect permissions of recipients'), 'recipient_access'), [
+		(new CCheckBox('recipient_access'))->setChecked($schedule['recipient_access'] == 1),
+		(new CDiv(cr_t('Every user gets only the problems of the hosts he can see in Zabbix (host group permissions of his user groups); users without access to any host of the report get nothing. Additional addresses get the whole report.')))
+			->addClass(ZBX_STYLE_GREY)
+	])
 	->addRow(cr_t('Report format'),
 		(new CRadioButtonList('format', $schedule['format']))
 			->addValue(cr_t('Short summary'), ReportRenderer::FORMAT_SUMMARY)

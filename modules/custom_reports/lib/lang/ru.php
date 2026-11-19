@@ -601,4 +601,10 @@ return [
 	'Not acknowledged' => 'Не подтверждены',
 	'Alerts for the open problems' => 'Оповещения по открытым проблемам',
 	'Alerts of the period analytics sent by Zabbix actions for the problems that are still open.' => 'Оповещения действий Zabbix за период аналитики по проблемам, которые всё ещё открыты.',
+
+	// Permissions of recipients.
+	'Skipped' => 'Пропущено',
+	'Respect permissions of recipients' => 'Учитывать права получателей',
+	'Every user gets only the problems of the hosts he can see in Zabbix (host group permissions of his user groups); users without access to any host of the report get nothing. Additional addresses get the whole report.' => 'Каждый пользователь получает только проблемы узлов, которые он видит в Zabbix (права его групп пользователей на группы узлов); пользователи без доступа ни к одному узлу отчёта ничего не получают. Дополнительные адреса получают отчёт целиком.',
+	'No access in Zabbix to the hosts of the report.' => 'Нет доступа в Zabbix к узлам отчёта.',
 ];

@@ -41,7 +41,8 @@
 	// Fields of the schedule form that only apply to the data source "Zabbix problems".
 	const PROBLEM_FIELDS = ['#groupids_', '#hostids_', 'input[name^="severities"]', 'input[name="period"]',
 		'#show_suppressed', '#problem_name', 'input[name="acknowledged"]', 'input[name="problem_list"]',
-		'input[name="analytics"]', '#include_changes', '[name="sortfield"]', 'input[name="split"]'
+		'input[name="analytics"]', '#include_changes', '[name="sortfield"]', 'input[name="split"]',
+		'#recipient_access'
 	];
 
 	// Schedule form: show fields that depend on "Data source", "Frequency" and "Send separately".

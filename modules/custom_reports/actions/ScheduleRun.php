@@ -181,7 +181,7 @@ class ScheduleRun extends CController {
 					throw new Exception(cr_t('Select at least one user.'));
 				}
 
-				return $service->testScheduleTargets($schedule, $service->targetsForUsers($schedule, $userids));
+				return $service->testScheduleTargets($schedule, $service->targetsForUsers($schedule, $userids), true);
 
 			case 'address':
 				$mediatypeid = (string) $this->getInput('test_mediatypeid', '0');

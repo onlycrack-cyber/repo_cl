@@ -81,9 +81,12 @@ foreach ($data['history'] as $index => $run) {
 				$delivery['recipient'] !== '' ? $delivery['recipient'] : (new CSpan(cr_t('no recipients')))->addClass(ZBX_STYLE_GREY),
 				$delivery['status'] === 'sent'
 					? (new CSpan(cr_t('Sent')))->addClass(ZBX_STYLE_GREEN)
-					: (new CSpan(cr_t('Failed')))->addClass(ZBX_STYLE_RED),
+					: ($delivery['status'] === 'skipped'
+						? (new CSpan(cr_t('Skipped')))->addClass(ZBX_STYLE_GREY)
+						: (new CSpan(cr_t('Failed')))->addClass(ZBX_STYLE_RED)
+					),
 				zbx_date2str(DATE_TIME_FORMAT_SECONDS, $delivery['time']),
-				(new CSpan($delivery['error']))->addClass(ZBX_STYLE_RED)
+				(new CSpan($delivery['error']))->addClass($delivery['status'] === 'skipped' ? ZBX_STYLE_GREY : ZBX_STYLE_RED)
 			]);
 		}
 
