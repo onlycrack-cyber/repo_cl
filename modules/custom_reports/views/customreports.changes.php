@@ -177,25 +177,164 @@ $severity = static function (int $value) {
 	return CSeverityHelper::makeSeverityCell($value);
 };
 
-// Summary.
+// Overview: what is open now, what happened in the period, the trend and the verdict.
+$ov = $changes['overview'];
 $cur = $changes['totals']['cur'];
 $prev = $changes['totals']['prev'];
-$summary = (new CDiv([
-	(new CDiv(cr_s('%1$s - %2$s compared with %3$s - %4$s', zbx_date2str(DATE_TIME_FORMAT, $changes['from']),
-		zbx_date2str(DATE_TIME_FORMAT, $changes['till']), zbx_date2str(DATE_TIME_FORMAT, $changes['prev_from']),
-		zbx_date2str(DATE_TIME_FORMAT, $changes['from'])
-	)))->addClass('cr-changes-period'),
-	(new CDiv([
-		cr_s('New problems: %1$s (previous: %2$s)', $cur['new'], $prev['new']), ' ',
-		$delta($cur['new'] - $prev['new'], $prev['new'] > 0
-			? (int) round(($cur['new'] - $prev['new']) * 100 / $prev['new'])
-			: null
-		),
-		'; ',
-		cr_s('median time to resolve: %1$s (previous: %2$s)', ChangeRenderer::duration($cur['mttr']),
-			ChangeRenderer::duration($prev['mttr'])
-		), ' ', $duration_delta($prev['mttr'], $cur['mttr'])
+$pct = static function (int $now, int $was): ?int {
+	return $was > 0 ? (int) round(($now - $was) * 100 / $was) : null;
+};
+
+$period_line = (new CDiv(cr_s('%1$s - %2$s compared with %3$s - %4$s', zbx_date2str(DATE_TIME_FORMAT, $changes['from']),
+	zbx_date2str(DATE_TIME_FORMAT, $changes['till']), zbx_date2str(DATE_TIME_FORMAT, $changes['prev_from']),
+	zbx_date2str(DATE_TIME_FORMAT, $changes['from'])
+)))->addClass('cr-changes-period');
+
+// Verdict with its reasons (the same words as in e-mails and PDF).
+[$verdict_title, $verdict_sentence, $reasons] = ChangeRenderer::verdictTexts($ov);
+
+$verdict = (new CDiv([
+	(new CDiv($verdict_title))->addClass('cr-verdict-title'),
+	new CDiv($verdict_sentence),
+	$reasons ? (new CDiv(implode('; ', $reasons).'.'))->addClass('cr-verdict-reasons') : null
+]))->addClass('cr-verdict cr-verdict-'.$ov['verdict']['status']);
+
+// KPI cards: the value, what it was, the change (more problems / slower is red).
+$card = static function (string $label, string $value, $note = null, string $class = '') {
+	return (new CDiv([
+		(new CDiv($value))->addClass('cr-kpi-value'),
+		(new CDiv($label))->addClass('cr-kpi-label'),
+		$note !== null ? (new CDiv($note))->addClass('cr-kpi-note') : null
+	]))->addClass('cr-kpi-card '.$class);
+};
+
+$kpi = (new CDiv([
+	$card(cr_t('Open now'), (string) $ov['open_end'], [
+		cr_s('at the start: %1$s', $ov['open_start']), ' ', $delta($ov['open_end'] - $ov['open_start'])
+	], $ov['open_end'] > 0 ? 'cr-kpi-open' : ''),
+	$card(cr_t('High and Disaster open'), (string) $ov['open_high'], null, $ov['open_high'] > 0 ? 'cr-kpi-alert' : ''),
+	$card(cr_t('New in the period'), (string) $ov['new'], [
+		cr_s('was: %1$s', $ov['new_prev']), ' ', $delta($ov['new'] - $ov['new_prev'], $pct($ov['new'], $ov['new_prev']))
+	]),
+	$card(cr_t('Resolved in the period'), (string) $ov['resolved'], cr_s('was: %1$s', $ov['resolved_prev'])),
+	$card(cr_t('Time to resolve (median)'), ChangeRenderer::duration($ov['mttr']), [
+		cr_s('was: %1$s', ChangeRenderer::duration($ov['mttr_prev'])), ' ', $duration_delta($ov['mttr_prev'], $ov['mttr'])
+	])
+]))->addClass('cr-kpi');
+
+// Dynamics: new, resolved and open at the end of every interval; the new problems of the previous period for
+// comparison.
+$units = ['hour' => cr_t('Dynamics by hour'), 'day' => cr_t('Dynamics by day'), 'week' => cr_t('Dynamics by week')];
+$max = 1;
+
+foreach ($ov['buckets'] as $bucket) {
+	$max = max($max, $bucket['new'], $bucket['resolved'], $bucket['open'], $bucket['new_prev']);
+}
+
+$step = (int) ceil(count($ov['buckets']) / 14);
+$chart = (new CDiv())->addClass('cr-chart');
+
+foreach ($ov['buckets'] as $index => $bucket) {
+	$group = (new CDiv())->addClass('cr-group');
+
+	foreach (['new_prev' => 'cr-bar-prev', 'new' => 'cr-bar-new', 'resolved' => 'cr-bar-resolved', 'open' => 'cr-bar-open']
+			as $key => $class) {
+		$group->addItem((new CDiv())
+			->addClass($class)
+			->addStyle('height: '.($bucket[$key] > 0 ? max(2, (int) round($bucket[$key] * 120 / $max)) : 0).'px;')
+			->setTitle($bucket[$key])
+		);
+	}
+
+	$label = $index % $step == 0 || $index == count($ov['buckets']) - 1
+		? date($ov['unit'] === 'hour' ? 'H:i' : 'd.m', $bucket['start'])
+		: '';
+
+	$chart->addItem((new CDiv([
+		$group,
+		(new CDiv([$label, BR(), (new CSpan($bucket['open']))->addClass('cr-chart-open')]))->addClass('cr-chart-label')
 	]))
+		->addClass('cr-chart-col')
+		->setTitle(cr_s('%1$s: new %2$s, resolved %3$s, open at the end %4$s', date('d.m H:i', $bucket['start']),
+			$bucket['new'], $bucket['resolved'], $bucket['open']
+		).' ('.cr_s('previous period: %1$s', $bucket['new_prev']).')')
+	);
+}
+
+$dynamics = (new CDiv([
+	new CTag('h4', true, $units[$ov['unit']]),
+	(new CDiv([
+		(new CSpan())->addClass('cr-legend cr-bar-new'), cr_t('New'),
+		(new CSpan())->addClass('cr-legend cr-bar-resolved'), cr_t('Resolved'),
+		(new CSpan())->addClass('cr-legend cr-bar-open'), cr_t('Open at the end (number under the column)'),
+		(new CSpan())->addClass('cr-legend cr-bar-prev'), cr_t('New in the previous period')
+	]))->addClass('cr-note'),
+	$chart
+]))->addClass('cr-panel cr-panel-wide');
+
+// Open now.
+$open_table = (new CTableInfo())
+	->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Problem'), cr_t('Open since'), cr_t('Duration'), cr_t('In the period'),
+		cr_t('Occurred'), cr_t('Ack')
+	])
+	->setNoDataMessage(cr_t('No open problems.'));
+
+foreach ($ov['open_now'] as $row) {
+	$open_table->addRow([
+		$severity($row['severity']),
+		$row['hosts'],
+		$row['name'].($row['open_count'] > 1 ? ' ('.cr_s('%1$s open', $row['open_count']).')' : ''),
+		(new CCol(zbx_date2str(DATE_TIME_FORMAT, $row['since'])))->addClass(ZBX_STYLE_NOWRAP),
+		(new CCol(ChangeRenderer::duration($row['age'])))->addClass(ZBX_STYLE_NOWRAP),
+		$row['before_period']
+			? (new CSpan(cr_t('open the whole period')))->addClass(ZBX_STYLE_RED)
+			: (new CSpan(cr_t('new')))->addClass(ZBX_STYLE_ORANGE),
+		$row['occurrences'] > 0 ? $row['occurrences'] : '-',
+		$row['acknowledged'] ? (new CSpan(cr_t('Yes')))->addClass(ZBX_STYLE_GREEN) : (new CSpan(cr_t('No')))->addClass(ZBX_STYLE_RED)
+	]);
+}
+
+$open_panel = $panel(cr_s('Open now: %1$s', $ov['open_now_total']), $open_table,
+	cr_t('Problems not resolved at the end of the period, one row per trigger. "Open the whole period" - started before the period; "Occurred" - how many times the problem started in the period.')
+		.($ov['open_now_total'] > count($ov['open_now']) ? ' '.cr_s('Top %1$s of %2$s.', count($ov['open_now']), $ov['open_now_total']) : ''),
+	true
+);
+
+// Resolved in the period.
+$closed_table = (new CTableInfo())
+	->setHeader([cr_t('Severity'), cr_t('Host'), cr_t('Problem'), cr_t('Times'), cr_t('Time in problem'), cr_t('Last time')])
+	->setNoDataMessage(cr_t('No resolved problems.'));
+
+foreach ($ov['closed'] as $row) {
+	$closed_table->addRow([
+		$severity($row['severity']),
+		$row['hosts'],
+		$row['name'],
+		$row['count'],
+		(new CCol(ChangeRenderer::duration($row['time'])))->addClass(ZBX_STYLE_NOWRAP),
+		(new CCol(zbx_date2str(DATE_TIME_FORMAT, $row['last']).' - '.zbx_date2str(DATE_TIME_FORMAT, $row['last_resolved'])))
+			->addClass(ZBX_STYLE_NOWRAP)
+	]);
+}
+
+$closed_panel = $panel(cr_s('Occurred in the period and resolved: %1$s', $ov['closed_total']), $closed_table,
+	cr_t('Problems that were open during the period and are resolved by its end, one row per trigger.')
+		.($ov['closed_total'] > count($ov['closed']) ? ' '.cr_s('Top %1$s of %2$s.', count($ov['closed']), $ov['closed_total']) : ''),
+	true
+);
+
+$overview_block = (new CDiv([$period_line, $verdict, $kpi, (new CDiv([$dynamics, $open_panel, $closed_panel]))
+	->addClass('cr-panels')
+]))->addClass('cr-overview');
+
+// Details: the comparison blocks.
+$summary = (new CDiv([
+	cr_s('New problems: %1$s (previous: %2$s)', $cur['new'], $prev['new']), ' ',
+	$delta($cur['new'] - $prev['new'], $pct($cur['new'], $prev['new'])),
+	'; ',
+	cr_s('median time to resolve: %1$s (previous: %2$s)', ChangeRenderer::duration($cur['mttr']),
+		ChangeRenderer::duration($prev['mttr'])
+	), ' ', $duration_delta($prev['mttr'], $cur['mttr'])
 ]))->addClass('cr-changes-summary');
 
 // 1. Previous -> current.
@@ -350,7 +489,17 @@ $grid = (new CDiv([
 	)
 ]))->addClass('cr-panels');
 
-$page->addItem($summary)->addItem($grid);
+$details = (new CTag('details', true, [
+	new CTag('summary', true, cr_t('Detailed analysis of changes')),
+	(new CDiv(cr_t('Comparison by host group / host / trigger, growth and decline, new and disappeared problems, MTTR by severity, when problems start, noisy triggers, time in problem.')))
+		->addClass('cr-note'),
+	$summary,
+	$grid
+]))
+	->addClass('cr-details')
+	->setId('cr-changes-details');
+
+$page->addItem($overview_block)->addItem($details);
 
 if ($changes['truncated']) {
 	$page->addItem((new CDiv(cr_t('The analysis is limited by "analytics_limit": the numbers may be lower than in reality.')))

@@ -208,6 +208,38 @@
 		}
 	});
 
+	// "Changes" tab: remember whether the detailed analysis is expanded (per browser, optional).
+	function restoreDetails() {
+		const details = document.getElementById('cr-changes-details');
+
+		if (details === null) {
+			return;
+		}
+
+		try {
+			details.open = window.localStorage.getItem('cr-changes-details') === '1';
+		}
+		catch (e) {
+			// Storage is not available: keep the default (collapsed).
+		}
+
+		details.addEventListener('toggle', function() {
+			try {
+				window.localStorage.setItem('cr-changes-details', details.open ? '1' : '0');
+			}
+			catch (e) {
+				// Ignore.
+			}
+		});
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', restoreDetails);
+	}
+	else {
+		restoreDetails();
+	}
+
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', toggleScheduleRows);
 	}

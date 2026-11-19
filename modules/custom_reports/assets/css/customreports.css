@@ -381,3 +381,63 @@
 	background-color: #ffffff;
 	overflow-x: auto;
 }
+
+/* "Changes" tab: overview first (verdict, KPI, dynamics, open now, resolved in the period), details below. */
+.cr-overview {
+	margin-bottom: 12px;
+}
+
+.cr-verdict {
+	margin: 8px 0 4px 0;
+	padding: 10px 14px;
+	border-left: 6px solid #9aa7b0;
+	background: rgba(128, 128, 128, .08);
+	line-height: 1.5;
+}
+
+.cr-verdict-title {
+	font-size: 16px;
+	font-weight: bold;
+}
+
+.cr-verdict-worse {
+	border-left-color: #e45959;
+	background: rgba(228, 89, 89, .10);
+}
+
+.cr-verdict-better {
+	border-left-color: #59b36a;
+	background: rgba(89, 179, 106, .10);
+}
+
+.cr-verdict-reasons {
+	opacity: .85;
+}
+
+.cr-kpi-open .cr-kpi-value {
+	color: #e97659;
+}
+
+.cr-kpi-alert {
+	border-color: #e45959;
+}
+
+.cr-kpi-alert .cr-kpi-value {
+	color: #e45959;
+}
+
+.cr-bar-prev {
+	background: rgba(128, 128, 128, .25);
+	border: 1px dashed rgba(128, 128, 128, .7);
+	box-sizing: border-box;
+}
+
+.cr-details {
+	margin-top: 6px;
+}
+
+.cr-details > summary {
+	cursor: pointer;
+	padding: 8px 0;
+	font-weight: bold;
+}

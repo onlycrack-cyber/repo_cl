@@ -126,7 +126,7 @@ class ChangeAnalytics {
 		$prev_from = $from - ($till - $from);
 
 		$params = [
-			'output' => ['eventid', 'objectid', 'clock', 'severity', 'name', 'r_eventid'],
+			'output' => ['eventid', 'objectid', 'clock', 'severity', 'name', 'r_eventid', 'acknowledged'],
 			'source' => 0,
 			'object' => 0,
 			'value' => 1,
@@ -181,6 +181,7 @@ class ChangeAnalytics {
 				'severity' => (int) $event['severity'],
 				'clock' => (int) $event['clock'],
 				'resolved' => $recovery[$event['r_eventid']] ?? null,
+				'acknowledged' => (int) ($event['acknowledged'] ?? 0),
 				'hosts' => $hosts
 			];
 		}
@@ -246,6 +247,8 @@ class ChangeAnalytics {
 			'till' => $data['till'],
 			'prev_from' => $data['prev_from'],
 			'grouping' => $grouping,
+			// What a reader needs first: open now, what happened in the period, the trend and the verdict.
+			'overview' => self::overview($problems, $data, $new),
 			'truncated' => $data['truncated'],
 			'totals' => [
 				'cur' => self::totals($new['cur']),
@@ -270,6 +273,212 @@ class ChangeAnalytics {
 				$grouping === self::GROUP_BY_HOST ? self::GROUP_BY_HOST : self::GROUP_BY_GROUP
 			)
 		];
+	}
+
+	// Rows of the "Open now" and "Resolved in the period" lists.
+	public const OVERVIEW_ROWS = 100;
+
+	private static function isOpenAt(array $problem, int $time): bool {
+		return $problem['clock'] < $time && ($problem['resolved'] === null || $problem['resolved'] > $time);
+	}
+
+	/**
+	 * The period in a form a specialist reads first:
+	 * - open at the start and at the end, new and resolved in the period, MTTR - with the previous period;
+	 * - dynamics per hour / day / week: new, resolved, open at the end of the interval (and new of the previous period);
+	 * - "open now": problems open at the end of the period, one row per trigger;
+	 * - "resolved in the period": triggers with problems in the period, none open at its end;
+	 * - verdict: worse / better / same, with the reasons.
+	 */
+	private static function overview(array $problems, array $data, array $new): array {
+		[$from, $till, $prev_from] = [$data['from'], $data['till'], $data['prev_from']];
+
+		$count_open = static function (int $time) use ($problems): int {
+			return count(array_filter($problems, static function (array $p) use ($time): bool {
+				return self::isOpenAt($p, $time);
+			}));
+		};
+		$count_resolved = static function (int $start, int $end) use ($problems): int {
+			return count(array_filter($problems, static function (array $p) use ($start, $end): bool {
+				return $p['resolved'] !== null && $p['resolved'] >= $start && $p['resolved'] < $end;
+			}));
+		};
+
+		$cur = self::totals($new['cur']);
+		$prev = self::totals($new['prev']);
+
+		$overview = [
+			'new' => $cur['new'],
+			'new_prev' => $prev['new'],
+			'resolved' => $count_resolved($from, $till),
+			'resolved_prev' => $count_resolved($prev_from, $from),
+			'open_start' => $count_open($from),
+			'open_end' => $count_open($till),
+			'open_start_prev' => $count_open($prev_from),
+			'mttr' => $cur['mttr'],
+			'mttr_prev' => $prev['mttr'],
+			'buckets' => self::overviewBuckets($problems, $from, $till),
+			'unit' => '',
+			'open_now' => [],
+			'open_now_total' => 0,
+			'open_high' => 0,
+			'closed' => [],
+			'closed_total' => 0
+		];
+		$overview['unit'] = $overview['buckets'] ? $overview['buckets'][0]['unit'] : 'day';
+
+		// Open now: one row per trigger, the oldest open problem defines "open since".
+		$open = [];
+		$occurrences = [];
+
+		foreach ($problems as $problem) {
+			if ($problem['clock'] >= $from && $problem['clock'] < $till) {
+				$occurrences[$problem['triggerid']] = ($occurrences[$problem['triggerid']] ?? 0) + 1;
+			}
+		}
+
+		foreach ($problems as $problem) {
+			if (!self::isOpenAt($problem, $till)) {
+				continue;
+			}
+
+			$row = &$open[$problem['triggerid']];
+			$row = $row ?? ['triggerid' => $problem['triggerid'], 'name' => $problem['name'], 'severity' => 0,
+				'hosts' => implode(', ', array_column($problem['hosts'], 'name')), 'since' => $problem['clock'],
+				'open_count' => 0, 'acknowledged' => true
+			];
+			$row['severity'] = max($row['severity'], $problem['severity']);
+			$row['since'] = min($row['since'], $problem['clock']);
+			$row['open_count']++;
+			$row['acknowledged'] = $row['acknowledged'] && $problem['acknowledged'];
+			unset($row);
+		}
+
+		foreach ($open as &$row) {
+			$row['age'] = $till - $row['since'];
+			// Older than the period: open all the time of the report.
+			$row['before_period'] = $row['since'] < $from;
+			$row['occurrences'] = $occurrences[$row['triggerid']] ?? 0;
+		}
+		unset($row);
+
+		$open_triggers = array_fill_keys(array_keys($open), true);
+
+		usort($open, static function (array $a, array $b): int {
+			return [$b['severity'], $a['since']] <=> [$a['severity'], $b['since']];
+		});
+
+		$overview['open_now_total'] = count($open);
+		$overview['open_high'] = count(array_filter($open, static function (array $row): bool {
+			return $row['severity'] >= Severity::HIGH;
+		}));
+		$overview['open_now'] = array_slice($open, 0, self::OVERVIEW_ROWS);
+
+		// Resolved in the period: triggers with problems during the period and none open at its end.
+		$closed = [];
+
+		foreach ($problems as $problem) {
+			$end = $problem['resolved'] ?? $till;
+
+			if (array_key_exists($problem['triggerid'], $open_triggers) || $problem['clock'] >= $till || $end <= $from) {
+				continue;
+			}
+
+			$row = &$closed[$problem['triggerid']];
+			$row = $row ?? ['triggerid' => $problem['triggerid'], 'name' => $problem['name'], 'severity' => 0,
+				'hosts' => implode(', ', array_column($problem['hosts'], 'name')), 'count' => 0, 'time' => 0,
+				'first' => $problem['clock'], 'last' => $problem['clock'], 'last_resolved' => $end
+			];
+			$row['severity'] = max($row['severity'], $problem['severity']);
+			$row['count']++;
+			$row['time'] += min($end, $till) - max($problem['clock'], $from);
+			$row['first'] = min($row['first'], $problem['clock']);
+
+			if ($problem['clock'] >= $row['last']) {
+				$row['last'] = $problem['clock'];
+				$row['last_resolved'] = $end;
+			}
+
+			unset($row);
+		}
+
+		usort($closed, static function (array $a, array $b): int {
+			return [$b['severity'], $b['count'], $b['time']] <=> [$a['severity'], $a['count'], $a['time']];
+		});
+
+		$overview['closed_total'] = count($closed);
+		$overview['closed'] = array_slice($closed, 0, self::OVERVIEW_ROWS);
+		$overview['verdict'] = self::verdict($overview);
+
+		return $overview;
+	}
+
+	/**
+	 * Intervals of the dynamics chart: hours up to 2 days, days up to 62 days, weeks beyond.
+	 */
+	private static function overviewBuckets(array $problems, int $from, int $till): array {
+		$length = $till - $from;
+		[$step, $unit] = $length <= 2 * 86400 ? [3600, 'hour'] : ($length <= 62 * 86400 ? [86400, 'day'] : [7 * 86400, 'week']);
+		$buckets = [];
+
+		for ($start = $from; $start < $till; $start += $step) {
+			$end = min($start + $step, $till);
+			$prev_start = $start - $length;
+			$prev_end = $end - $length;
+			$bucket = ['start' => $start, 'end' => $end, 'unit' => $unit, 'new' => 0, 'resolved' => 0, 'open' => 0,
+				'new_prev' => 0
+			];
+
+			foreach ($problems as $problem) {
+				if ($problem['clock'] >= $start && $problem['clock'] < $end) {
+					$bucket['new']++;
+				}
+
+				if ($problem['clock'] >= $prev_start && $problem['clock'] < $prev_end) {
+					$bucket['new_prev']++;
+				}
+
+				if ($problem['resolved'] !== null && $problem['resolved'] >= $start && $problem['resolved'] < $end) {
+					$bucket['resolved']++;
+				}
+
+				if (self::isOpenAt($problem, $end)) {
+					$bucket['open']++;
+				}
+			}
+
+			$buckets[] = $bucket;
+		}
+
+		return $buckets;
+	}
+
+	/**
+	 * Worse / better / same: open problems at the end vs the start, new problems vs the previous period, MTTR.
+	 *
+	 * @return array  ['status' => 'worse'|'better'|'same', 'reasons' => list of [code, sign, cur, prev]]
+	 */
+	private static function verdict(array $o): array {
+		$reasons = [];
+
+		if ($o['open_end'] != $o['open_start']) {
+			$reasons[] = ['open', $o['open_end'] > $o['open_start'] ? 1 : -1, $o['open_end'], $o['open_start']];
+		}
+
+		$diff = $o['new'] - $o['new_prev'];
+
+		if (abs($diff) >= 2 && abs($diff) >= 0.1 * max(1, $o['new_prev'])) {
+			$reasons[] = ['new', $diff > 0 ? 1 : -1, $o['new'], $o['new_prev']];
+		}
+
+		if ($o['mttr'] !== null && $o['mttr_prev'] !== null && $o['mttr_prev'] > 0
+				&& abs($o['mttr'] - $o['mttr_prev']) >= 0.2 * $o['mttr_prev']) {
+			$reasons[] = ['mttr', $o['mttr'] > $o['mttr_prev'] ? 1 : -1, $o['mttr'], $o['mttr_prev']];
+		}
+
+		$score = array_sum(array_column($reasons, 1));
+
+		return ['status' => $score > 0 ? 'worse' : ($score < 0 ? 'better' : 'same'), 'reasons' => $reasons];
 	}
 
 	private static function totals(array $problems): array {

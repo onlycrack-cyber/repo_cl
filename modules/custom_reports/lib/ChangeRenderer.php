@@ -80,10 +80,201 @@ class ChangeRenderer {
 	/**
 	 * Section for HTML reports and PDF.
 	 */
-	public static function renderSection(array $changes, array $meta): string {
+	/**
+	 * Verdict of the period in words: [title, summary sentence, reasons].
+	 */
+	public static function verdictTexts(array $overview): array {
+		$titles = [
+			'worse' => I18n::t('Worse than in the previous period'),
+			'better' => I18n::t('Better than in the previous period'),
+			'same' => I18n::t('No significant changes')
+		];
+		$reasons = [];
+
+		foreach ($overview['verdict']['reasons'] as [$code, $sign, $now, $was]) {
+			switch ($code) {
+				case 'open':
+					$reasons[] = $sign > 0
+						? I18n::s('more open problems: %1$s at the start, %2$s at the end', $was, $now)
+						: I18n::s('fewer open problems: %1$s at the start, %2$s at the end', $was, $now);
+					break;
+
+				case 'new':
+					$reasons[] = $sign > 0
+						? I18n::s('more new problems: %1$s against %2$s', $now, $was)
+						: I18n::s('fewer new problems: %1$s against %2$s', $now, $was);
+					break;
+
+				case 'mttr':
+					$reasons[] = $sign > 0
+						? I18n::s('problems are resolved slower: median %1$s against %2$s', self::duration($now), self::duration($was))
+						: I18n::s('problems are resolved faster: median %1$s against %2$s', self::duration($now), self::duration($was));
+					break;
+			}
+		}
+
+		return [
+			$titles[$overview['verdict']['status']],
+			I18n::s('Open now: %1$s (High and Disaster: %2$s). In the period: new %3$s, resolved %4$s.',
+				$overview['open_end'], $overview['open_high'], $overview['new'], $overview['resolved']
+			),
+			$reasons
+		];
+	}
+
+	/**
+	 * The overview for e-mails and PDF: verdict, key numbers, dynamics, open now (optional: a problem report lists the
+	 * open problems itself), resolved in the period. Table layout and inline styles for e-mail clients.
+	 */
+	public static function overviewHtml(array $changes, array $meta, bool $with_open): string {
+		$ov = $changes['overview'];
+		[$title, $sentence, $reasons] = self::verdictTexts($ov);
+		$colors = ['worse' => 'e45959', 'better' => '59b36a', 'same' => '9aa7b0'];
+		$backgrounds = ['worse' => 'fbe9e9', 'better' => 'eaf6ec', 'same' => 'f2f4f5'];
+		$status = $ov['verdict']['status'];
+
+		$html = '<div style="margin:8px 0;padding:8px 12px;border-left:6px solid #'.$colors[$status].';background:#'.
+			$backgrounds[$status].'"><div style="font-size:15px;font-weight:bold">'.self::e($title).'</div><div>'.
+			self::e($sentence).'</div>'.($reasons ? '<div style="color:#4f5b63">'.self::e(implode('; ', $reasons)).'.</div>' : '').
+			'</div>';
+
+		// Key numbers with the previous period.
+		$pct = $ov['new_prev'] > 0 ? (int) round(($ov['new'] - $ov['new_prev']) * 100 / $ov['new_prev']) : null;
+		$cards = [
+			[I18n::t('Open now'), (string) $ov['open_end'], self::e(I18n::s('at the start: %1$s', $ov['open_start'])).' '.
+				self::colored(self::deltaText($ov['open_end'] - $ov['open_start']), $ov['open_end'] - $ov['open_start']),
+				$ov['open_end'] > 0 ? 'e97659' : ''],
+			[I18n::t('High and Disaster open'), (string) $ov['open_high'], '', $ov['open_high'] > 0 ? 'e45959' : ''],
+			[I18n::t('New in the period'), (string) $ov['new'], self::e(I18n::s('was: %1$s', $ov['new_prev'])).' '.
+				self::colored(self::deltaText($ov['new'] - $ov['new_prev'], $pct), $ov['new'] - $ov['new_prev']), ''],
+			[I18n::t('Resolved in the period'), (string) $ov['resolved'], self::e(I18n::s('was: %1$s', $ov['resolved_prev'])), ''],
+			[I18n::t('Time to resolve (median)'), self::duration($ov['mttr']), self::e(I18n::s('was: %1$s', self::duration($ov['mttr_prev']))).
+				' '.self::colored(self::durationDelta($ov['mttr_prev'], $ov['mttr']),
+					$ov['mttr_prev'] !== null && $ov['mttr'] !== null ? $ov['mttr'] - $ov['mttr_prev'] : 0), '']
+		];
+		$html .= '<table style="margin-bottom:10px;border-collapse:collapse"><tr>';
+
+		foreach ($cards as [$label, $value, $note, $color]) {
+			$html .= '<td style="'.self::CELL.'min-width:110px;vertical-align:top"><div style="font-size:22px;font-weight:bold'.
+				($color !== '' ? ';color:#'.$color : '').'">'.self::e($value).'</div><div>'.self::e($label).'</div>'.
+				($note !== '' ? '<div style="font-size:11px;color:#4f5b63">'.$note.'</div>' : '').'</td>';
+		}
+
+		$html .= '</tr></table>';
+		$html .= self::dynamicsHtml($ov);
+
+		if ($with_open) {
+			$rows = [];
+
+			foreach ($ov['open_now'] as $row) {
+				$rows[] = [self::severityCell($row['severity'], $meta), self::e($row['hosts']),
+					self::e($row['name'].($row['open_count'] > 1 ? ' ('.I18n::s('%1$s open', $row['open_count']).')' : '')),
+					date('Y-m-d H:i', $row['since']), self::duration($row['age']),
+					$row['before_period']
+						? '<span style="color:#e45959">'.self::e(I18n::t('open the whole period')).'</span>'
+						: '<span style="color:#e97659">'.self::e(I18n::t('new')).'</span>',
+					$row['occurrences'] > 0 ? $row['occurrences'] : '-',
+					self::e(I18n::t($row['acknowledged'] ? 'Yes' : 'No'))
+				];
+			}
+
+			$html .= self::title(I18n::s('Open now: %1$s', $ov['open_now_total'])).
+				self::table(['Severity', 'Host', 'Problem', 'Open since', 'Duration', 'In the period', 'Occurred', 'Ack'], $rows,
+					'No open problems.'
+				);
+
+			if ($ov['open_now_total'] > count($ov['open_now'])) {
+				$html .= self::note(I18n::s('Top %1$s of %2$s.', count($ov['open_now']), $ov['open_now_total']));
+			}
+		}
+
+		$rows = [];
+
+		foreach ($ov['closed'] as $row) {
+			$rows[] = [self::severityCell($row['severity'], $meta), self::e($row['hosts']), self::e($row['name']), $row['count'],
+				self::duration($row['time']), date('Y-m-d H:i', $row['last']).' - '.date('Y-m-d H:i', $row['last_resolved'])
+			];
+		}
+
+		$html .= self::title(I18n::s('Occurred in the period and resolved: %1$s', $ov['closed_total'])).
+			self::table(['Severity', 'Host', 'Problem', 'Times', 'Time in problem', 'Last time'], $rows, 'No resolved problems.');
+
+		if ($ov['closed_total'] > count($ov['closed'])) {
+			$html .= self::note(I18n::s('Top %1$s of %2$s.', count($ov['closed']), $ov['closed_total']));
+		}
+
+		return $html;
+	}
+
+	/**
+	 * Dynamics chart of the overview: table cells with fixed heights (e-mail clients, PDF).
+	 */
+	private static function dynamicsHtml(array $ov): string {
+		if (!$ov['buckets']) {
+			return '';
+		}
+
+		$height = 80;
+		$max = 1;
+
+		foreach ($ov['buckets'] as $bucket) {
+			$max = max($max, $bucket['new'], $bucket['resolved'], $bucket['open'], $bucket['new_prev']);
+		}
+
+		$colors = ['new_prev' => 'd5dadd', 'new' => '4796c4', 'resolved' => '59b36a', 'open' => '9aa7b0'];
+		$step = (int) ceil(count($ov['buckets']) / 14);
+		$bars = '';
+		$labels = '';
+
+		foreach ($ov['buckets'] as $index => $bucket) {
+			$group = '';
+
+			foreach ($colors as $key => $color) {
+				$group .= '<td style="vertical-align:bottom;padding:0;width:25%"><div style="height:'.
+					($bucket[$key] > 0 ? max(1, (int) round($bucket[$key] * $height / $max)) : 0).'px;background:#'.$color.
+					'"></div></td>';
+			}
+
+			$bars .= '<td style="vertical-align:bottom;padding:0 2px"><table style="width:100%;border-collapse:collapse"><tr>'.
+				$group.'</tr></table></td>';
+			$label = $index % $step == 0 || $index == count($ov['buckets']) - 1
+				? date($ov['unit'] === 'hour' ? 'H:i' : 'd.m', $bucket['start'])
+				: '';
+			$labels .= '<td style="padding:2px 1px;font-size:9px;color:#768d99;text-align:center;white-space:nowrap">'.
+				self::e($label).'<br><b style="color:#4f5b63">'.$bucket['open'].'</b></td>';
+		}
+
+		$names = ['new_prev' => I18n::t('New in the previous period'), 'new' => I18n::t('New'),
+			'resolved' => I18n::t('Resolved'), 'open' => I18n::t('Open at the end (number under the column)')
+		];
+		$legend = '';
+
+		foreach ($colors as $key => $color) {
+			$legend .= '<span style="display:inline-block;width:10px;height:10px;background:#'.$color.
+				';margin:0 4px 0 10px"></span>'.self::e($names[$key]);
+		}
+
+		$titles = ['hour' => 'Dynamics by hour', 'day' => 'Dynamics by day', 'week' => 'Dynamics by week'];
+
+		return self::title(I18n::t($titles[$ov['unit']])).
+			'<div style="margin-bottom:4px;font-size:11px;color:#4f5b63">'.$legend.'</div>'.
+			'<table style="width:100%;margin-bottom:12px;border-bottom:1px solid #dfe4e7;table-layout:fixed;border-collapse:collapse">'.
+			'<tr style="height:'.($height + 4).'px">'.$bars.'</tr><tr>'.$labels.'</tr></table>';
+	}
+
+	/**
+	 * @param bool $with_open  Include the "Open now" list (the "Changes" tab export; a problem report has its own list).
+	 */
+	public static function renderSection(array $changes, array $meta, bool $with_open = false): string {
 		$label = I18n::t(self::GROUPING_LABELS[$changes['grouping']]);
-		$html = '<h3 style="margin:14px 0 4px 0">'.self::e(I18n::t('Changes')).': '.self::e(self::periodText($changes)).'</h3>'.
-			'<div style="margin-bottom:8px">'.self::e(self::totalsText($changes)).'</div>';
+		$html = '<h3 style="margin:14px 0 4px 0">'.self::e(I18n::t('Changes')).': '.self::e(self::periodText($changes)).'</h3>';
+
+		if (isset($changes['overview'])) {
+			$html .= self::overviewHtml($changes, $meta, $with_open).
+				'<h3 style="margin:16px 0 4px 0">'.self::e(I18n::t('Detailed analysis of changes')).'</h3>';
+		}
+
+		$html .= '<div style="margin-bottom:8px">'.self::e(self::totalsText($changes)).'</div>';
 
 		// 1. Previous -> current.
 		$html .= self::title(self::compareTitle($changes['grouping']));
@@ -214,7 +405,7 @@ class ChangeRenderer {
 			'@page{size:A4 landscape;margin:12mm}@media print{tr{page-break-inside:avoid}}'.
 			'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2c33;margin:16px}'.
 			'table{border-collapse:collapse}</style></head><body><h2 style="margin:0 0 4px 0">'.self::e($title).'</h2>'.
-			self::renderSection($changes, $meta).
+			self::renderSection($changes, $meta, true).
 			($print ? '<script>window.addEventListener("load",function(){window.print();});</script>' : '').
 			'</body></html>';
 	}
@@ -234,6 +425,50 @@ class ChangeRenderer {
 		$label = self::GROUPING_LABELS[$changes['grouping']];
 
 		$put([I18n::t('Changes'), self::periodText($changes)]);
+
+		// The overview first: verdict, key numbers, open now, resolved in the period.
+		if (isset($changes['overview'])) {
+			$ov = $changes['overview'];
+			[$title, $sentence, $reasons] = self::verdictTexts($ov);
+			$put([$title]);
+			$put([$sentence]);
+
+			if ($reasons) {
+				$put([implode('; ', $reasons)]);
+			}
+
+			$put([]);
+			$head(['Open now', 'at the start', 'New in the period', 'was', 'Resolved in the period', 'was',
+				'MTTR now (s)', 'MTTR prev (s)'
+			]);
+			$put([$ov['open_end'], $ov['open_start'], $ov['new'], $ov['new_prev'], $ov['resolved'], $ov['resolved_prev'],
+				$ov['mttr'], $ov['mttr_prev']
+			]);
+			$put([]);
+			$head(['Section', 'Severity', 'Host', 'Problem', 'Open since', 'Duration (s)', 'Open the whole period',
+				'Occurred', 'Acknowledged'
+			]);
+
+			foreach ($ov['open_now'] as $row) {
+				$put([I18n::t('Open now'), $meta[$row['severity']]['name'], $row['hosts'], $row['name'],
+					date('Y-m-d H:i', $row['since']), $row['age'], I18n::t($row['before_period'] ? 'Yes' : 'No'),
+					$row['occurrences'], I18n::t($row['acknowledged'] ? 'Yes' : 'No')
+				]);
+			}
+
+			$put([]);
+			$head(['Section', 'Severity', 'Host', 'Problem', 'Times', 'Time in problem (s)', 'First', 'Last']);
+
+			foreach ($ov['closed'] as $row) {
+				$put([I18n::t('Resolved in the period'), $meta[$row['severity']]['name'], $row['hosts'], $row['name'],
+					$row['count'], $row['time'], date('Y-m-d H:i', $row['first']),
+					date('Y-m-d H:i', $row['last']).' - '.date('Y-m-d H:i', $row['last_resolved'])
+				]);
+			}
+
+			$put([]);
+		}
+
 		$put([self::totalsText($changes)]);
 		$put([]);
 		$head(['Section', $label, 'New (prev)', 'New (now)', 'Change', 'MTTR prev (s)', 'MTTR now (s)']);
@@ -304,7 +539,19 @@ class ChangeRenderer {
 	 * A few lines for the short summary (Telegram).
 	 */
 	public static function renderText(array $changes): array {
-		$lines = ["\u{1F504} ".I18n::t('Changes vs previous period'), self::totalsText($changes)];
+		$lines = ["\u{1F504} ".I18n::t('Changes vs previous period')];
+
+		if (isset($changes['overview'])) {
+			[$title, $sentence, $reasons] = self::verdictTexts($changes['overview']);
+			$lines[0] .= ': '.$title;
+			$lines[] = $sentence;
+
+			if ($reasons) {
+				$lines[] = implode('; ', $reasons).'.';
+			}
+		}
+
+		$lines[] = self::totalsText($changes);
 		$names = static function (array $rows): string {
 			return implode(', ', array_map(static function (array $row): string {
 				return $row['name'].' '.sprintf('%+d', $row['delta']);
