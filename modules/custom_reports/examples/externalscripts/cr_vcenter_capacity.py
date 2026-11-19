@@ -29,6 +29,7 @@ import csv
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -55,6 +56,10 @@ TEXTS = {
     "col_storage": ("Хранилище свободно, ТБ", "Free storage, TB"),
     "col_provisioned": ("Выделено, % ёмкости", "Provisioned, % of capacity"),
     "col_error": ("Ошибка", "Error"), "col_line": ("Строка", "Line"), "col_content": ("Содержимое", "Content"),
+    # Short headers of the monospace tables in Telegram (narrow screen).
+    "s_cluster": ("Кластер", "Cluster"), "s_clusters": ("Кл.", "Cl."), "s_low": ("Нехв.", "Low"),
+    "s_cpu": ("CPU,ГГц", "CPU,GHz"), "s_mem_gb": ("ОЗУ,ГБ", "RAM,GB"), "s_mem_tb": ("ОЗУ,ТБ", "RAM,TB"),
+    "s_storage": ("СХД,ТБ", "Stor,TB"),
     "subject": ("кластеров с нехваткой ресурсов: %d из %d", "clusters low on resources: %d of %d"),
     "summary": ("Кластеров: %d, с нехваткой ресурсов: %d (CPU: %d, память: %d, хранилище: %d). Пороги: %s.",
                 "Clusters: %d, low on resources: %d (CPU: %d, memory: %d, storage: %d). Thresholds: %s."),
@@ -66,7 +71,7 @@ TEXTS = {
     "failed": ("Не удалось собрать данные: %s.", "Data not collected: %s."),
     "stale": ("Данные устарели: файл обновлён %s назад (%s).", "Stale data: the file was updated %s ago (%s)."),
     "data_time": ("Данные: %s.", "Data: %s."),
-    "unknown": ("нет данных", "no data"),
+    "unknown": ("н/д", "n/a"),
     "unparsed_note": ("Нераспознанных строк: %d.", "Lines not parsed: %d."),
     "repaired_note": ("Строки с пробелами вместо запятой разобраны автоматически: %s.",
                       "Lines with spaces instead of commas were split automatically: %s."),
@@ -260,8 +265,13 @@ def main(argv):
     table = []
     by_vcenter = {}
 
-    for row in sorted(clusters, key=lambda r: (r["vcenter"].lower(), r.get("datacenter", "").lower(),
-                                               r["cluster"].lower())):
+    def natural(text):
+        """"cluster2" before "cluster10"."""
+        return [(0, int(part)) if part.isdigit() else (1, part) for part in re.split(r"(\d+)", text.lower())]
+
+    # vCenter, then cluster name: the short table in Telegram has no datacenter column.
+    for row in sorted(clusters, key=lambda r: (natural(r["vcenter"]), natural(r["cluster"]),
+                                               natural(r.get("datacenter", "")))):
         flags = {res: low(row, res) for res in resources}
         for res, flag in flags.items():
             low_count[res] += flag
@@ -344,7 +354,7 @@ def main(argv):
     if repaired:
         summary.append(t("repaired_note") % ", ".join(str(n) for n in repaired))
     if errors:
-        summary.append(t("failed") % ", ".join(sorted({e[0] for e in errors})))
+        summary.append(t("failed") % "; ".join("%s (%s)" % (name, message[:200]) for name, message in errors))
     if stale:
         summary.append(stale)
     if unparsed:
@@ -370,11 +380,17 @@ def main(argv):
 
     tables = []
     if errors:
-        tables.append({"title": t("errors"), "columns": ["vCenter", t("col_error")],
+        # In the short summary (Telegram) the errors are lines of the summary, the table is for HTML/PDF.
+        tables.append({"title": t("errors"), "columns": ["vCenter", t("col_error")], "in_summary": False,
                        "rows": [[name, {"value": message, "color": "disaster"}] for name, message in errors]})
     tables.append({"title": t("by_vcenter"), "columns": ["vCenter", t("col_clusters"), t("col_low"), t("col_cpu"),
-                                                          t("col_memory_tb"), t("col_storage")], "rows": vc_rows})
-    tables.append({"title": t("clusters"), "columns": columns, "rows": table})
+                                                          t("col_memory_tb"), t("col_storage")], "rows": vc_rows,
+                   "summary_headers": ["vCenter", t("s_clusters"), t("s_low"), t("s_cpu"), t("s_mem_tb"),
+                                       t("s_storage")]})
+    # Telegram: vCenter, cluster and the free resources of every cluster (copyable monospace table).
+    tables.append({"title": t("clusters"), "columns": columns, "rows": table,
+                   "summary_columns": [0, 2, 4, 5, 6] if full else [0, 1, 2, 3, 4],
+                   "summary_headers": ["vCenter", t("s_cluster"), t("s_cpu"), t("s_mem_gb"), t("s_storage")]})
     if unparsed:
         tables.append({"title": t("unparsed"), "columns": [t("col_line"), t("col_content")],
                        "rows": [[str(n), line] for n, line in unparsed]})

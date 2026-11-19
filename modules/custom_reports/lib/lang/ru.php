@@ -482,6 +482,9 @@ return [
 	'Lines with a wrong number of fields (highlighted): %1$s.' => 'Строки с неверным числом полей (подсвечены): %1$s.',
 	'Lines with spaces instead of the delimiter, split automatically: %1$s.' => 'Строки с пробелами вместо разделителя, разделены автоматически: %1$s.',
 
+	'continued' => 'продолжение',
+	'* - highlighted value' => '* — выделенное значение',
+
 	// Severities (default names of Zabbix).
 	'Not classified' => 'Не классифицировано',
 	'Information' => 'Информация',

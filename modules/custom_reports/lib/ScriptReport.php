@@ -374,7 +374,9 @@ class ScriptReport {
 			);
 		}
 
-		return ['title' => '', 'columns' => $columns, 'rows' => $rows, 'total' => count($records), 'notes' => $notes];
+		return ['title' => '', 'columns' => $columns, 'rows' => $rows, 'total' => count($records), 'notes' => $notes,
+			'in_summary' => true, 'summary_columns' => [], 'summary_headers' => []
+		];
 	}
 
 	private static function fromJson(array $data, array $report, int $max_rows): array {
@@ -484,12 +486,28 @@ class ScriptReport {
 			$columns = [I18n::t('Value')];
 		}
 
+		// Short summary (Telegram): which columns (indexes) with which headers, or no table at all.
+		$summary_columns = [];
+
+		foreach ((array) ($table['summary_columns'] ?? []) as $index) {
+			if (is_int($index) && $index >= 0 && $index < count($columns)) {
+				$summary_columns[] = $index;
+			}
+		}
+
+		$summary_headers = is_array($table['summary_headers'] ?? null)
+			? array_map([self::class, 'scalar'], array_values($table['summary_headers']))
+			: [];
+
 		return [
 			'title' => self::scalar($table['title'] ?? ''),
 			'columns' => $columns,
 			'rows' => $result,
 			'total' => count($rows),
-			'notes' => []
+			'notes' => [],
+			'in_summary' => !array_key_exists('in_summary', $table) || !empty($table['in_summary']),
+			'summary_columns' => $summary_columns,
+			'summary_headers' => $summary_headers
 		];
 	}
 

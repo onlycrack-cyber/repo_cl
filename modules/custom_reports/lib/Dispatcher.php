@@ -195,19 +195,24 @@ class Dispatcher {
 					(string) $this->config['telegram_api_url'], $proxy !== '' ? $proxy : (string) $this->config['proxy'],
 					$timeout
 				);
-				$text = self::text($report, $title, (int) $this->config['telegram_max_length'], true);
+				// A script report may need several messages (a long table continues in the next one).
+				$texts = self::isScript($report)
+					? ScriptReportRenderer::renderMessages($report, $title, (int) $this->config['telegram_max_length'], true)
+					: [self::text($report, $title, (int) $this->config['telegram_max_length'], true)];
 				$document = null;
 
 				if ($format !== ReportRenderer::FORMAT_SUMMARY) {
 					$document = $this->makeDocument($report, $title, $format);
 				}
 
-				return static function (string $recipient) use ($transport, $text, $document, $subject) {
+				return static function (string $recipient) use ($transport, $texts, $document, $subject) {
 					if (!preg_match('/^-?\d+$|^@[A-Za-z0-9_]{5,}$/', $recipient)) {
 						throw new RuntimeException(I18n::t('Invalid Telegram chat ID.'));
 					}
 
-					$transport->sendMessage($recipient, $text);
+					foreach ($texts as $text) {
+						$transport->sendMessage($recipient, $text);
+					}
 
 					if ($document !== null) {
 						$transport->sendDocument($recipient, $document[0], $document[2], $document[1], $subject);

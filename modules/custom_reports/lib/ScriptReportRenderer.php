@@ -24,9 +24,6 @@ class ScriptReportRenderer {
 		'error' => "\u{274C}"
 	];
 
-	// Rows of the first table in the short summary.
-	private const TEXT_ROWS = 30;
-
 	public static function statusLabel(string $status): string {
 		$labels = [
 			'ok' => I18n::t('OK'),
@@ -160,18 +157,36 @@ class ScriptReportRenderer {
 			'</body></html>';
 	}
 
+	// Telegram: a long summary is split into at most this many messages (the rest is in the attachment).
+	public const MAX_MESSAGES = 5;
+
 	/**
-	 * Short text (Telegram, e-mail body of the "summary" format).
+	 * Short text (e-mail body of the "summary" format; the first message for Telegram).
 	 *
 	 * @param int  $max_length  Maximum length in characters (0 - unlimited).
 	 * @param bool $html        Telegram HTML markup.
 	 */
 	public static function renderText(array $report, string $title, int $max_length = 0, bool $html = false): string {
+		return self::renderMessages($report, $title, $max_length, $html)[0];
+	}
+
+	/**
+	 * Short summary as messages of at most $max_length characters (Telegram): the header, KPI and every table of the
+	 * summary as an aligned monospace block (<pre>: one tap copies it). A table that does not fit continues in the
+	 * next message with the same column headers.
+	 *
+	 * @return string[]
+	 */
+	public static function renderMessages(array $report, string $title, int $max_length = 0, bool $html = false,
+			int $max_messages = self::MAX_MESSAGES): array {
 		$b = static function (string $text) use ($html): string {
 			return $html ? '<b>'.$text.'</b>' : $text;
 		};
 		$e = static function (string $text) use ($html): string {
 			return $html ? htmlspecialchars($text, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8') : $text;
+		};
+		$len = static function (string $text): int {
+			return mb_strlen($text, 'UTF-8');
 		};
 
 		$title = $report['title'] !== '' ? $report['title'] : $title;
@@ -194,113 +209,172 @@ class ScriptReportRenderer {
 			}
 		}
 
-		$items = [];
+		$messages = [];
+		$current = implode("\n", $lines);
+		$limit = $max_length > 0 ? $max_length : PHP_INT_MAX;
+		$marked = false;
+		$tail = "\n".$e(I18n::t('(the full report is in the attachment or the HTML version)'));
+		$stopped = false;
+
+		// Starts the next message; false when the message limit is reached.
+		$next = static function () use (&$messages, &$current, $max_messages): bool {
+			$messages[] = $current;
+			$current = '';
+
+			return count($messages) < $max_messages;
+		};
 
 		foreach ($report['tables'] as $table) {
-			if (!$table['rows']) {
+			if (!$table['rows'] || !($table['in_summary'] ?? true)) {
 				continue;
 			}
 
-			$items[] = "\n".$b($e(($table['title'] !== '' ? $table['title'] : I18n::t('Data')).' ('.
-				I18n::n('%1$s row', '%1$s rows', (int) $table['total']).')')).':';
-			$items[] = "\n".$e(implode(' | ', $table['columns']));
+			[$header, $rows, $table_marked] = self::tableLines($table);
+			$marked = $marked || $table_marked;
+			$name = ($table['title'] !== '' ? $table['title'] : I18n::t('Data')).' ('.
+				I18n::n('%1$s row', '%1$s rows', (int) $table['total']).')';
+			$open = ($current !== '' ? "\n\n" : '').$b($e($name))."\n".($html ? '<pre>' : '').$e($header);
+			$close = $html ? '</pre>' : '';
+			$block = $open;
+			$in_block = 0;
 
-			foreach (array_slice($table['rows'], 0, self::TEXT_ROWS) as $row) {
-				// No colors in text: highlighted cells get a mark.
-				$items[] = "\n".$e(implode(' | ', array_map(static function (array $cell): string {
-					return $cell['color'] !== '' && $cell['color'] !== '59db8f' ? "\u{2757}".$cell['value'] : $cell['value'];
-				}, $row)));
+			foreach ($rows as $index => $row) {
+				$row = "\n".$e($row);
+
+				if ($len($current.$block.$row.$close.$tail) > $limit) {
+					// The message is full: close the block here and continue the table in the next message.
+					$current .= $in_block > 0 ? $block.$close : '';
+
+					if (!$next()) {
+						$stopped = count($rows) - $index;
+						break 2;
+					}
+
+					$block = $b($e($name." \u{2014} ".I18n::t('continued')))."\n".($html ? '<pre>' : '').$e($header);
+					$in_block = 0;
+				}
+
+				$block .= $row;
+				$in_block++;
 			}
 
-			if ($table['total'] > self::TEXT_ROWS) {
-				$items[] = "\n".$e(I18n::s('... and %1$s more', $table['total'] - self::TEXT_ROWS));
-			}
+			$current .= $block.$close;
 
 			foreach ($table['notes'] ?? [] as $note) {
-				$items[] = "\n\u{26A0}\u{FE0F} ".$e($note);
+				$note = "\n\u{26A0}\u{FE0F} ".$e($note);
+
+				if ($len($current.$note.$tail) > $limit && !$next()) {
+					break 2;
+				}
+
+				$current .= $note;
 			}
 		}
 
-		if ($report['text'] !== '') {
-			$items[] = "\n";
+		if ($report['text'] !== '' && $stopped === false) {
+			$current .= "\n";
 
 			foreach (preg_split('/\r\n|\r|\n/', $report['text']) as $line) {
-				$items[] = "\n".$e($line);
+				$line = "\n".$e($line);
+
+				if ($len($current.$line.$tail) > $limit && !$next()) {
+					$stopped = true;
+					break;
+				}
+
+				$current .= $line;
 			}
 		}
 
-		$text = implode("\n", $lines);
+		if ($marked && $stopped === false) {
+			$legend = "\n\n".$e(I18n::t('* - highlighted value'));
 
-		foreach ($items as $index => $item) {
-			$tail = "\n".$e(I18n::t('(the full report is in the attachment or the HTML version)'));
-
-			if ($max_length > 0 && mb_strlen($text.$item, 'UTF-8') + mb_strlen($tail, 'UTF-8') > $max_length
-					&& $index < count($items) - 1) {
-				$text .= $tail;
-				break;
+			if ($len($current.$legend) > $limit) {
+				$next();
 			}
 
-			$text .= $item;
+			$current .= $legend;
 		}
 
-		if ($max_length > 0 && mb_strlen($text, 'UTF-8') > $max_length) {
-			if ($html) {
-				// Cutting HTML could break a tag or an entity: cut the plain text and escape it again.
-				return htmlspecialchars(self::renderText($report, $title, $max_length, false),
-					ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'
-				);
+		if ($stopped !== false) {
+			$current = rtrim($messages ? array_pop($messages) : $current);
+			$more = is_int($stopped) ? "\n".$e(I18n::s('... and %1$s more', $stopped)) : '';
+			// If this does not fit, the check below turns the message into plain text (markup is never cut).
+			$current .= $more.$tail;
+		}
+
+		if ($current !== '') {
+			$messages[] = $current;
+		}
+
+		// A single message longer than the limit (very long summary): cut the plain text, never the HTML markup.
+		foreach ($messages as &$message) {
+			if ($len($message) > $limit) {
+				$plain = $html ? html_entity_decode(strip_tags($message), ENT_QUOTES | ENT_HTML5, 'UTF-8') : $message;
+				$plain = mb_substr($plain, 0, $limit - 3, 'UTF-8').'...';
+				$message = $html ? htmlspecialchars($plain, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8') : $plain;
 			}
-
-			$text = mb_substr($text, 0, $max_length - 3, 'UTF-8').'...';
 		}
+		unset($message);
 
-		return $text;
+		return $messages;
 	}
 
-	public static function renderCsv(array $report): string {
-		$fh = fopen('php://temp', 'r+');
-		fwrite($fh, "\xEF\xBB\xBF");
-		$put = static function (array $row) use ($fh): void {
-			fputcsv($fh, array_map([ReportRenderer::class, 'csvCell'], $row), ',', '"', '');
+	/**
+	 * A table as aligned monospace lines: [header line, row lines, any highlighted value?].
+	 * Columns: "summary_columns" with "summary_headers" of the table, or all of them.
+	 */
+	private static function tableLines(array $table): array {
+		$columns = ($table['summary_columns'] ?? []) ?: array_keys($table['columns']);
+		$headers = count($table['summary_headers'] ?? []) == count($columns)
+			? $table['summary_headers']
+			: array_map(static function (int $index) use ($table): string {
+				return $table['columns'][$index] ?? '';
+			}, $columns);
+
+		$marked = false;
+		$grid = [];
+
+		foreach ($table['rows'] as $row) {
+			$line = [];
+
+			foreach ($columns as $index) {
+				$cell = $row[$index] ?? ['value' => '', 'color' => ''];
+				// No colors in text: highlighted values get "*" (an emoji would break the alignment).
+				$mark = $cell['color'] !== '' && $cell['color'] !== '59db8f';
+				$marked = $marked || $mark;
+				$line[] = ['value' => $cell['value'].($mark ? '*' : ''), 'number' => self::isNumber($cell['value'])];
+			}
+
+			$grid[] = $line;
+		}
+
+		$widths = array_map(static function (string $header): int {
+			return mb_strlen($header, 'UTF-8');
+		}, $headers);
+
+		foreach ($grid as $line) {
+			foreach ($line as $i => $cell) {
+				$widths[$i] = max($widths[$i] ?? 0, mb_strlen($cell['value'], 'UTF-8'));
+			}
+		}
+
+		$format = static function (array $cells) use ($widths): string {
+			$out = [];
+
+			foreach ($cells as $i => $cell) {
+				$fill = str_repeat(' ', max(0, $widths[$i] - mb_strlen($cell['value'], 'UTF-8')));
+				$out[] = $cell['number'] ? $fill.$cell['value'] : $cell['value'].$fill;
+			}
+
+			return rtrim(implode('  ', $out));
 		};
 
-		$several = count($report['tables']) > 1 || $report['kpi'];
+		$header = $format(array_map(static function (string $header): array {
+			return ['value' => $header, 'number' => false];
+		}, $headers));
 
-		if ($report['kpi']) {
-			foreach ($report['kpi'] as $kpi) {
-				$put([$kpi['label'], $kpi['value']]);
-			}
-
-			$put([]);
-		}
-
-		foreach ($report['tables'] as $index => $table) {
-			if ($several && $index > 0) {
-				$put([]);
-			}
-
-			if ($several && $table['title'] !== '') {
-				$put([$table['title']]);
-			}
-
-			$put($table['columns']);
-
-			foreach ($table['rows'] as $row) {
-				$put(array_column($row, 'value'));
-			}
-		}
-
-		if (!$report['tables'] && $report['text'] !== '') {
-			foreach (preg_split('/\r\n|\r|\n/', $report['text']) as $line) {
-				$put([$line]);
-			}
-		}
-
-		rewind($fh);
-		$csv = stream_get_contents($fh);
-		fclose($fh);
-
-		return $csv;
+		return [$header, array_map($format, $grid), $marked];
 	}
 
 	/**
