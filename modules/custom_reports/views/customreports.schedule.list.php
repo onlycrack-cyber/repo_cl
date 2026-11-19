@@ -35,7 +35,8 @@ $weekdays = [1 => _('Monday'), 2 => _('Tuesday'), 3 => _('Wednesday'), 4 => _('T
 // Module controllers check the CSRF token against the full action name.
 $csrf_tokens = [];
 
-foreach (['customreports.schedule.run', 'customreports.schedule.delete', 'customreports.cron.update'] as $action) {
+foreach (['customreports.schedule.run', 'customreports.schedule.test', 'customreports.schedule.delete',
+		'customreports.cron.update'] as $action) {
 	$csrf_tokens[$action] = CCsrfTokenHelper::get($action);
 }
 $edit_url = (new CUrl('zabbix.php'))->setArgument('action', 'customreports.schedule.edit');
@@ -48,10 +49,13 @@ $table = (new CTableInfo())->setHeader([
 	_('Send separately'),
 	_('Recipients'),
 	_('Status'),
-	_('Last run'),
+	_('Last delivery'),
 	_('Result'),
+	_('Next run'),
 	_('Actions')
 ]);
+
+$now = time();
 
 foreach ($data['schedules'] as $scheduleid => $schedule) {
 	$state = $data['state'][$scheduleid] ?? [];
@@ -83,13 +87,29 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 	}
 
 	$last_run = max((int) ($state['last_run'] ?? 0), (int) ($state['last_manual_run'] ?? 0));
-	$result = '';
+	$history_url = (new CUrl('zabbix.php'))
+		->setArgument('action', 'customreports.schedule.history')
+		->setArgument('scheduleid', $scheduleid)
+		->getUrl();
+	$result = FrontendHelper::makeStatus($state['last_status'] ?? null);
 
-	if (array_key_exists('last_status', $state)) {
-		$result = (new CSpan($state['last_status'] === 'ok' ? _('OK') : _('Error')))
-			->addClass($state['last_status'] === 'ok' ? ZBX_STYLE_GREEN : ZBX_STYLE_RED)
-			->setHint($state['last_message'] ?? '');
+	if (($state['last_message'] ?? '') !== '') {
+		$result->setHint($state['last_message']);
 	}
+
+	$next_run = $schedule['enabled'] && $data['timezone_problem'] !== 'invalid'
+		? zbx_date2str(DATE_TIME_FORMAT, ScheduleHelper::nextOccurrence($schedule, $now, $data['timezone']))
+		: '-';
+
+	$test_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
+		->addClass('cr-inline-form')
+		->addVar('action', 'customreports.schedule.test')
+		->addVar('scheduleid', $scheduleid)
+		->addVar(CCsrfTokenHelper::CSRF_TOKEN_NAME, $csrf_tokens['customreports.schedule.test'])
+		->addItem((new CSubmit('test', _('Test to me')))
+			->addClass(ZBX_STYLE_BTN_LINK)
+			->setTitle(_('Send this report with all its settings only to your own media of this media type'))
+		);
 
 	$run_form = (new CForm('post', (new CUrl('zabbix.php'))->getUrl()))
 		->addClass('cr-inline-form')
@@ -121,7 +141,9 @@ foreach ($data['schedules'] as $scheduleid => $schedule) {
 			: (new CSpan(_('Disabled')))->addClass(ZBX_STYLE_RED),
 		$last_run > 0 ? zbx_date2str(DATE_TIME_FORMAT_SECONDS, $last_run) : _('Never'),
 		$result,
-		(new CCol([$run_form, $delete_form]))->addClass(ZBX_STYLE_NOWRAP)
+		(new CCol($next_run))->addClass(ZBX_STYLE_NOWRAP),
+		(new CCol([$run_form, $test_form, new CLink(_('History'), $history_url), ' ', $delete_form]))
+			->addClass(ZBX_STYLE_NOWRAP)
 	]);
 }
 
@@ -158,7 +180,7 @@ if ($heartbeat === null) {
 elseif (time() - (int) $heartbeat['time'] <= CronManager::HEARTBEAT_MAX_AGE) {
 	$cron_status = (new CSpan(_s('Running: last run %1$s ago as user "%2$s"', zbx_date2age((int) $heartbeat['time']),
 		$heartbeat['user'] ?? '?'
-	)))->addClass(ZBX_STYLE_GREEN);
+	).(!empty($heartbeat['busy']) ? ' '._('(a previous run is still sending)') : '')))->addClass(ZBX_STYLE_GREEN);
 }
 else {
 	$cron_status = (new CSpan(_s('Not running: last run %1$s ago (%2$s)', zbx_date2age((int) $heartbeat['time']),
@@ -191,8 +213,31 @@ if ($cron['error'] !== null) {
 	$user_row[] = (new CDiv(_s('Cannot read crontab: %1$s', $cron['error'])))->addClass(ZBX_STYLE_RED);
 }
 
+// Delivery status pushed to Zabbix (template zabbix/zbx_template_custom_reports.yaml).
+$zabbix = $heartbeat['zabbix'] ?? null;
+
+if ($cron['zabbix_status_host'] === '') {
+	$zabbix_status = (new CSpan(_('Not configured: import zabbix/zbx_template_custom_reports.yaml, link it to a host and set "zabbix_status_host" in conf/config.php. Then Zabbix raises a problem when a delivery fails or cron stops.')))
+		->addClass(ZBX_STYLE_GREY);
+}
+elseif ($zabbix === null || $zabbix['host'] !== $cron['zabbix_status_host']) {
+	$zabbix_status = (new CSpan(_s('Host "%1$s": waiting for the next cron run.', $cron['zabbix_status_host'])))
+		->addClass(ZBX_STYLE_GREY);
+}
+elseif ($zabbix['error'] !== '') {
+	$zabbix_status = (new CSpan(_s('Cannot send the status to host "%1$s" (%2$s): %3$s', $zabbix['host'],
+		zbx_date2str(DATE_TIME_FORMAT_SECONDS, (int) $zabbix['time']), $zabbix['error']
+	)))->addClass(ZBX_STYLE_RED);
+}
+else {
+	$zabbix_status = (new CSpan(_s('Status sent to host "%1$s" %2$s ago; failed schedules: %3$s', $zabbix['host'],
+		zbx_date2age((int) $zabbix['time']), $zabbix['failed'] ?? 0
+	)))->addClass(ZBX_STYLE_GREEN);
+}
+
 $cron_list = (new CFormList('cron_form_list'))
 	->addRow(_('Sender status'), $cron_status)
+	->addRow(_('Zabbix monitoring'), $zabbix_status)
 	->addRow(_s('Crontab of user "%1$s"', $cron['user']), $user_row)
 	->addRow($cron['cron_d_file'], [
 		$cron['cron_d_installed']

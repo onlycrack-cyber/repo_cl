@@ -161,6 +161,16 @@ class CronManager {
 	}
 
 	/**
+	 * Adds values to the heartbeat of the current run (e.g. the result of the status push to Zabbix).
+	 */
+	public static function updateHeartbeat(string $data_dir, array $info): void {
+		$file = rtrim($data_dir, '/').'/'.self::HEARTBEAT_FILE;
+		$data = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
+
+		@file_put_contents($file, json_encode($info + (is_array($data) ? $data : [])), LOCK_EX);
+	}
+
+	/**
 	 * @return array|null  ['time' => int, 'user' => string, ...] of the last sender run.
 	 */
 	public function getHeartbeat(): ?array {

@@ -2,7 +2,7 @@
 	"manifest_version": 2.0,
 	"id": "custom_reports",
 	"name": "Custom Problem Reports",
-	"version": "1.7.1",
+	"version": "1.8.0",
 	"namespace": "CustomReports",
 	"author": "Custom",
 	"url": "",
@@ -41,6 +41,14 @@
 		},
 		"customreports.cron.update": {
 			"class": "CronUpdate"
+		},
+		"customreports.schedule.history": {
+			"class": "ScheduleHistory",
+			"view": "customreports.schedule.history",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.schedule.test": {
+			"class": "ScheduleTest"
 		}
 	},
 	"assets": {

@@ -96,10 +96,11 @@ class Dispatcher {
 	 * @param string   $format      ReportRenderer::FORMAT_*.
 	 * @param string   $title
 	 *
-	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[]]
+	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[],
+	 *                 'deliveries' => list of ['recipient', 'status' (sent|failed), 'error', 'time']]
 	 */
 	public function dispatch(array $media_type, array $sendto, array $report, string $format, string $title): array {
-		$result = ['sent' => 0, 'failed' => 0, 'errors' => []];
+		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'deliveries' => []];
 		$channel = self::getChannel($media_type);
 
 		try {
@@ -110,6 +111,12 @@ class Dispatcher {
 			$result['errors'][] = $e->getMessage();
 			$this->logger->error(sprintf('[%s] %s', $title, $e->getMessage()));
 
+			foreach ($sendto as $recipient) {
+				$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'failed', 'error' => $e->getMessage(),
+					'time' => time()
+				];
+			}
+
 			return $result;
 		}
 
@@ -117,6 +124,7 @@ class Dispatcher {
 			try {
 				$sender($recipient);
 				$result['sent']++;
+				$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'sent', 'error' => '', 'time' => time()];
 				$this->logger->info(sprintf('[%s] sent via "%s" (%s, %s) to %s', $title, $media_type['name'], $channel,
 					$format, $recipient
 				));
@@ -124,6 +132,9 @@ class Dispatcher {
 			catch (Throwable $e) {
 				$result['failed']++;
 				$result['errors'][] = $recipient.': '.$e->getMessage();
+				$result['deliveries'][] = ['recipient' => $recipient, 'status' => 'failed', 'error' => $e->getMessage(),
+					'time' => time()
+				];
 				$this->logger->error(sprintf('[%s] failed via "%s" to %s: %s', $title, $media_type['name'], $recipient,
 					$e->getMessage()
 				));

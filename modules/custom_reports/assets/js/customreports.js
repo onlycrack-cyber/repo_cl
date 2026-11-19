@@ -95,6 +95,23 @@
 		form.submit();
 	});
 
+	// Delivery history: show / hide the recipients of a run.
+	document.addEventListener('click', function(e) {
+		const toggle = e.target.closest('.js-cr-history-toggle');
+
+		if (toggle === null) {
+			return;
+		}
+
+		e.preventDefault();
+
+		const row = document.getElementById(toggle.dataset.target);
+
+		if (row !== null) {
+			row.style.display = row.style.display === 'none' ? '' : 'none';
+		}
+	});
+
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', toggleScheduleRows);
 	}

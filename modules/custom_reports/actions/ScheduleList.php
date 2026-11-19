@@ -78,7 +78,8 @@ class ScheduleList extends CController {
 				'cron_d_installed' => $cron->isCronDInstalled(),
 				'cron_d_file' => CronManager::CRON_D_FILE,
 				'cron_d_line' => $cron->getCronDLine(),
-				'error' => $cron_error
+				'error' => $cron_error,
+				'zabbix_status_host' => $config['zabbix_status_host']
 			],
 			'schedules' => $schedules,
 			'state' => $state,

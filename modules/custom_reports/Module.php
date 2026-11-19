@@ -27,7 +27,8 @@ class Module extends CModule {
 					->setAction('customreports.dashboard')
 					->setAliases([
 						'customreports.schedule.list',
-						'customreports.schedule.edit'
+						'customreports.schedule.edit',
+						'customreports.schedule.history'
 					])
 			);
 	}

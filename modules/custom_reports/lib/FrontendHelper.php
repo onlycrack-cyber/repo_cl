@@ -8,6 +8,7 @@ namespace Modules\CustomReports\Lib;
 
 use CLink;
 use CList;
+use CSpan;
 use CProfile;
 use CTag;
 use CUrl;
@@ -107,6 +108,41 @@ class FrontendHelper {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Colored label of a run status (ScheduleHelper::STATUS_*); "ok"/"error" of older versions are the same values.
+	 */
+	public static function makeStatus(?string $status): CSpan {
+		switch ($status) {
+			case ScheduleHelper::STATUS_OK:
+				return (new CSpan(_('OK')))->addClass(ZBX_STYLE_GREEN);
+
+			case ScheduleHelper::STATUS_PARTIAL:
+				return (new CSpan(_('Partially')))->addClass(ZBX_STYLE_ORANGE);
+
+			case ScheduleHelper::STATUS_ERROR:
+				return (new CSpan(_('Error')))->addClass(ZBX_STYLE_RED);
+
+			case ScheduleHelper::STATUS_EMPTY:
+				return (new CSpan(_('Nothing to send')))->addClass(ZBX_STYLE_GREY);
+
+			default:
+				return (new CSpan(_('Never')))->addClass(ZBX_STYLE_GREY);
+		}
+	}
+
+	public static function triggerLabel(string $trigger): string {
+		switch ($trigger) {
+			case ScheduleHelper::RUN_SCHEDULE:
+				return _('Scheduled');
+
+			case ScheduleHelper::RUN_TEST:
+				return _('Test to me');
+
+			default:
+				return _('Send now');
+		}
 	}
 
 	/**

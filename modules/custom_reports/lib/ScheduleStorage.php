@@ -18,6 +18,7 @@ class ScheduleStorage {
 
 	private const SCHEDULES_FILE = 'schedules.json';
 	private const STATE_FILE = 'state.json';
+	private const HISTORY_FILE = 'history.json';
 	private const LOCK_FILE = '.storage.lock';
 
 	private string $dir;
@@ -83,11 +84,13 @@ class ScheduleStorage {
 			unset($schedules[$scheduleid]);
 			$this->write(self::SCHEDULES_FILE, $schedules);
 
-			$state = $this->read(self::STATE_FILE);
+			foreach ([self::STATE_FILE, self::HISTORY_FILE] as $file) {
+				$data = $this->read($file);
 
-			if (array_key_exists($scheduleid, $state)) {
-				unset($state[$scheduleid]);
-				$this->write(self::STATE_FILE, $state);
+				if (array_key_exists($scheduleid, $data)) {
+					unset($data[$scheduleid]);
+					$this->write($file, $data);
+				}
 			}
 
 			return true;
@@ -108,6 +111,28 @@ class ScheduleStorage {
 			$state = $this->read(self::STATE_FILE);
 			$state[$scheduleid] = array_replace($state[$scheduleid] ?? [], $values);
 			$this->write(self::STATE_FILE, $state);
+		});
+	}
+
+	/**
+	 * Adds a run to the delivery history of a schedule (newest first, last ScheduleHelper::HISTORY_RUNS runs).
+	 */
+	public function addRun(string $scheduleid, array $run): void {
+		$this->withLock(LOCK_EX, function () use ($scheduleid, $run): void {
+			$history = $this->read(self::HISTORY_FILE);
+			$runs = $history[$scheduleid] ?? [];
+			array_unshift($runs, $run);
+			$history[$scheduleid] = array_slice($runs, 0, ScheduleHelper::HISTORY_RUNS);
+			$this->write(self::HISTORY_FILE, $history);
+		});
+	}
+
+	/**
+	 * @return array  Runs of the schedule, newest first.
+	 */
+	public function getHistory(string $scheduleid): array {
+		return $this->withLock(LOCK_SH, function () use ($scheduleid): array {
+			return $this->read(self::HISTORY_FILE)[$scheduleid] ?? [];
 		});
 	}
 

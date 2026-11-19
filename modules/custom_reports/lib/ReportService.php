@@ -46,7 +46,8 @@ class ReportService {
 	 * Builds the report of a schedule and sends it to all its recipients
 	 * (one message per host group / host if the schedule is split).
 	 *
-	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[], 'problems' => int, 'parts' => int]
+	 * @return array  ['sent' => int, 'failed' => int, 'errors' => string[], 'problems' => int, 'parts' => int,
+	 *                 'media_type' => string, 'deliveries' => list of ['part', 'recipient', 'status', 'error', 'time']]
 	 *
 	 * @throws RuntimeException
 	 */
@@ -116,6 +117,28 @@ class ReportService {
 	}
 
 	/**
+	 * "Test to me": the report of a schedule with all its settings (filter, format, split, analytics), delivered
+	 * only to the given addresses instead of the schedule recipients.
+	 *
+	 * @throws RuntimeException
+	 */
+	public function testSchedule(array $schedule, array $sendto): array {
+		$media_type = $this->dispatcher->getMediaType($schedule['mediatypeid']);
+
+		if (!$sendto) {
+			throw new RuntimeException(sprintf('You have no active media of type "%s": add it in User settings -> '.
+				'Profile -> Media.', $media_type['name']
+			));
+		}
+
+		$report = $this->buildReport(self::getScheduleFilter($schedule), $schedule['split']);
+
+		return $this->deliver($media_type, static function () use ($sendto): array {
+			return $sendto;
+		}, $report, $schedule['format'], '[Test] '.$schedule['name'], $schedule['split'], (bool) $schedule['skip_empty']);
+	}
+
+	/**
 	 * Sends an already built report to explicit addresses.
 	 */
 	public function sendReport(array $report, string $mediatypeid, array $sendto, string $format, string $title,
@@ -137,7 +160,9 @@ class ReportService {
 	 */
 	private function deliver(array $media_type, callable $recipients, array $report, string $format, string $title,
 			string $split, bool $skip_empty): array {
-		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0];
+		$result = ['sent' => 0, 'failed' => 0, 'errors' => [], 'problems' => $report['total'], 'parts' => 0,
+			'media_type' => $media_type['name'], 'deliveries' => []
+		];
 
 		foreach (ReportSplitter::split($report, $split, $skip_empty) as $part) {
 			$part_title = $part['name'] === '' ? $title : $title.' - '.$part['name'];
@@ -155,6 +180,9 @@ class ReportService {
 				$this->logger->warning($message);
 				$result['errors'][] = $message;
 				$result['failed']++;
+				$result['deliveries'][] = ['part' => $part['name'], 'recipient' => '', 'status' => 'failed',
+					'error' => sprintf('No recipients with an active "%s" media.', $media_type['name']), 'time' => time()
+				];
 				continue;
 			}
 
@@ -164,6 +192,10 @@ class ReportService {
 			$result['sent'] += $part_result['sent'];
 			$result['failed'] += $part_result['failed'];
 			$result['errors'] = array_merge($result['errors'], $part_result['errors']);
+
+			foreach ($part_result['deliveries'] as $delivery) {
+				$result['deliveries'][] = ['part' => $part['name']] + $delivery;
+			}
 		}
 
 		if ($result['parts'] == 0 && $result['failed'] == 0) {

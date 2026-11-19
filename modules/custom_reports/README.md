@@ -31,8 +31,10 @@
 | Дашборд: аналитика за 7 дней, график по дням, кнопка Download PDF | Расписание: период аналитики (Auto / 24 ч / 7 / 30 дней) |
 | ![Нерешённые проблемы](docs/screenshots/11-dashboard-unresolved.png) | ![Problem list](docs/screenshots/12-schedule-problem-list.png) |
 | Нерешённые проблемы: одна строка на проблему, алерты за период, «whole period» | Расписание: «Unresolved summary only» вместо полного списка |
-| ![Графики](docs/screenshots/13-dashboard-charts.png) | |
-| Графики: новые по важности; новые / решённые / открытые на конец дня | |
+| ![Графики](docs/screenshots/13-dashboard-charts.png) | ![Статус доставки](docs/screenshots/14-schedules-delivery-status.png) |
+| Графики: новые по важности; новые / решённые / открытые на конец дня | Расписания: результат, следующий запуск, «Test to me», «History», мониторинг в Zabbix |
+| ![История доставок](docs/screenshots/15-delivery-history.png) | |
+| История доставок: запуски и результат по каждому получателю | |
 
 ## Дерево файлов
 
@@ -49,11 +51,14 @@ custom_reports/
 │   ├── ScheduleUpdate.php            # customreports.schedule.update: сохранение (POST + CSRF)
 │   ├── ScheduleDelete.php            # customreports.schedule.delete (POST + CSRF)
 │   ├── ScheduleRun.php               # customreports.schedule.run: «Send now» для расписания
+│   ├── ScheduleTest.php              # customreports.schedule.test: «Test to me» — отчёт расписания только себе
+│   ├── ScheduleHistory.php           # customreports.schedule.history: история доставок
 │   └── CronUpdate.php                # customreports.cron.update: создать/удалить задание cron
 ├── views/
 │   ├── customreports.dashboard.php
 │   ├── customreports.schedule.list.php
 │   ├── customreports.schedule.edit.php
+│   ├── customreports.schedule.history.php
 │   └── layout.customreports.download.php  # layout выгрузок: Content-Type/Disposition
 ├── lib/                              # общий код фронтенда и CLI
 │   ├── ApiClientInterface.php
@@ -72,6 +77,7 @@ custom_reports/
 │   ├── ScheduleHelper.php            # нормализация, валидация, расчёт времени запуска
 │   ├── ScheduleStorage.php           # schedules.json / state.json с flock и атомарной записью
 │   ├── CronManager.php               # crontab пользователя веб-сервера, heartbeat, строка для /etc/cron.d
+│   ├── ZabbixStatus.php              # статус доставки → trapper-элементы Zabbix (history.push)
 │   ├── DbSecretResolver.php          # пароль SMTP из БД (CLI), API его не отдаёт
 │   ├── FrontendHelper.php            # фильтр в профиле пользователя, вкладки, media текущего пользователя
 │   ├── ModuleConfig.php, Logger.php, Period.php, Severity.php
@@ -84,6 +90,7 @@ custom_reports/
 │   └── js/customreports.js
 ├── bin/send_reports.php              # cron-рассыльщик
 ├── conf/config.example.php           # → conf/config.php
+├── zabbix/zbx_template_custom_reports.yaml  # шаблон Zabbix: «рассылка не работает / доставка не удалась»
 └── data/                             # хранилище по умолчанию (лучше вынести, см. ниже)
 ```
 
@@ -156,6 +163,33 @@ Ack (повторный клик меняет направление, выбор
   При разбивке по хостам и фильтре только по группам хост из строки должен входить в эти группы, иначе отчёта
   по нему не будет.
 - Способ доставки (media type) и формат у всех получателей одного расписания общие.
+
+**Статус и проверка доставки.** На вкладке *Schedules and delivery*:
+
+- *Last delivery* / *Result* — время и итог последней доставки (по расписанию или «Send now»):
+  **OK** (всё доставлено), **Partially** (часть получателей не получила), **Error** (никто не получил или запуск
+  не состоялся: нет получателей, отключён media type, ошибка API), **Nothing to send** (проблем по фильтру нет).
+  По клику — краткая причина. *Next run* — когда расписание сработает в следующий раз.
+- **Test to me** — тот же отчёт со всеми настройками расписания (фильтр, формат, разбивка, аналитика), но только
+  на ваш собственный адрес этого способа доставки (User settings → Profile → Media). Остальным получателям ничего
+  не уходит, статус расписания не меняется.
+- **History** — последние 50 запусков (по расписанию, «Send now», «Test to me», кто запускал), по каждому
+  запуску — результат по каждому получателю и части отчёта с текстом ошибки (*Details*).
+- «OK» означает, что почтовый сервер или Telegram приняли сообщение. Если письмо позже вернётся (bounce), модуль
+  об этом не узнает.
+
+**Мониторинг рассылки самим Zabbix.** Если задать `zabbix_status_host`, cron-рассыльщик при каждом запуске
+отправляет статус (API `history.push`, Zabbix 7.0) в trapper-элементы шаблона
+[zabbix/zbx_template_custom_reports.yaml](zabbix/zbx_template_custom_reports.yaml):
+
+| Элемент | Значение | Триггер |
+|---|---|---|
+| `custom_reports.heartbeat` | время последнего запуска рассыльщика | *Report sender (cron) is not running* (Average): нет данных `{$CUSTOM_REPORTS.NODATA}` (10m) |
+| `custom_reports.failed` | число включённых расписаний, последняя доставка которых не удалась (Error или Partially) | *Scheduled report delivery failed: N schedule(s)* (High), в оперативных данных — ошибки |
+| `custom_reports.last_error` | строки «расписание: ошибка» | |
+
+Проблема закрывается сама после следующей успешной доставки. Состояние отправки статуса видно в блоке *Cron job*
+(строка *Zabbix monitoring*).
 
 **Форматы:**
 
@@ -324,7 +358,13 @@ Ack (повторный клик меняет направление, выбор
    есть в обоих местах, модуль предупредит; дублей отправки не будет (блокировка и учёт времени последнего
    запуска), но одну запись лучше удалить. Запускайте от того же пользователя, что и веб-сервер.
 
-11. Лог: `/var/lib/zabbix-custom-reports/logs/custom_reports.log`. Ротация:
+11. (Рекомендуется) Мониторинг рассылки в Zabbix: *Data collection → Templates → Import* —
+    `zabbix/zbx_template_custom_reports.yaml`; привяжите шаблон к хосту (например, «Zabbix server») и укажите его
+    техническое имя в `conf/config.php`: `'zabbix_status_host' => 'Zabbix server'`. Пользователю API-токена нужны
+    права на запись на этот хост. Через минуту в блоке *Cron job* появится «Status sent to host …», а в
+    *Monitoring → Latest data* — значения `custom_reports.*`.
+
+12. Лог: `/var/lib/zabbix-custom-reports/logs/custom_reports.log`. Ротация:
 
     ```bash
     printf '%s\n' '/var/lib/zabbix-custom-reports/logs/*.log {' '  weekly' '  rotate 8' '  compress' '  missingok' '  notifempty' '  su www-data www-data' '}' > /etc/logrotate.d/zabbix-custom-reports

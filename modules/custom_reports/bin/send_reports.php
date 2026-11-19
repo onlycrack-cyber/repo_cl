@@ -55,6 +55,37 @@ use Modules\CustomReports\Lib\ModuleConfig;
 use Modules\CustomReports\Lib\ReportService;
 use Modules\CustomReports\Lib\ScheduleHelper;
 use Modules\CustomReports\Lib\ScheduleStorage;
+use Modules\CustomReports\Lib\ZabbixStatus;
+
+/**
+ * Pushes the delivery status to Zabbix (template zabbix/zbx_template_custom_reports.yaml) if "zabbix_status_host"
+ * is set. Never stops the sender: an error is logged and shown on the "Schedules and delivery" tab.
+ */
+function cr_push_zabbix_status(array $config, ScheduleStorage $storage, Logger $logger, int $now): void {
+	if ($config['zabbix_status_host'] === '') {
+		return;
+	}
+
+	$status = ['host' => $config['zabbix_status_host'], 'time' => $now, 'error' => ''];
+
+	try {
+		$api = new JsonRpcApiClient($config['api_url'], $config['api_token'], (bool) $config['verify_ssl'],
+			(int) $config['timeout']
+		);
+		$failed = ZabbixStatus::failedSchedules($storage->getAll(), $storage->getState());
+		ZabbixStatus::push($api, $config['zabbix_status_host'], $now, $failed);
+		$status['failed'] = count($failed);
+		$logger->debug(sprintf('Status sent to Zabbix host "%s": %d failed schedule(s).', $config['zabbix_status_host'],
+			count($failed)
+		));
+	}
+	catch (Throwable $e) {
+		$status['error'] = $e->getMessage();
+		$logger->warning('Cannot send the delivery status to Zabbix: '.$e->getMessage());
+	}
+
+	CronManager::updateHeartbeat($config['data_dir'], ['zabbix' => $status]);
+}
 
 $options = getopt('vh', ['list', 'run:', 'dry-run', 'verbose', 'help']);
 
@@ -140,8 +171,16 @@ if (!isset($options['run']) && !isset($options['dry-run'])) {
 	CronManager::writeHeartbeat($config['data_dir'], ['php' => PHP_BINARY, 'busy' => !$locked]);
 }
 
+// Scheduled runs (cron) report their status to Zabbix; manual --run / --dry-run do not.
+$scheduled_run = !isset($options['run']) && !isset($options['dry-run']);
+
 if (!$locked) {
 	$logger->warning('Another instance is still running, exiting.');
+
+	if ($scheduled_run) {
+		cr_push_zabbix_status($config, $storage, $logger, $now);
+	}
+
 	exit(CR_EXIT_LOCKED);
 }
 
@@ -177,6 +216,11 @@ else {
 
 if (!$due) {
 	$logger->debug('No schedules are due.');
+
+	if ($scheduled_run) {
+		cr_push_zabbix_status($config, $storage, $logger, $now);
+	}
+
 	exit(CR_EXIT_OK);
 }
 
@@ -209,27 +253,25 @@ foreach ($due as $scheduleid => $schedule) {
 		ScheduleHelper::describe($schedule)
 	));
 
-	try {
-		$result = $service->runSchedule($schedule);
-		$status = $result['failed'] == 0 ? 'ok' : 'error';
-		$message = sprintf('Problems: %d, messages: %d, sent: %d, failed: %d.', $result['problems'], $result['parts'],
-			$result['sent'], $result['failed']
-		);
+	$trigger = $scheduled_run ? ScheduleHelper::RUN_SCHEDULE : ScheduleHelper::RUN_MANUAL;
+	$started = time();
 
-		if ($result['errors']) {
-			$message .= ' '.implode('; ', $result['errors']);
-		}
+	try {
+		$run = ScheduleHelper::makeRun($trigger, $started, $service->runSchedule($schedule), null,
+			$scheduled_run ? '' : 'CLI'
+		);
 	}
 	catch (Throwable $e) {
-		$status = 'error';
-		$message = $e->getMessage();
+		$run = ScheduleHelper::makeRun($trigger, $started, null, $e->getMessage(), $scheduled_run ? '' : 'CLI');
 	}
 
-	if ($status === 'ok') {
-		$logger->info(sprintf('Schedule %s finished. %s', $scheduleid, $message));
+	$message = ScheduleHelper::runSummary($run);
+
+	if (in_array($run['status'], [ScheduleHelper::STATUS_OK, ScheduleHelper::STATUS_EMPTY], true)) {
+		$logger->info(sprintf('Schedule %s finished (%s). %s', $scheduleid, $run['status'], $message));
 	}
 	else {
-		$logger->error(sprintf('Schedule %s failed. %s', $scheduleid, $message));
+		$logger->error(sprintf('Schedule %s failed (%s). %s', $scheduleid, $run['status'], $message));
 		$exit_code = CR_EXIT_FAILED;
 	}
 
@@ -237,14 +279,19 @@ foreach ($due as $scheduleid => $schedule) {
 	try {
 		$storage->updateState($scheduleid, [
 			'last_run' => $now,
-			'last_status' => $status,
-			'last_message' => mb_substr($message, 0, 2000, 'UTF-8')
+			'last_status' => $run['status'],
+			'last_message' => $message
 		]);
+		$storage->addRun($scheduleid, $run);
 	}
 	catch (Throwable $e) {
 		$logger->error('Cannot save schedule state: '.$e->getMessage());
 		$exit_code = CR_EXIT_FAILED;
 	}
+}
+
+if ($scheduled_run) {
+	cr_push_zabbix_status($config, $storage, $logger, $now);
 }
 
 flock($lock, LOCK_UN);

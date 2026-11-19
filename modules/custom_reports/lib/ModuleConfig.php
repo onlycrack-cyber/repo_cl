@@ -61,6 +61,10 @@ class ModuleConfig {
 		'telegram_api_url' => 'https://api.telegram.org',
 		'telegram_max_length' => 4096,
 
+		// Technical name of the Zabbix host with the template zabbix/zbx_template_custom_reports.yaml: the cron sender
+		// pushes its status there (history.push), so that Zabbix raises a problem if delivery fails or cron stops.
+		'zabbix_status_host' => '',
+
 		// HTTP proxy for Telegram, if the media type does not define one.
 		'proxy' => '',
 

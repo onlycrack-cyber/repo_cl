@@ -53,6 +53,11 @@ return [
 	'db_fallback' => true,
 	'zabbix_web_conf' => '/etc/zabbix/web/zabbix.conf.php',
 
+	// Monitoring of the delivery by Zabbix itself: import zabbix/zbx_template_custom_reports.yaml, link it to a host
+	// (e.g. "Zabbix server") and put the technical name of that host here. The API token user needs read-write
+	// access to that host. Empty = do not send the status.
+	'zabbix_status_host' => '',
+
 	'telegram_api_url' => 'https://api.telegram.org',
 	'telegram_max_length' => 4096,
 	'proxy' => '',

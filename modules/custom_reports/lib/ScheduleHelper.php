@@ -17,6 +17,21 @@ class ScheduleHelper {
 	public const FREQUENCY_DAILY = 'daily';
 	public const FREQUENCY_WEEKLY = 'weekly';
 
+	// Delivery history: runs kept per schedule, recipients kept per run.
+	public const HISTORY_RUNS = 50;
+	public const HISTORY_DELIVERIES = 300;
+
+	// Result of a run: every message delivered / some failed / none delivered / no problems, nothing sent.
+	public const STATUS_OK = 'ok';
+	public const STATUS_PARTIAL = 'partial';
+	public const STATUS_ERROR = 'error';
+	public const STATUS_EMPTY = 'empty';
+
+	// What started a run.
+	public const RUN_SCHEDULE = 'schedule';
+	public const RUN_MANUAL = 'manual';
+	public const RUN_TEST = 'test';
+
 	// Common recipients get every part / only parts of groups without own recipients.
 	public const COMMON_ALL = 'all';
 	public const COMMON_FALLBACK = 'fallback';
@@ -281,6 +296,87 @@ class ScheduleHelper {
 		}
 
 		return $candidate->getTimestamp();
+	}
+
+	/**
+	 * The next scheduled moment after $now.
+	 */
+	public static function nextOccurrence(array $schedule, int $now, string $timezone): int {
+		[$hours, $minutes] = array_map('intval', explode(':', $schedule['time']) + [1 => 0]);
+
+		$last = (new DateTimeImmutable('@'.self::lastOccurrence($schedule, $now, $timezone)))
+			->setTimezone(new DateTimeZone($timezone));
+		$next = $last->modify($schedule['frequency'] === self::FREQUENCY_WEEKLY ? '+7 days' : '+1 day')
+			->setTime($hours, $minutes);
+
+		return $next->getTimestamp();
+	}
+
+	public static function runStatus(array $result): string {
+		if ($result['failed'] == 0) {
+			return $result['parts'] == 0 ? self::STATUS_EMPTY : self::STATUS_OK;
+		}
+
+		return $result['sent'] > 0 ? self::STATUS_PARTIAL : self::STATUS_ERROR;
+	}
+
+	/**
+	 * Record of a run for the delivery history.
+	 *
+	 * @param string      $trigger  RUN_*.
+	 * @param int         $started  Unix time.
+	 * @param array|null  $result   Result of ReportService (null if the run failed before delivery).
+	 * @param string|null $error    Error that stopped the run (no recipients, disabled media type, API error).
+	 * @param string      $user     Who started a manual or test run.
+	 */
+	public static function makeRun(string $trigger, int $started, ?array $result, ?string $error, string $user = ''): array {
+		$run = [
+			'time' => $started,
+			'duration' => max(0, time() - $started),
+			'trigger' => $trigger,
+			'user' => $user,
+			'status' => $result !== null && $error === null ? self::runStatus($result) : self::STATUS_ERROR,
+			'media_type' => $result['media_type'] ?? '',
+			'problems' => $result['problems'] ?? 0,
+			'parts' => $result['parts'] ?? 0,
+			'sent' => $result['sent'] ?? 0,
+			'failed' => $result['failed'] ?? 0,
+			'message' => $error ?? '',
+			// One line per recipient and part; capped so that one run cannot blow up the history file.
+			'deliveries' => array_slice($result['deliveries'] ?? [], 0, self::HISTORY_DELIVERIES),
+			'deliveries_total' => count($result['deliveries'] ?? [])
+		];
+
+		return $run;
+	}
+
+	/**
+	 * Short text for the schedule list and the CLI log.
+	 */
+	public static function runSummary(array $run): string {
+		if ($run['message'] !== '') {
+			return $run['message'];
+		}
+
+		$text = sprintf('Problems: %d, reports: %d, sent: %d, failed: %d.', $run['problems'], $run['parts'],
+			$run['sent'], $run['failed']
+		);
+
+		// The same error of several report parts is listed once: "not-an-email: Invalid e-mail address. (x4)".
+		$errors = [];
+
+		foreach ($run['deliveries'] as $delivery) {
+			if ($delivery['status'] !== 'sent') {
+				$error = ($delivery['recipient'] !== '' ? $delivery['recipient'].': ' : '').$delivery['error'];
+				$errors[$error] = ($errors[$error] ?? 0) + 1;
+			}
+		}
+
+		foreach ($errors as $error => $count) {
+			$text .= ' '.$error.($count > 1 ? ' (x'.$count.')' : '');
+		}
+
+		return mb_substr($text, 0, 2000, 'UTF-8');
 	}
 
 	/**
