@@ -117,7 +117,7 @@ custom_reports/
 │   └── js/customreports.js
 ├── bin/send_reports.php              # cron-рассыльщик
 ├── conf/config.example.php           # → conf/config.php
-├── examples/externalscripts/         # примеры: cr_disk_usage.sh (JSON), cr_top_processes.sh (CSV), cr_vcenter_capacity.sh
+├── examples/externalscripts/         # примеры: cr_disk_usage.sh, cr_top_processes.sh, cluster_resources_csv.py, cr_vcenter_capacity.py
 ├── zabbix/zbx_template_custom_reports.yaml  # шаблон Zabbix: «рассылка не работает / доставка не удалась»
 └── data/                             # хранилище по умолчанию (лучше вынести, см. ниже)
 ```
@@ -507,11 +507,10 @@ CSV — первая строка заголовок; разделитель (`,
 
 - `cr_disk_usage.sh [предупреждение %] [авария %]` — JSON: заполнение файловых систем, KPI, подсветка, статус;
 - `cr_top_processes.sh [число]` — CSV: процессы с наибольшим потреблением памяти.
-- `cr_vcenter_capacity.sh <скрипт или CSV-файл> [CPU, ГГц] [память, ГБ] [хранилище, ГБ]` — обёртка для скрипта,
-  который печатает свободные ресурсы кластеров vCenter (`vcenter,cluster,cpu_free_ghz,memory_free_gb,storage_free_gb`):
-  итоги, разбивка по vCenter, кластеры с ресурсами ниже порогов (по умолчанию 200 ГГц, 500 ГБ, 20000 ГБ) подсвечены,
-  статус «Предупреждение», если такие есть; строки, которые не удалось разобрать, — отдельной таблицей.
-  Параметры расписания, по одному в строке: путь к вашему скрипту, затем пороги.
+- `cluster_resources_csv.py` — сбор свободных ресурсов кластеров vSphere (pyVmomi), CSV. Подходит и как
+  Zabbix External check, и как источник отчёта. См. ниже «Ресурсы кластеров vCenter».
+- `cr_vcenter_capacity.py <CSV-файл или скрипт> [CPU] [память] [хранилище]` — отчёт по CSV из
+  `cluster_resources_csv.py`: итоги, разбивка по vCenter, кластеры ниже порогов, ошибки сбора, возраст данных.
 
 ```bash
 cp /usr/share/zabbix/modules/custom_reports/examples/externalscripts/cr_*.sh /usr/lib/zabbix/externalscripts/
@@ -520,6 +519,73 @@ cp /usr/share/zabbix/modules/custom_reports/examples/externalscripts/cr_*.sh /us
 ```bash
 chmod 755 /usr/lib/zabbix/externalscripts/cr_*.sh
 ```
+
+### Ресурсы кластеров vCenter
+
+Два скрипта из `examples/externalscripts/`:
+
+**`cluster_resources_csv.py`** собирает данные из vCenter (python3 + `pip install pyvmomi`). Одна строка на кластер
+и итоговая строка на каждый vCenter:
+
+```
+type,vcenter,datacenter,cluster,hosts,hosts_unavailable,cpu_total_ghz,cpu_free_ghz,cpu_ha_reserve_ghz,
+memory_total_gb,memory_free_gb,memory_ha_reserve_gb,storage_total_gb,storage_free_gb,storage_provisioned_gb,status,error
+```
+
+- **Ёмкость** — `summary.effectiveCpu/effectiveMemory`: только хосты, которые могут запускать ВМ. Хосты в
+  обслуживании и недоступные не завышают «свободно», их число — в `hosts_unavailable`.
+- **Нагрузка 0** — это 0, а не «нет данных»; пусто только если у работающего хоста нет quickStats.
+  `--cpu-avg=MINUTES` берёт среднюю загрузку CPU из статистики vCenter вместо мгновенного значения.
+- **Резерв HA** (admission control: процент ресурсов, число отказов хостов, выделенные хосты) — отдельными
+  колонками `*_ha_reserve_*`.
+- **Хранилище** — только доступные общие датасторы кластера (локальные диски ESXi и датасторы в обслуживании
+  не учитываются; `--include-local` — учитывать). В итоговой строке vCenter общие датасторы считаются один раз.
+  `storage_provisioned_gb` = занято + выделено, но не занято (thin provisioning).
+- **Ошибки**: vCenter, к которому не удалось подключиться, — строка `type=vcenter,status=error` с текстом ошибки;
+  если не удалось ни с одним — код выхода 1.
+- **Безопасность**: сертификат vCenter проверяется (`"verify_ssl": false` в конфиге — только для самоподписанных в
+  доверенной сети, `"ca_file"` — свой CA); путь к конфигу — `--config=` или `CLUSTER_RESOURCES_CONF`.
+- Один запрос PropertyCollector на тип объектов и параллельный опрос vCenter — быстро и на сотнях хостов.
+- `--outfile=PATH` — атомарная запись в файл; `--legacy` — прежний формат из 5 колонок.
+
+**`cr_vcenter_capacity.py`** строит отчёт: свободно CPU / памяти / хранилища (CPU и память — за вычетом резерва
+HA), кластеры с нехваткой, разбивка по vCenter, «выделено, % ёмкости» (больше 100% — переподписка), ошибки
+сбора и возраст данных. Пороги — в процентах ёмкости (`15%`, по умолчанию) или абсолютные (ГГц, ГБ).
+Статус «Ошибка», если какой-то vCenter не опрошен; «Предупреждение» — кластеры ниже порога или данные старше
+`--max-age` (60 минут). Понимает и старый формат из 5 колонок.
+
+**Рекомендуемая схема**: сбор отдельно, отчёт — из файла. Так отчёт строится мгновенно, а веб-серверу и
+cron-рассыльщику не нужны пароли vCenter.
+
+1. Скрипты и конфиг:
+
+   ```bash
+   cp /usr/share/zabbix/modules/custom_reports/examples/externalscripts/{cluster_resources_csv.py,cr_vcenter_capacity.py} /usr/lib/zabbix/externalscripts/
+   ```
+
+   ```bash
+   chmod 755 /usr/lib/zabbix/externalscripts/cluster_resources_csv.py /usr/lib/zabbix/externalscripts/cr_vcenter_capacity.py
+   ```
+
+   Конфиг `cluster_storage.conf` (учётка vCenter с ролью Read-only) — владелец `zabbix`, права `640`.
+
+2. Сбор раз в 10 минут от пользователя `zabbix`, `/etc/cron.d/vcenter-capacity`:
+
+   ```
+   */10 * * * * zabbix /usr/lib/zabbix/externalscripts/cluster_resources_csv.py --cpu-avg=60 --outfile=/var/lib/zabbix/cluster_free.csv >/dev/null 2>>/var/log/zabbix/cluster_resources.log
+   ```
+
+3. Расписание модуля: «Внешний скрипт» → `cr_vcenter_capacity.py`, параметры по одному в строке:
+
+   ```
+   /var/lib/zabbix/cluster_free.csv
+   15%
+   15%
+   10%
+   ```
+
+Если Zabbix-элемент External check уже использует старый формат, добавьте в ключ `--legacy`
+(`cluster_resources_csv.py["--legacy"]`) или переведите предобработку на новые колонки.
 
 ## Язык
 
