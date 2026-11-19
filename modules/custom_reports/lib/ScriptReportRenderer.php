@@ -113,7 +113,8 @@ class ScriptReportRenderer {
 				$html .= '<tr>';
 
 				foreach ($row as $cell) {
-					$html .= '<td style="'.self::CELL.($cell['color'] !== '' ? 'background:#'.$cell['color'].';' : '').'">'.
+					$html .= '<td style="'.self::CELL.($cell['color'] !== '' ? 'background:#'.$cell['color'].';' : '').
+						(self::isNumber($cell['value']) ? 'text-align:right;white-space:nowrap;' : '').'">'.
 						self::e($cell['value']).'</td>';
 				}
 
@@ -121,6 +122,10 @@ class ScriptReportRenderer {
 			}
 
 			$html .= '</table>';
+
+			foreach ($table['notes'] ?? [] as $note) {
+				$html .= '<p style="color:#b07d1a;margin:-6px 0 10px 0">'.self::e($note).'</p>';
+			}
 
 			if ($table['total'] > count($table['rows'])) {
 				$html .= '<p style="color:#e45959">'.self::e(I18n::s('Only the first %1$s of %2$s rows are shown '.
@@ -201,11 +206,18 @@ class ScriptReportRenderer {
 			$items[] = "\n".$e(implode(' | ', $table['columns']));
 
 			foreach (array_slice($table['rows'], 0, self::TEXT_ROWS) as $row) {
-				$items[] = "\n".$e(implode(' | ', array_column($row, 'value')));
+				// No colors in text: highlighted cells get a mark.
+				$items[] = "\n".$e(implode(' | ', array_map(static function (array $cell): string {
+					return $cell['color'] !== '' && $cell['color'] !== '59db8f' ? "\u{2757}".$cell['value'] : $cell['value'];
+				}, $row)));
 			}
 
 			if ($table['total'] > self::TEXT_ROWS) {
 				$items[] = "\n".$e(I18n::s('... and %1$s more', $table['total'] - self::TEXT_ROWS));
+			}
+
+			foreach ($table['notes'] ?? [] as $note) {
+				$items[] = "\n\u{26A0}\u{FE0F} ".$e($note);
 			}
 		}
 
@@ -289,6 +301,13 @@ class ScriptReportRenderer {
 		fclose($fh);
 
 		return $csv;
+	}
+
+	/**
+	 * Numbers are right-aligned: "1249.63", "-5", "1 234,5", "93%".
+	 */
+	private static function isNumber(string $value): bool {
+		return (bool) preg_match('/^[-+]?\d[\d\s]*([.,]\d+)?%?$/u', trim($value));
 	}
 
 	private static function e(string $text): string {

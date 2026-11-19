@@ -262,64 +262,119 @@ class ScriptReport {
 	}
 
 	/**
-	 * A delimiter that gives the same number (more than one) of fields in the first records; quoted values may
-	 * contain line breaks, so records are read as CSV, not as lines.
+	 * CSV records (quoted values may contain line breaks, so records are not lines).
+	 *
+	 * @return array  List of field lists.
 	 */
-	private static function detectDelimiter(string $output): ?string {
-		foreach ([',', ';', "\t", '|'] as $delimiter) {
-			$fh = fopen('php://temp', 'r+');
-			fwrite($fh, $output);
-			rewind($fh);
-			$counts = [];
-
-			while (count($counts) < 5 && ($row = fgetcsv($fh, 0, $delimiter, '"', '')) !== false) {
-				if ($row !== [null]) {
-					$counts[] = count($row);
-				}
-			}
-
-			fclose($fh);
-
-			if (count($counts) >= 2 && $counts[0] > 1 && count(array_unique($counts)) == 1) {
-				return $delimiter;
-			}
-		}
-
-		return null;
-	}
-
-	private static function fromCsv(string $output, int $max_rows): array {
-		$delimiter = self::detectDelimiter($output) ?? ',';
+	private static function readCsv(string $output, string $delimiter, int $limit = 0): array {
 		$fh = fopen('php://temp', 'r+');
 		fwrite($fh, $output);
 		rewind($fh);
+		$records = [];
 
-		$columns = null;
-		$rows = [];
-		$total = 0;
-
-		while (($row = fgetcsv($fh, 0, $delimiter, '"', '')) !== false) {
-			if ($row === [null]) {
-				continue;
-			}
-
-			if ($columns === null) {
-				$columns = array_map('trim', array_map('strval', $row));
-				continue;
-			}
-
-			$total++;
-
-			if (count($rows) < $max_rows) {
-				$rows[] = array_map(static function ($value): array {
-					return ['value' => (string) $value, 'color' => ''];
-				}, $row);
+		while (($limit == 0 || count($records) < $limit) && ($row = fgetcsv($fh, 0, $delimiter, '"', '')) !== false) {
+			if ($row !== [null]) {
+				$records[] = array_map('strval', $row);
 			}
 		}
 
 		fclose($fh);
 
-		return ['title' => '', 'columns' => $columns ?? [], 'rows' => $rows, 'total' => $total];
+		return $records;
+	}
+
+	/**
+	 * The delimiter with which the header has more than one field and most records (at least 60%) have as many
+	 * fields as the header. A few broken lines (a missing delimiter) do not turn CSV into text.
+	 */
+	private static function detectDelimiter(string $output): ?string {
+		$best = null;
+		$best_ratio = 0.0;
+
+		foreach ([',', ';', "\t", '|'] as $delimiter) {
+			$records = self::readCsv($output, $delimiter, 50);
+
+			if (count($records) < 2 || count($records[0]) < 2) {
+				continue;
+			}
+
+			$fields = count($records[0]);
+			$matching = count(array_filter(array_slice($records, 1), static function (array $record) use ($fields): bool {
+				return count($record) == $fields;
+			}));
+			$ratio = $matching / (count($records) - 1);
+
+			if ($ratio >= 0.6 && $ratio > $best_ratio) {
+				$best = $delimiter;
+				$best_ratio = $ratio;
+			}
+		}
+
+		return $best;
+	}
+
+	/**
+	 * A CSV table. A record with fewer fields than the header is repaired if splitting its fields by spaces gives
+	 * exactly the number of columns ("cluster1   184.41" -> "cluster1", "184.41"); other broken records are kept,
+	 * highlighted and counted in the notes of the table.
+	 */
+	private static function fromCsv(string $output, int $max_rows): array {
+		$records = self::readCsv($output, self::detectDelimiter($output) ?? ',');
+		$columns = array_map('trim', array_shift($records) ?? []);
+		$count = count($columns);
+		$rows = [];
+		$repaired = [];
+		$broken = [];
+
+		foreach ($records as $index => $record) {
+			$line = $index + 2;
+			$color = '';
+
+			if (count($record) < $count) {
+				$split = [];
+
+				foreach ($record as $field) {
+					$parts = preg_split('/\s+/', trim($field), -1, PREG_SPLIT_NO_EMPTY);
+					$split = array_merge($split, $parts ?: ['']);
+				}
+
+				if (count($split) == $count) {
+					$record = $split;
+					$repaired[] = $line;
+				}
+				else {
+					$record = array_pad($record, $count, '');
+					$broken[] = $line;
+					$color = 'warning';
+				}
+			}
+			elseif (count($record) > $count && $count > 0) {
+				// Extra fields go to the last column, nothing is lost.
+				$record = array_merge(array_slice($record, 0, $count - 1), [implode(', ', array_slice($record, $count - 1))]);
+				$broken[] = $line;
+				$color = 'warning';
+			}
+
+			if (count($rows) < $max_rows) {
+				$rows[] = array_map(static function (string $value) use ($color): array {
+					return ['value' => trim($value), 'color' => $color !== '' ? self::color($color) : ''];
+				}, $record);
+			}
+		}
+
+		$notes = [];
+
+		if ($broken) {
+			$notes[] = I18n::s('Lines with a wrong number of fields (highlighted): %1$s.', implode(', ', $broken));
+		}
+
+		if ($repaired) {
+			$notes[] = I18n::s('Lines with spaces instead of the delimiter, split automatically: %1$s.',
+				implode(', ', $repaired)
+			);
+		}
+
+		return ['title' => '', 'columns' => $columns, 'rows' => $rows, 'total' => count($records), 'notes' => $notes];
 	}
 
 	private static function fromJson(array $data, array $report, int $max_rows): array {
@@ -433,7 +488,8 @@ class ScriptReport {
 			'title' => self::scalar($table['title'] ?? ''),
 			'columns' => $columns,
 			'rows' => $result,
-			'total' => count($rows)
+			'total' => count($rows),
+			'notes' => []
 		];
 	}
 

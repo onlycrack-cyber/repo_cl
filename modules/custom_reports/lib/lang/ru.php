@@ -479,6 +479,9 @@ return [
 	'Incorrect value for field "Script": a script must be selected.' => 'Неверное значение поля «Скрипт»: выберите скрипт.',
 	'Records: %1$s, reports: %2$s, sent: %3$s, failed: %4$s.' => 'Записей: %1$s, отчётов: %2$s, отправлено: %3$s, ошибок: %4$s.',
 
+	'Lines with a wrong number of fields (highlighted): %1$s.' => 'Строки с неверным числом полей (подсвечены): %1$s.',
+	'Lines with spaces instead of the delimiter, split automatically: %1$s.' => 'Строки с пробелами вместо разделителя, разделены автоматически: %1$s.',
+
 	// Severities (default names of Zabbix).
 	'Not classified' => 'Не классифицировано',
 	'Information' => 'Информация',
