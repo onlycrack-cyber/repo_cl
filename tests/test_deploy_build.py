@@ -1,4 +1,5 @@
 """deploy/make_test_build.py: the side-by-side copies must not collide with the production files."""
+import json
 import os
 import re
 import subprocess
@@ -41,7 +42,20 @@ class BuildTests(unittest.TestCase):
 
     def test_writes_all_three_files(self):
         self.assertEqual(sorted(os.listdir(self.tmp.name)), [
-            'ssmc_collect_v2.py', 'zbx_export_templates_hpe_ssmc_v2.yaml', 'zbx_template_vmware_capacity_v2.yaml'])
+            'hpe-3par-health_v2.json', 'hpe-3par-zabbix_v2.json', 'ssmc_collect_v2.py',
+            'zbx_export_templates_hpe_ssmc_v2.yaml', 'zbx_template_vmware_capacity_v2.yaml'])
+
+    def test_dashboard_copies_do_not_overwrite_the_production_dashboards(self):
+        for name in ('hpe-3par-zabbix', 'hpe-3par-health'):
+            old = json.loads(read('grafana', name + '.json'))
+            new = json.loads(self.out('%s_v2.json' % name))
+            self.assertEqual(new['uid'], old['uid'] + '-v2')
+            self.assertTrue(new['title'].endswith(' v2'))
+            self.assertNotEqual(new['title'], old['title'])
+            self.assertEqual(new['panels'], old['panels'])
+            self.assertEqual(new['templating'], old['templating'])
+            self.assertIn('v2', new['tags'])
+            self.assertNotIn('id', new)
 
     def test_ssmc_copy_shares_no_uuid_but_the_template_group(self):
         new, old = self.out('zbx_export_templates_hpe_ssmc_v2.yaml'), read('zbx_export_templates_hpe_ssmc.yaml')
