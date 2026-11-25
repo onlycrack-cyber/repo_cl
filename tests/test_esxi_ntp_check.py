@@ -1,4 +1,4 @@
-"""Unit tests for esxi_ntp_check/esxi_ntp_check.py (pyVmomi is stubbed out)."""
+"""Unit tests for esxi_ntp_check/esxi_health_check.py (pyVmomi is stubbed out)."""
 import importlib.util
 import os
 import tempfile
@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(ROOT, 'esxi_ntp_check', 'esxi_ntp_check.py')
+SCRIPT = os.path.join(ROOT, 'esxi_ntp_check', 'esxi_health_check.py')
 
 
 def _load():
@@ -21,7 +21,7 @@ def _load():
     pyvmomi.vmodl = types.SimpleNamespace(query=types.SimpleNamespace())
     mods = {'pyVim': pyvim, 'pyVim.connect': connect, 'pyVmomi': pyvmomi}
     with mock.patch.dict(sys.modules, mods):
-        spec = importlib.util.spec_from_file_location('esxi_ntp_check', SCRIPT)
+        spec = importlib.util.spec_from_file_location('esxi_health_check', SCRIPT)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
     return mod
@@ -191,7 +191,10 @@ class CacheAndDeadline(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def test_cache_name_is_per_user(self):
-        self.assertIn('_%s.json' % os.getuid(), M._cache_file('https://vc'))
+        name = os.path.basename(M._cache_file('https://vc'))
+        self.assertIn('_%s.json' % os.getuid(), name)
+        # not the cache file of the old esxi_ntp_check.py, which may run on the same server
+        self.assertTrue(name.startswith('esxi_health_cache_'), name)
 
     def test_lock_failure_is_not_fatal(self):
         real = os.open

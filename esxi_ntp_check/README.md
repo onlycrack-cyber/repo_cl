@@ -6,10 +6,10 @@
 | Файл | Что это |
 |---|---|
 | `Template ESXi Health by vCenter.yaml` | шаблон Zabbix 7.0: один сборщик + зависимые элементы и LLD |
-| `esxi_ntp_check.py` | скрипт (External check), кладётся в `/usr/lib/zabbix/externalscripts/`; нужен venv `/opt/zabbix-venv` с pyVmomi 8.0.3+ |
+| `esxi_health_check.py` | скрипт (External check), кладётся в `/usr/lib/zabbix/externalscripts/`; нужен venv `/opt/zabbix-venv` с pyVmomi 8.0.3+. Имя отличается от прежнего `esxi_ntp_check.py`, поэтому оба скрипта и оба шаблона могут работать на одном сервере |
 | `grafana/esxi-health.json` | дашборд Grafana «VMware ESXi — здоровье хостов (vCenter)» |
 | `tools/gen_esxi_dashboard.py` | генератор дашборда (`grafana/esxi-health.json` руками не правится) |
-| `Template ESXi NTP LLD.yaml` | прежний шаблон (ключи другие, оставлен для миграции) |
+| `Template ESXi NTP LLD.yaml` | прежний шаблон; он вызывает прежний `esxi_ntp_check.py`, которого в репозитории больше нет (файл остаётся на сервере как есть). Новый скрипт понимает его вызовы, но ключи в шаблоне надо заменить на `esxi_health_check.py` |
 | `CHANGES.md` | что менялось и что осталось проверить на стенде |
 
 ## Что проверяется

@@ -4,24 +4,24 @@
 Power). LLD-режим отдаёт все хосты vCenter. Режим license отключён.
 
 Режимы (1-м аргументом, вместо хоста — режим, 2-м — имя хоста):
-    esxi_ntp_check.py["{#ESXINAME}",url,user,pwd]            (legacy-форма NTP)
-    esxi_ntp_check.py["ntp","{#ESXINAME}",url,user,pwd]
+    esxi_health_check.py["{#ESXINAME}",url,user,pwd]            (legacy-форма NTP)
+    esxi_health_check.py["ntp","{#ESXINAME}",url,user,pwd]
         -> 1 если NTP настроен (протокол NTP + серверы) И служба ntpd Running
-    esxi_ntp_check.py["vmk","{#ESXINAME}",url,user,pwd]
+    esxi_health_check.py["vmk","{#ESXINAME}",url,user,pwd]
         -> 1 если настроен хотя бы один VMkernel adapter с IP
-    esxi_ntp_check.py["storage","{#ESXINAME}",url,user,pwd]
+    esxi_health_check.py["storage","{#ESXINAME}",url,user,pwd]
         -> 0 если хоть один известный Storage Adapter не online (деградация:
            хост живёт на оставшемся порту); adapters со status=unknown не
            учитываются (1, если известных нет); нет данных -> ошибка
-    esxi_ntp_check.py["dns","{#ESXINAME}",url,user,pwd,pref,alt]
+    esxi_health_check.py["dns","{#ESXINAME}",url,user,pwd,pref,alt]
         -> 1 если оба указанных DNS есть; без аргументов — наличие >=2 DNS
-    esxi_ntp_check.py["power","{#ESXINAME}",url,user,pwd,policy]
+    esxi_health_check.py["power","{#ESXINAME}",url,user,pwd,policy]
         -> 1 если активная политика = заданной (по умолч. High performance)
-    esxi_ntp_check.py["discover",url,user,pwd]
+    esxi_health_check.py["discover",url,user,pwd]
         -> {"data":[{"{#ESXINAME}":...,"{#ESXIADDR}":...},...]}
-    esxi_ntp_check.py["hosts",url,user,pwd]
+    esxi_health_check.py["hosts",url,user,pwd]
         -> число хостов в vCenter (самопроверка доступности vCenter)
-    esxi_ntp_check.py["collect",url,user,pwd,dns_pref,dns_alt,power_policy]
+    esxi_health_check.py["collect",url,user,pwd,dns_pref,dns_alt,power_policy]
         -> ОДИН компактный JSON по всем хостам (для шаблона "ESXi Health by
            vCenter": зависимые LLD и айтемы разбирают его JSONPath'ом).
            Недоступные значения в JSON опускаются (айтем -> unsupported).
@@ -36,7 +36,8 @@ Power). LLD-режим отдаёт все хосты vCenter. Режим licens
 Требование: /opt/zabbix-venv с pyVmomi 8.0.3+/9.x
 Конфиг: по умолчанию из окружения ESXI_VCENTER/ESXI_USER/ESXI_PWD,
         либо аргументами.
-Кэш: <tmp>/esxi_ntp_cache_<md5(url)>.json, TTL = ESXI_NTP_TTL (по умолч. 900 c,
+Кэш: <tmp>/esxi_health_cache_<md5(url)>_<uid>.json (имя отличается от кэша старого
+     esxi_ntp_check.py, два скрипта на одном сервере не перезаписывают кэш друг друга), TTL = ESXI_NTP_TTL (по умолч. 900 c,
      должен быть больше интервала опроса айтемов). Обновление кэша под flock:
      параллельные запуски ждут один опрос vCenter, а не делают свой.
      ESXI_NTP_REFRESH=1 — игнорировать кэш (разовый опрос vCenter).
@@ -129,7 +130,7 @@ def _cache_file(vc):
     # Имя содержит uid: файл, созданный под другим пользователем (ручной запуск
     # под root), не должен ломать запуск под zabbix.
     uid = os.getuid() if hasattr(os, "getuid") else 0
-    return os.path.join(tempfile.gettempdir(), "esxi_ntp_cache_%s_%s.json" % (h, uid))
+    return os.path.join(tempfile.gettempdir(), "esxi_health_cache_%s_%s.json" % (h, uid))
 
 
 def _parse_vc(vc):

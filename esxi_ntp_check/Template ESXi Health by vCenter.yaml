@@ -20,7 +20,7 @@ zabbix_export:
         Подавление алертов: флаг "Alerting enabled" (0 при Maintenance Mode или не connected) входит во все триггеры хоста;
         потерянные из LLD хосты (удалены из vCenter) отключаются сразу, удаляются через 7 дней (история сохраняется при переустановке).
 
-        Зависимости: venv /opt/zabbix-venv с pyVmomi 8.0.3+/9.x; скрипт esxi_ntp_check.py (v3, режим collect)
+        Зависимости: venv /opt/zabbix-venv с pyVmomi 8.0.3+/9.x; скрипт esxi_health_check.py (v3, режим collect)
         в /usr/lib/zabbix/externalscripts/. Роль vCenter - только чтение.
         Миграция с "Template ESXi NTP LLD": ключи другие, история старого шаблона не переносится;
         отвяжите старый шаблон (с удалением) после проверки нового.
@@ -30,7 +30,7 @@ zabbix_export:
         - uuid: 86f9f5eafdbb40c2808e33a756e193d8
           name: 'ESXi data collection'
           type: EXTERNAL
-          key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+          key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           delay: 5m
           timeout: 30s
           value_type: TEXT
@@ -45,8 +45,8 @@ zabbix_export:
             - tag: scope
               value: 'esxi-health'
           triggers:
-            - uuid: 70ec31b23b2b47959240d1551a07750d
-              expression: 'nodata(/Template ESXi Health by vCenter/esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"],15m)=1'
+            - uuid: 80766313f75142fda53d55da48e40fd8
+              expression: 'nodata(/Template ESXi Health by vCenter/esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"],15m)=1'
               name: 'vCenter data collection is failing'
               event_name: 'vCenter data collection is failing ({HOST.NAME})'
               priority: HIGH
@@ -69,7 +69,7 @@ zabbix_export:
               parameters:
                 - '$.cnt'
           master_item:
-            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+            key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           tags:
             - tag: component
               value: 'vcenter'
@@ -102,7 +102,7 @@ zabbix_export:
               parameters:
                 - '$.warn'
           master_item:
-            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+            key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           tags:
             - tag: component
               value: 'vcenter'
@@ -155,7 +155,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].alert'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'maintenance'
@@ -175,7 +175,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ntp'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'ntp'
@@ -210,7 +210,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ntp_off'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'ntp'
@@ -259,7 +259,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].dns'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'dns'
@@ -294,7 +294,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].vmk'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'network'
@@ -329,7 +329,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].stor'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'storage'
@@ -364,7 +364,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].pwr'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'power'
@@ -397,7 +397,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].mp_dead'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'storage'
@@ -430,7 +430,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ds_bad'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'storage'
@@ -465,7 +465,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ds_names'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'storage'
@@ -485,7 +485,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ha_ok'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'ha'
@@ -520,14 +520,14 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].ha'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'ha'
                 - tag: scope
                   value: 'esxi-health'
           master_item:
-            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+            key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -565,7 +565,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].alert'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'maintenance'
@@ -585,7 +585,7 @@ zabbix_export:
                   parameters:
                     - '$.pnic["{#ESXINAME}"]["{#NIC}"].up'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'network'
@@ -619,7 +619,7 @@ zabbix_export:
                   parameters:
                     - '$.pnic["{#ESXINAME}"]["{#NIC}"].mb'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'network'
@@ -641,7 +641,7 @@ zabbix_export:
                     - tag: esxi
                       value: '{#ESXINAME}'
           master_item:
-            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+            key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -679,7 +679,7 @@ zabbix_export:
                   parameters:
                     - '$.hosts["{#ESXINAME}"].alert'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'maintenance'
@@ -697,7 +697,7 @@ zabbix_export:
                   parameters:
                     - '$.sw["{#ESXINAME}"]["{#VSWITCH}"].up'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'network'
@@ -730,14 +730,14 @@ zabbix_export:
                   parameters:
                     - '$.sw["{#ESXINAME}"]["{#VSWITCH}"].n'
               master_item:
-                key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+                key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
               tags:
                 - tag: component
                   value: 'network'
                 - tag: scope
                   value: 'esxi-health'
           master_item:
-            key: 'esxi_ntp_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
+            key: 'esxi_health_check.py["collect","{$VMWARE.URL}","{$VMWARE.USERNAME}","{$VMWARE.PASSWORD}","{$ESXI.DNS.PREFERRED}","{$ESXI.DNS.ALTERNATE}","{$ESXI.POWER.POLICY}"]'
           preprocessing:
             - type: JSONPATH
               parameters:

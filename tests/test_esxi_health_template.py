@@ -1,4 +1,4 @@
-"""Checks 'Template ESXi Health by vCenter' against the output of esxi_ntp_check.py collect.
+"""Checks 'Template ESXi Health by vCenter' against the output of esxi_health_check.py collect.
 
 No Zabbix is needed: every dependent LLD / item JSONPath of the template is evaluated on a
 fake fleet, so a typo in a path or a trigger key shows up here.
@@ -28,7 +28,7 @@ def _load():
     mods['pyVmomi'].vmodl = types.SimpleNamespace(query=types.SimpleNamespace())
     with mock.patch.dict(sys.modules, mods):
         spec = importlib.util.spec_from_file_location(
-            'esxi_ntp_check', os.path.join(DIR, 'esxi_ntp_check.py'))
+            'esxi_health_check', os.path.join(DIR, 'esxi_health_check.py'))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
     return mod
