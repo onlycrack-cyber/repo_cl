@@ -1,0 +1,80 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 7978ce8f372b4f26a8979e1c13974e0b
+      name: Templates/Applications
+  templates:
+    - uuid: 30cd30cc01ea4270a13e36cc9012466e
+      template: 'Custom Problem Reports delivery'
+      name: 'Custom Problem Reports delivery'
+      description: |
+        Monitoring of the "Custom Problem Reports" frontend module (modules/custom_reports).
+        
+        The cron sender bin/send_reports.php pushes its status here on every run with history.push.
+        Setup: link this template to a host (e.g. "Zabbix server"), set "zabbix_status_host" in
+        modules/custom_reports/conf/config.php to the technical name of that host. The user of the API token
+        needs read-write permission on the host.
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 6dc1d4cdd5f54603a49032bf71c4cb6d
+          name: 'Report sender: last run'
+          type: TRAP
+          key: custom_reports.heartbeat
+          history: 7d
+          trends: '0'
+          units: unixtime
+          description: 'Time of the last run of the cron sender (every minute).'
+          tags:
+            - tag: component
+              value: reports
+          triggers:
+            - uuid: 96c932206d91448d879a820d41edc3a5
+              expression: 'nodata(/Custom Problem Reports delivery/custom_reports.heartbeat,{$CUSTOM_REPORTS.NODATA})=1'
+              name: 'Report sender (cron) is not running'
+              priority: AVERAGE
+              description: |
+                bin/send_reports.php has not reported for {$CUSTOM_REPORTS.NODATA}: scheduled reports are not sent.
+                Check the cron job (Reports -> Custom Problem Reports -> Schedules and delivery -> Cron job)
+                and the module log.
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: ca8f7fc1f8a945ec808abb24454a12a2
+          name: 'Report delivery: failed schedules'
+          type: TRAP
+          key: custom_reports.failed
+          history: 31d
+          trends: '0'
+          description: 'Number of enabled schedules whose last delivery failed completely or partially.'
+          tags:
+            - tag: component
+              value: reports
+        - uuid: 94309b8fc3b64a78ad40bcb1fbecf1e7
+          name: 'Report delivery: errors'
+          type: TRAP
+          key: custom_reports.last_error
+          value_type: TEXT
+          history: 31d
+          trends: '0'
+          description: '"Schedule: error" lines of the failed schedules (empty when everything is delivered).'
+          tags:
+            - tag: component
+              value: reports
+      macros:
+        - macro: '{$CUSTOM_REPORTS.NODATA}'
+          value: 10m
+          description: 'The cron sender runs every minute: no value for this long means it has stopped.'
+  triggers:
+    - uuid: 1a1c328f20494b9ebb2f9a908c0cd19e
+      expression: 'last(/Custom Problem Reports delivery/custom_reports.failed)>0 and length(last(/Custom Problem Reports delivery/custom_reports.last_error))>=0'
+      name: 'Scheduled report delivery failed: {ITEM.LASTVALUE1} schedule(s)'
+      opdata: '{ITEM.LASTVALUE2}'
+      priority: HIGH
+      description: |
+        The last delivery of some schedules failed (wrong address, SMTP/Telegram error, no recipients with an active
+        media). Details: Reports -> Custom Problem Reports -> Schedules and delivery -> History.
+        The problem is resolved by the next successful delivery ("Send now" or the next scheduled run).
+      tags:
+        - tag: scope
+          value: notice

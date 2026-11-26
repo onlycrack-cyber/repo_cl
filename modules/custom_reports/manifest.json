@@ -1,0 +1,91 @@
+{
+	"manifest_version": 2.0,
+	"id": "custom_reports",
+	"name": "Custom Problem Reports",
+	"version": "1.18.1",
+	"namespace": "CustomReports",
+	"author": "Custom",
+	"url": "",
+	"description": "Interactive reports on unresolved problems with scheduled delivery through Zabbix media types (Email, Telegram, scripts).",
+	"actions": {
+		"customreports.dashboard": {
+			"class": "Dashboard",
+			"view": "customreports.dashboard",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.export": {
+			"class": "Export",
+			"layout": "layout.customreports.download"
+		},
+		"customreports.send": {
+			"class": "SendNow"
+		},
+		"customreports.schedule.list": {
+			"class": "ScheduleList",
+			"view": "customreports.schedule.list",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.schedule.edit": {
+			"class": "ScheduleEdit",
+			"view": "customreports.schedule.edit",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.schedule.update": {
+			"class": "ScheduleUpdate"
+		},
+		"customreports.schedule.delete": {
+			"class": "ScheduleDelete"
+		},
+		"customreports.schedule.run": {
+			"class": "ScheduleRun"
+		},
+		"customreports.cron.update": {
+			"class": "CronUpdate"
+		},
+		"customreports.schedule.history": {
+			"class": "ScheduleHistory",
+			"view": "customreports.schedule.history",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.schedule.test": {
+			"class": "ScheduleTest"
+		},
+		"customreports.schedule.resend": {
+			"class": "ScheduleResend"
+		},
+		"customreports.changes": {
+			"class": "Changes",
+			"view": "customreports.changes",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.changes.export": {
+			"class": "ChangesExport",
+			"layout": "layout.customreports.download"
+		},
+		"customreports.script": {
+			"class": "Script",
+			"view": "customreports.script",
+			"layout": "layout.htmlpage"
+		},
+		"customreports.script.export": {
+			"class": "ScriptExport",
+			"layout": "layout.customreports.download"
+		},
+		"customreports.schedule.toggle": {
+			"class": "ScheduleToggle"
+		},
+		"customreports.schedule.testform": {
+			"class": "ScheduleTestForm",
+			"view": "customreports.schedule.testform",
+			"layout": "layout.htmlpage"
+		}
+	},
+	"assets": {
+		"css": [
+			"customreports.css"
+		],
+		"js": [
+			"customreports.js"
+		]
+	}
+}

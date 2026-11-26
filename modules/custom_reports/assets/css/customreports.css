@@ -1,0 +1,526 @@
+/* Custom Problem Reports: only layout rules, colors come from the active Zabbix theme. */
+
+.cr-tabs {
+	display: flex;
+	margin: 0 0 10px 0;
+	padding: 0;
+	border-bottom: 1px solid rgba(128, 128, 128, .35);
+	list-style: none;
+}
+
+.cr-tabs li {
+	margin: 0 4px -1px 0;
+}
+
+.cr-tabs a {
+	display: block;
+	padding: 7px 14px;
+	border: 1px solid transparent;
+	text-decoration: none;
+}
+
+.cr-tabs a.cr-tab-active {
+	border-color: rgba(128, 128, 128, .35);
+	border-bottom-color: transparent;
+	font-weight: bold;
+}
+
+.cr-kpi {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: 10px 0;
+}
+
+.cr-kpi-card {
+	min-width: 110px;
+	padding: 10px 14px;
+	border: 1px solid rgba(128, 128, 128, .3);
+	border-radius: 2px;
+	box-sizing: border-box;
+}
+
+.cr-kpi-value {
+	font-size: 26px;
+	font-weight: bold;
+	line-height: 1.2;
+}
+
+.cr-kpi-label {
+	margin-top: 2px;
+	white-space: nowrap;
+}
+
+.cr-kpi-total {
+	min-width: 140px;
+}
+
+.cr-kpi-hosts {
+	flex: 1 1 260px;
+}
+
+.cr-kpi-hosts .cr-kpi-label {
+	font-weight: bold;
+	margin-bottom: 4px;
+}
+
+.cr-top-hosts {
+	margin: 0;
+	padding-left: 18px;
+}
+
+.cr-top-hosts li {
+	line-height: 18px;
+}
+
+.cr-top-hosts-count {
+	float: right;
+	margin-left: 20px;
+	font-weight: bold;
+}
+
+.cr-send {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 10px 0;
+}
+
+.cr-note {
+	margin: 0 0 10px 0;
+	opacity: .8;
+}
+
+.cr-inline-form {
+	display: inline-block;
+	margin-right: 10px;
+}
+
+/* Action links of a schedule: each link stays on one line, the links wrap as a whole (long Russian labels). */
+.cr-actions {
+	min-width: 220px;
+}
+
+.cr-actions .cr-inline-form,
+.cr-actions .cr-action-link {
+	white-space: nowrap;
+	margin-right: 10px;
+}
+
+.cr-cron {
+	margin-top: 20px;
+}
+
+.cr-cron h4 {
+	margin: 0 0 6px 0;
+}
+
+.cr-rules td {
+	padding-bottom: 8px;
+}
+
+/* Period analytics. */
+
+.cr-analytics {
+	margin: 0 0 14px 0;
+	padding: 10px 12px;
+	border: 1px solid rgba(128, 128, 128, .3);
+}
+
+.cr-analytics h4 {
+	margin: 16px 0 8px 0;
+}
+
+.cr-analytics h4:first-child {
+	margin-top: 0;
+}
+
+.cr-kpi-period {
+	min-width: 170px;
+}
+
+.cr-kpi-note {
+	margin-top: 4px;
+	font-size: 11px;
+}
+
+.cr-severity-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0 0 10px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.cr-severity-list span {
+	display: inline-block;
+	padding: 2px 8px;
+}
+
+.cr-charts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 20px;
+	margin: 4px 0 12px 0;
+}
+
+.cr-chart-box {
+	flex: 1 1 480px;
+	min-width: 0;
+}
+
+.cr-chart {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	margin-top: 4px;
+	border-bottom: 1px solid rgba(128, 128, 128, .4);
+}
+
+.cr-chart-col {
+	display: flex;
+	flex: 1 1 0;
+	flex-direction: column;
+	justify-content: flex-end;
+	min-width: 0;
+	text-align: center;
+}
+
+.cr-chart-value {
+	font-size: 10px;
+	line-height: 14px;
+}
+
+.cr-stack {
+	display: flex;
+	flex-direction: column-reverse;
+}
+
+.cr-group {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	gap: 1px;
+	height: 124px;
+}
+
+.cr-group div {
+	flex: 1 1 0;
+	max-width: 18px;
+}
+
+.cr-bar-new {
+	background: #4796c4;
+}
+
+.cr-bar-resolved {
+	background: #59b36a;
+}
+
+.cr-bar-open {
+	background: #9aa7b0;
+}
+
+.cr-legend {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin: 0 4px 0 12px;
+	vertical-align: middle;
+}
+
+.cr-chart-label {
+	/* Only every n-th column is labelled, so a label may extend over its empty neighbours. */
+	overflow: visible;
+	font-size: 10px;
+	line-height: 13px;
+	min-height: 13px;
+	white-space: nowrap;
+	opacity: .75;
+}
+
+.cr-chart-open {
+	font-weight: bold;
+}
+
+.cr-analytics-tables {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.cr-analytics-table {
+	flex: 2 1 420px;
+}
+
+.cr-analytics-narrow {
+	flex: 1 1 220px;
+}
+
+/* "Changes" tab. */
+
+.cr-changes-summary {
+	margin: 0 0 12px 0;
+	line-height: 20px;
+}
+
+.cr-changes-period {
+	font-weight: bold;
+}
+
+.cr-panels {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+	gap: 14px;
+	margin-bottom: 14px;
+}
+
+.cr-panel {
+	min-width: 0;
+	padding: 10px 12px;
+	border: 1px solid rgba(128, 128, 128, .3);
+}
+
+.cr-panel-wide {
+	grid-column: 1 / -1;
+}
+
+.cr-panel h4 {
+	margin: 0 0 6px 0;
+}
+
+.cr-hbar-box {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 180px;
+}
+
+.cr-hbar {
+	flex: 0 0 auto;
+	max-width: 120px;
+	height: 10px;
+}
+
+.cr-hbar-box .cr-hbar {
+	min-width: 2px;
+}
+
+.cr-hbar-label {
+	white-space: nowrap;
+}
+
+.cr-bar-problem {
+	background: #e45959;
+}
+
+.cr-heatmap {
+	border-collapse: separate;
+	border-spacing: 2px;
+	font-size: 10px;
+}
+
+.cr-heatmap th {
+	padding: 0 2px;
+	font-weight: normal;
+	opacity: .7;
+}
+
+.cr-heatmap td {
+	width: 22px;
+	height: 20px;
+	padding: 0;
+	text-align: center;
+	color: #4f5b63;
+}
+
+.cr-heatmap td.cr-heatmap-day {
+	width: auto;
+	padding-right: 6px;
+	text-align: left;
+	background: none !important;
+	color: inherit;
+	opacity: .7;
+}
+
+/* "Scripts" tab. */
+.cr-script-result {
+	margin-top: 10px;
+	padding: 10px;
+	background-color: #ffffff;
+	border: 1px solid #dfe4e7;
+}
+
+.cr-script-head h4 {
+	display: inline-block;
+	margin: 0 10px 6px 0;
+	font-size: 16px;
+}
+
+.cr-script-actions {
+	margin-bottom: 10px;
+}
+
+.cr-script-actions li {
+	display: inline-block;
+	margin-right: 6px;
+}
+
+.cr-script-stderr {
+	max-height: 160px;
+	overflow: auto;
+	white-space: pre-wrap;
+	margin: 4px 0 10px 0;
+}
+
+/* The report HTML uses its own inline colors (as in e-mails): keep a light background in the dark theme too. */
+.cr-script-report {
+	color: #1f2c33;
+	background-color: #ffffff;
+	overflow-x: auto;
+}
+
+/* "Changes" tab: overview first (verdict, KPI, dynamics, open now, resolved in the period), details below. */
+.cr-overview {
+	margin-bottom: 12px;
+}
+
+.cr-verdict {
+	margin: 8px 0 4px 0;
+	padding: 10px 14px;
+	border-left: 6px solid #9aa7b0;
+	background: rgba(128, 128, 128, .08);
+	line-height: 1.5;
+}
+
+.cr-verdict-title {
+	font-size: 16px;
+	font-weight: bold;
+}
+
+.cr-verdict-worse {
+	border-left-color: #e45959;
+	background: rgba(228, 89, 89, .10);
+}
+
+.cr-verdict-better {
+	border-left-color: #59b36a;
+	background: rgba(89, 179, 106, .10);
+}
+
+.cr-verdict-reasons {
+	opacity: .85;
+}
+
+.cr-kpi-open .cr-kpi-value {
+	color: #e97659;
+}
+
+.cr-kpi-alert {
+	border-color: #e45959;
+}
+
+.cr-kpi-alert .cr-kpi-value {
+	color: #e45959;
+}
+
+.cr-bar-prev {
+	background: rgba(128, 128, 128, .25);
+	border: 1px dashed rgba(128, 128, 128, .7);
+	box-sizing: border-box;
+}
+
+.cr-details {
+	margin-top: 6px;
+}
+
+.cr-details > summary {
+	cursor: pointer;
+	padding: 8px 0;
+	font-weight: bold;
+}
+
+/* SVG chart: open problems (line) and new / resolved (bars up / down). */
+.cr-svg-chart {
+	display: block;
+	max-height: 300px;
+	margin-top: 4px;
+}
+
+.cr-svg-chart .cr-svg-hover:hover {
+	fill: rgba(128, 128, 128, .12);
+}
+
+.cr-legend-line {
+	height: 3px;
+	background: #e9894f;
+}
+
+.cr-legend-prev {
+	height: 0;
+	border-top: 2px dashed #9aa7b0;
+}
+
+.cr-legend-start {
+	height: 0;
+	border-top: 1px dashed currentColor;
+	opacity: .6;
+}
+
+/* Collapsed "Unresolved problems": severities right in the header. */
+.cr-details > summary .cr-severity-inline {
+	display: inline-flex;
+	margin: 0 0 0 8px;
+	vertical-align: middle;
+	font-weight: normal;
+}
+
+/* Structure of open problems. */
+.cr-structure .cr-panel .list-table {
+	margin-top: 4px;
+}
+
+.cr-heat-cell {
+	text-align: center;
+	background: rgba(228, 89, 89, var(--cr-heat, 0));
+}
+
+.cr-total-cell {
+	text-align: center;
+	font-weight: bold;
+}
+
+.cr-sev-bar-cell {
+	width: 35%;
+}
+
+.cr-sev-bar {
+	display: flex;
+	min-width: 4px;
+	height: 14px;
+}
+
+.cr-sev-bar > div {
+	min-width: 3px;
+}
+
+.cr-big-number {
+	font-size: 20px;
+	font-weight: bold;
+}
+
+/* Narrow tables inside the panels of the dashboard. */
+.cr-panel .cr-compact-table {
+	table-layout: auto;
+	width: 100%;
+}
+
+.cr-panel .cr-compact-table th {
+	white-space: normal;
+}
+
+.cr-strong {
+	font-weight: bold;
+}

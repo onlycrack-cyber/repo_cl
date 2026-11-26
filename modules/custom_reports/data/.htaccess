@@ -1,0 +1,2 @@
+# Schedules, delivery state and logs must never be served by the web server.
+Require all denied
