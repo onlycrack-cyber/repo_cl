@@ -76,6 +76,9 @@ $right = (new CFormList())
 			->setColumns(3)
 			->setVertical()
 	)
+	->addRow(cr_t('Show suppressed problems'),
+		(new CCheckBox('filter_show_suppressed'))->setChecked($filter['show_suppressed'] == 1)
+	)
 	->addRow(cr_t('Period'),
 		(new CRadioButtonList('filter_period', $filter['period']))
 			->addValue(cr_t('24 hours'), PeriodAnalytics::PERIOD_24H)
