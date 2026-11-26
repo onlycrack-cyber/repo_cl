@@ -76,6 +76,7 @@ class ChangeAnalytics {
 			'problem_name' => $base['problem_name'],
 			'tags' => $base['tags'],
 			'evaltype' => $base['evaltype'],
+			'show_suppressed' => (int) !empty($filter['show_suppressed']),
 			'period' => in_array($period, self::PERIODS, true) ? $period : PeriodAnalytics::PERIOD_7D,
 			'date_from' => trim((string) ($filter['date_from'] ?? '')),
 			'date_to' => trim((string) ($filter['date_to'] ?? '')),
@@ -145,6 +146,11 @@ class ChangeAnalytics {
 			if ($filter[$key]) {
 				$params[$key] = $filter[$key];
 			}
+		}
+
+		// Suppressed problems (hosts in maintenance) follow the filter, as in problem.get on the dashboard.
+		if (empty($filter['show_suppressed'])) {
+			$params['suppressed'] = false;
 		}
 
 		if ($filter['problem_name'] !== '') {
