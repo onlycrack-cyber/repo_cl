@@ -154,6 +154,7 @@ class FrontendHelper {
 		CProfile::updateArray(self::CHANGES_PREFIX.'groupids', $filter['groupids'], PROFILE_TYPE_ID);
 		CProfile::updateArray(self::CHANGES_PREFIX.'hostids', $filter['hostids'], PROFILE_TYPE_ID);
 		CProfile::updateArray(self::CHANGES_PREFIX.'severities', $filter['severities'], PROFILE_TYPE_INT);
+		CProfile::update(self::CHANGES_PREFIX.'show_suppressed', $filter['show_suppressed'], PROFILE_TYPE_INT);
 
 		foreach (['problem_name', 'period', 'date_from', 'date_to', 'grouping'] as $key) {
 			CProfile::update(self::CHANGES_PREFIX.$key, $filter[$key], PROFILE_TYPE_STR);
@@ -164,7 +165,7 @@ class FrontendHelper {
 
 	public static function resetChangesFilter(): void {
 		foreach (['groupids', 'hostids', 'severities', 'problem_name', 'period', 'date_from', 'date_to',
-				'grouping'] as $key) {
+				'grouping', 'show_suppressed'] as $key) {
 			CProfile::deleteIdx(self::CHANGES_PREFIX.$key);
 		}
 
@@ -177,6 +178,7 @@ class FrontendHelper {
 			'hostids' => CProfile::getArray(self::CHANGES_PREFIX.'hostids', []),
 			'severities' => CProfile::getArray(self::CHANGES_PREFIX.'severities', []),
 			'problem_name' => CProfile::get(self::CHANGES_PREFIX.'problem_name', ''),
+			'show_suppressed' => CProfile::get(self::CHANGES_PREFIX.'show_suppressed', 0),
 			'period' => CProfile::get(self::CHANGES_PREFIX.'period', PeriodAnalytics::PERIOD_7D),
 			'date_from' => CProfile::get(self::CHANGES_PREFIX.'date_from', ''),
 			'date_to' => CProfile::get(self::CHANGES_PREFIX.'date_to', ''),

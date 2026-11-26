@@ -94,6 +94,12 @@ class PeriodAnalytics {
 			}
 		}
 
+		// Suppressed problems (hosts in maintenance) follow the report filter, as in problem.get: without it the
+		// period numbers (new, open at the start/end) and the charts would not match the list of open problems.
+		if (empty($filter['show_suppressed'])) {
+			$base['suppressed'] = false;
+		}
+
 		if ($filter['problem_name'] !== '') {
 			$base['search'] = ['name' => $filter['problem_name']];
 		}
